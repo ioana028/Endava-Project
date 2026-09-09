@@ -1,0 +1,34 @@
+# Day 1 Deliverables: The Walking Skeleton
+
+## The Goal
+By EOD Day 1, run the app with one Docker command, press the mic button in the UI, say *"Suzanne, take me to Budapest fast"*, and have Suzanne speak an AI-generated confirmation back through the speakers.
+
+---
+
+## What Each Person Does
+
+### Person A (Frontend & Voice HMI)
+- Set up React + Vite + TailwindCSS on port 5173.
+- Build the voice button with visual states (Idle, Recording, Processing, Speaking).
+- Capture microphone audio into a blob and send it to the backend (`POST /api/assistant/voice`).
+- Receive the base64 audio response and play it aloud via HTML5 Audio.
+
+### Person B (Backend & Trip Engine)
+- Set up FastAPI on port 8000.
+- Create `POST /api/assistant/voice` to accept the audio file and forward it to Person C's AI module.
+- Create `POST /api/assistant/interact` as a text-only fallback for easy testing.
+- Load `telemetry.json` and `partners.json` into memory.
+- Return the response adhering strictly to the `contracts.ts` schema (with `route: null` for Day 1).
+
+### Person C (AI & Voice Lead)
+- Integrate OpenAI Whisper (`whisper-1`) to transcribe incoming audio to text.
+- Use OpenAI tool calling to extract `{ destination, priority }` from the transcript.
+- Define Suzanne's persona prompt: concise executive concierge (under 20 words), partners suggested with driver consent and never forced.
+- Integrate OpenAI TTS (`tts-1`, voice `nova`) to synthesize Suzanne's spoken response into audio bytes.
+
+### Person D (Platform & Orchestration)
+- Create the root `docker-compose.yml` so the entire stack boots with `docker compose up --build`.
+- Configure hot-reloading for both frontend and backend inside Docker.
+- Set up FastAPI CORS so the frontend on port 5173 can talk to port 8000.
+- Add a `GET /health` endpoint.
+- Verify `.env` is loaded cleanly and never committed to Git.

@@ -1,0 +1,29 @@
+[
+  {
+    "id": "ionity-gyor",
+    "name": "Ionity Győr",
+    "category": "charging",
+    "coords": [17.6351, 47.6875],
+    "rating": 4.8,
+    "tag": "Ultra-Fast 350kW · 15% Partner Rate",
+    "detourMinutes": 2
+  },
+  {
+    "id": "matrica-hu-10d",
+    "name": "Hungarian 10-Day E-Vignette",
+    "category": "vignette",
+    "coords": [17.1000, 47.9500],
+    "rating": 5.0,
+    "tag": "Automated Toll Clearing",
+    "detourMinutes": 0
+  },
+  {
+    "id": "trattoria-venice-budapest",
+    "name": "Trattoria Venice Budapest",
+    "category": "food",
+    "coords": [19.0512, 47.4984],
+    "rating": 4.7,
+    "tag": "10% OEM Discount · Italian",
+    "detourMinutes": 0
+  }
+]

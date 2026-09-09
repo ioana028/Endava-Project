@@ -1,0 +1,9 @@
+{
+  "vehicleId": "honda-e-demo",
+  "propulsion": "BEV",
+  "batteryPercent": 42,
+  "estimatedRangeKm": 95,
+  "consumptionRateKwh": 17.2,
+  "tyres": "SUMMER",
+  "odometerKm": 14250
+}
