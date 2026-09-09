@@ -54,8 +54,14 @@ export interface RouteResponse {
   alerts: RouteAlert[];
 }
 
+export interface AssistantIntent {
+  destination: string;
+  priority: RoutePriority;
+}
+
 export interface AssistantResponse {
   transcript: string;
+  intent: AssistantIntent;
   spokenResponse: string;          // Plain text fallback
   audioBase64?: string;            // MP3 audio bytes from OpenAI TTS
   route?: RouteResponse;           // Populated on Day 2; null on Day 1

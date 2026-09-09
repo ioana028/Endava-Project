@@ -11,6 +11,9 @@ Suzanne is an executive in-cabin concierge designed for luxury Battery Electric 
 - **Two-Sided Marketplace:** Seamlessly surfaces commercial partner services (charging, dining, digital vignettes) without disrupting the drive.
 - **Advisory, Non-Enforced Monetization:** Partner perks (discounts, fast-charging priority) are suggested organically with driver benefit highlighted (e.g., "There is a partner location near your destination offering a 10% discount. Should I book that?"). The driver retains executive veto power—partners are never forced.
 
+The interaction is voice-first. Confirmations are spoken by Suzanne; the
+prototype does not use on-screen confirmation buttons.
+
 ---
 
 ## 2. The Primary Demo Corridor
