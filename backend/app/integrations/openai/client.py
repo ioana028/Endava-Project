@@ -84,7 +84,7 @@ class AsyncOpenAIClient:
     async def synthesize(self, text: str) -> bytes:
         response = await self._client.audio.speech.create(
             model="tts-1",
-            voice="sage",
+            voice="nova",
             input=text,
             response_format="mp3",
         )
