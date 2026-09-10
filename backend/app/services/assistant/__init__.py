@@ -1,11 +1,10 @@
-from backend.app.services.assistant.service import (
-    DAY_ONE_SPOKEN_RESPONSE,
-    AssistantProviderError,
-    AssistantService,
-)
+from .ports import AIResult, AssistantAIModule
+from .service import AssistantService, LocalTextAIModule, SPOKEN_RESPONSE
 
 __all__ = [
-    "DAY_ONE_SPOKEN_RESPONSE",
-    "AssistantProviderError",
+    "AIResult",
+    "AssistantAIModule",
     "AssistantService",
+    "LocalTextAIModule",
+    "SPOKEN_RESPONSE",
 ]
