@@ -2,6 +2,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from .api.assistant import router as assistant_router
 from .core.errors import register_error_handlers
@@ -26,6 +27,13 @@ def create_app(ai_module: AssistantAIModule | None = None) -> FastAPI:
         yield
 
     application = FastAPI(title="Suzanne Backend", version="0.1.0", lifespan=lifespan)
+    application.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:5173"],
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Content-Type"],
+    )
     application.state.settings = settings
     configured_ai_module = ai_module or LocalTextAIModule()
     if ai_module is None and settings.openai_api_key:

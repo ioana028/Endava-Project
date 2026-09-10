@@ -43,7 +43,7 @@ async def voice(
     audio: Annotated[UploadFile, File()],
     session_id: Annotated[str | None, Form(alias="sessionId")] = None,
 ) -> AssistantResponse:
-    content_type = (audio.content_type or "").lower()
+    content_type = (audio.content_type or "").lower().split(";", 1)[0].strip()
     if content_type not in SUPPORTED_AUDIO_TYPES:
         raise APIError(400, "INVALID_AUDIO", "The uploaded audio format is not supported.")
 
