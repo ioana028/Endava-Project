@@ -3,6 +3,15 @@ import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
 import type { RouteResponse } from '../../../types/contracts'
 import { toGooglePath } from '../utils/routeGeometry'
 
+const browserKey = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY
+
+if (browserKey) {
+  setOptions({
+    key: browserKey,
+    v: 'weekly',
+  })
+}
+
 interface RouteMapProps {
   route: RouteResponse
 }
@@ -21,9 +30,7 @@ export function RouteMap({ route }: RouteMapProps) {
     mapRef.current = null
 
     async function renderMap() {
-      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY
-
-      if (!apiKey) {
+      if (!browserKey) {
         setError('Google Maps browser key is missing.')
         return
       }
@@ -33,11 +40,6 @@ export function RouteMap({ route }: RouteMapProps) {
       }
 
       try {
-        setOptions({
-          key: apiKey,
-          v: 'weekly',
-        })
-
         const { Map } = (await importLibrary('maps')) as google.maps.MapsLibrary
 
         if (cancelled || !mapElementRef.current) {

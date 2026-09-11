@@ -16,6 +16,8 @@ services:
       context: ./frontend
     ports:
       - "5173:5173"
+    env_file:
+      - .env
     volumes:
       - ./frontend:/app
       - /app/node_modules

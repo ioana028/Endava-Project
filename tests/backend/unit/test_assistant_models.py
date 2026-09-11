@@ -1,4 +1,4 @@
-from backend.app.models.assistant import AssistantIntent, AssistantResponse
+from backend.app.models.contracts import AssistantIntent, AssistantResponse
 
 
 def test_day_one_response_has_no_route() -> None:

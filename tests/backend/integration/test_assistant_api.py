@@ -1,9 +1,44 @@
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
+from backend.app.core.fixture_repository import FixtureRepository
 from backend.app.main import create_app
-from backend.app.models.contracts import AssistantIntent, RoutePriority
-from backend.app.services.assistant.ports import AIResult
+from backend.app.models.contracts import AssistantIntent, Coordinates, RoutePriority
+from backend.app.services.assistant.ports import AIResult, RouteNarration
 from backend.app.services.assistant.service import LocalTextAIModule
+from backend.app.services.trip.ports import GeocodedPlace, ProviderRoute
+from backend.app.services.trip.service import RouteService
+
+
+class FakeRoutingProvider:
+    async def geocode(self, place: str) -> GeocodedPlace:
+        return GeocodedPlace(
+            display_name=place,
+            coordinates=Coordinates(lng=16.37, lat=48.20),
+        )
+
+    async def route(
+        self,
+        origin: GeocodedPlace,
+        destination: GeocodedPlace,
+        priority: RoutePriority,
+    ) -> ProviderRoute:
+        del origin, destination, priority
+        return ProviderRoute(
+            distance_meters=243_000,
+            duration_seconds=9_900,
+            geometry=((16.37, 48.20), (19.04, 47.50)),
+        )
+
+
+def fake_route_service() -> RouteService:
+    repository = FixtureRepository(
+        Path("data/vehicles/telemetry.json"),
+        Path("data/partners/partners.json"),
+    )
+    repository.load()
+    return RouteService(FakeRoutingProvider(), repository)
 
 
 class FakeAIModule:
@@ -34,26 +69,40 @@ class FakeAIModule:
             audio=b"mp3-data",
         )
 
+    async def synthesize_route(self, route) -> RouteNarration:
+        return RouteNarration(
+            text=f"Route to {route.destination} is ready.",
+            audio=b"route-audio",
+        )
+
 
 def test_text_fallback_matches_frontend_contract() -> None:
-    with TestClient(create_app(LocalTextAIModule())) as client:
+    with TestClient(
+        create_app(LocalTextAIModule(), route_service=fake_route_service())
+    ) as client:
         response = client.post(
             "/api/assistant/interact",
             json={"text": "Suzanne, take me to Budapest fast", "sessionId": "demo"},
         )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "transcript": "Suzanne, take me to Budapest fast",
-        "intent": {"destination": "Budapest", "priority": "FASTEST"},
-        "spokenResponse": "Calculating route based on your preferences, hold on",
-        "toastMessage": "INTENT: BUDAPEST (FASTEST)",
-    }
+    payload = response.json()
+    assert payload["transcript"] == "Suzanne, take me to Budapest fast"
+    assert payload["intent"] == {"destination": "Budapest", "priority": "FASTEST"}
+    assert payload["spokenResponse"].startswith("I've planned your route to")
+    assert payload["toastMessage"] == "INTENT: BUDAPEST (FASTEST)"
+    assert payload["route"] is not None
+    assert payload["route"]["destination"].startswith("Budapest")
+    assert payload["route"]["stats"]["totalDistanceKm"] > 0
+    assert payload["route"]["stats"]["totalDurationMinutes"] > 0
+    assert payload["route"]["geometry"]
 
 
 def test_voice_upload_is_forwarded_to_ai_module() -> None:
     ai_module = FakeAIModule()
-    with TestClient(create_app(ai_module)) as client:
+    with TestClient(
+        create_app(ai_module, route_service=fake_route_service())
+    ) as client:
         response = client.post(
             "/api/assistant/voice",
             files={"audio": ("request.webm", b"audio-data", "audio/webm")},
@@ -67,8 +116,10 @@ def test_voice_upload_is_forwarded_to_ai_module() -> None:
         "audio/webm",
         "demo-session",
     )
-    assert response.json()["audioBase64"] == "bXAzLWRhdGE="
-    assert "route" not in response.json()
+    payload = response.json()
+    assert payload["audioBase64"] == "cm91dGUtYXVkaW8="
+    assert payload["route"] is not None
+    assert payload["route"]["destination"].startswith("Budapest")
 
 
 def test_fixtures_are_loaded_and_validated_at_startup() -> None:
