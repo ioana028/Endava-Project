@@ -1,3 +1,4 @@
+import json
 from typing import Any, BinaryIO, Protocol
 
 from ...core.errors import APIError
@@ -10,6 +11,9 @@ class OpenAIClient(Protocol):
         ...
 
     async def extract_intent(self, transcript: str) -> dict[str, str]:
+        ...
+
+    async def narrate_route(self, route_facts: dict[str, Any]) -> str:
         ...
 
     async def synthesize(self, text: str) -> bytes:
@@ -115,3 +119,38 @@ class AsyncOpenAIClient:
             response_format="mp3",
         )
         return await response.aread()
+
+    async def narrate_route(self, route_facts: dict[str, Any]) -> str:
+        response = await self._client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.2,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are Suzanne, a concise, warm in-car route assistant. "
+                        "Narrate only the supplied route facts. Mention destination, "
+                        "distance, and duration. If a vehicle alert says charging "
+                        "may be required, explain that fact and ask whether the "
+                        "driver wants a charging option. Never invent a station, "
+                        "price, review, weather detail, or route fact. Return only "
+                        "the spoken response in English, under 45 words."
+                    ),
+                },
+                {"role": "user", "content": json.dumps(route_facts)},
+            ],
+        )
+        if not response.choices:
+            raise APIError(
+                503,
+                "AI_UNAVAILABLE",
+                "The assistant could not narrate the route.",
+            )
+        content = response.choices[0].message.content
+        if not content or not content.strip():
+            raise APIError(
+                503,
+                "AI_UNAVAILABLE",
+                "The assistant could not narrate the route.",
+            )
+        return content.strip()

@@ -27,6 +27,10 @@ class FakeOpenAIClient:
         assert transcript == "Suzanne, take me to Budapest fast"
         return {"destination": "Budapest", "priority": "FASTEST"}
 
+    async def narrate_route(self, route_facts: dict) -> str:
+        assert route_facts["destination"] == "Budapest"
+        return "I've planned your route to Budapest."
+
     async def synthesize(self, text: str) -> bytes:
         self.synthesized_text = text
         return b"route-audio"
@@ -43,24 +47,22 @@ def route_with_alert() -> RouteResponse:
                 "type": "VEHICLE",
                 "severity": "WARNING",
                 "message": (
-                    "Your car has an estimated range of 95 km and cannot cover "
-                    "this distance. Should I add a charging stop for you?"
+                    "Vehicle estimated range is 95 km; route distance is 243 km. "
+                    "Charging may be required."
                 ),
             }
         ],
     )
 
 
-def test_route_narration_uses_structured_facts_and_one_charging_question() -> None:
+def test_route_narration_fallback_uses_structured_facts() -> None:
     narration = build_route_narration(route_with_alert())
 
     assert narration == (
         "I've planned your route to Budapest. It's 243 kilometres and it will "
-        "take approximately 2 hours 45 minutes. Your car has an estimated "
-        "range of 95 km and cannot cover this distance. Should I add a charging "
-        "stop for you?"
+        "take approximately 2 hours 45 minutes. Vehicle estimated range is 95 "
+        "km; route distance is 243 km. Charging may be required."
     )
-    assert narration.count("Should I add a charging stop for you?") == 1
 
 
 def test_route_narration_omits_charging_question_when_range_is_sufficient() -> None:
@@ -91,12 +93,12 @@ def test_fake_openai_client_handles_english_voice_and_route_tts() -> None:
     result = asyncio.run(
         module.process_voice(b"audio", "request.webm", "audio/webm", "demo")
     )
-    narration, audio = asyncio.run(module.synthesize_route(route_with_alert()))
+    narration = asyncio.run(module.synthesize_route(route_with_alert()))
 
     assert result.transcript == "Suzanne, take me to Budapest fast"
     assert result.intent == AssistantIntent(
         destination="Budapest", priority=RoutePriority.FASTEST
     )
     assert client.transcription_language == "en"
-    assert narration == client.synthesized_text
-    assert audio == b"route-audio"
+    assert narration.text == client.synthesized_text
+    assert narration.audio == b"route-audio"

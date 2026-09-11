@@ -2,12 +2,17 @@ import base64
 import re
 
 from ...core.errors import APIError
-from ...models.contracts import AssistantIntent, AssistantResponse, RoutePriority
+from ...models.contracts import (
+	AssistantIntent,
+	AssistantResponse,
+	RoutePriority,
+	RouteResponse,
+)
 from ...services.trip.service import RouteService
-from .ports import AIResult, AssistantAIModule
+from .ports import AIResult, AssistantAIModule, RouteNarration
 
 
-SPOKEN_RESPONSE = "Calculating route based on your preferences, hold on"
+DAY_ONE_SPOKEN_RESPONSE = "Calculating route based on your preferences, hold on"
 
 
 class LocalTextAIModule:
@@ -48,6 +53,26 @@ class LocalTextAIModule:
 		del audio, filename, content_type, session_id
 		raise APIError(503, "AI_UNAVAILABLE", "The voice assistant is unavailable.")
 
+	async def synthesize_route(self, route: RouteResponse) -> RouteNarration:
+		distance = f"{route.stats.total_distance_km:g}"
+		duration_minutes = int(route.stats.total_duration_minutes + 0.5)
+		hours, minutes = divmod(duration_minutes, 60)
+		if hours and minutes:
+			duration = f"{hours} hours {minutes} minutes"
+		elif hours:
+			duration = f"{hours} hour" if hours == 1 else f"{hours} hours"
+		else:
+			duration = f"{minutes} minute" if minutes == 1 else f"{minutes} minutes"
+
+		text = (
+			f"I've planned your route to {route.destination}. "
+			f"It's {distance} kilometres and it will take approximately {duration}."
+		)
+		for alert in route.alerts:
+			text = f"{text} {alert.message}"
+
+		return RouteNarration(text=text)
+
 
 class AssistantService:
 	def __init__(
@@ -81,13 +106,20 @@ class AssistantService:
 			if self._route_service
 			else None
 		)
+		narration = (
+			await self._ai_module.synthesize_route(route)
+			if route
+			else RouteNarration(DAY_ONE_SPOKEN_RESPONSE, result.audio)
+		)
 		audio_base64 = (
-			base64.b64encode(result.audio).decode("ascii") if result.audio else None
+			base64.b64encode(narration.audio).decode("ascii")
+			if narration.audio
+			else None
 		)
 		return AssistantResponse(
 			transcript=result.transcript,
 			intent=result.intent,
-			spoken_response=SPOKEN_RESPONSE,
+			spoken_response=narration.text,
 			audio_base64=audio_base64,
 			route=route,
 			toast_message=(

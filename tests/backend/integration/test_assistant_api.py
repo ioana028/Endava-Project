@@ -5,7 +5,7 @@ from fastapi.testclient import TestClient
 from backend.app.core.fixture_repository import FixtureRepository
 from backend.app.main import create_app
 from backend.app.models.contracts import AssistantIntent, Coordinates, RoutePriority
-from backend.app.services.assistant.ports import AIResult
+from backend.app.services.assistant.ports import AIResult, RouteNarration
 from backend.app.services.assistant.service import LocalTextAIModule
 from backend.app.services.trip.ports import GeocodedPlace, ProviderRoute
 from backend.app.services.trip.service import RouteService
@@ -69,6 +69,12 @@ class FakeAIModule:
             audio=b"mp3-data",
         )
 
+    async def synthesize_route(self, route) -> RouteNarration:
+        return RouteNarration(
+            text=f"Route to {route.destination} is ready.",
+            audio=b"route-audio",
+        )
+
 
 def test_text_fallback_matches_frontend_contract() -> None:
     with TestClient(
@@ -83,7 +89,7 @@ def test_text_fallback_matches_frontend_contract() -> None:
     payload = response.json()
     assert payload["transcript"] == "Suzanne, take me to Budapest fast"
     assert payload["intent"] == {"destination": "Budapest", "priority": "FASTEST"}
-    assert payload["spokenResponse"] == "Calculating route based on your preferences, hold on"
+    assert payload["spokenResponse"].startswith("I've planned your route to")
     assert payload["toastMessage"] == "INTENT: BUDAPEST (FASTEST)"
     assert payload["route"] is not None
     assert payload["route"]["destination"].startswith("Budapest")
@@ -111,7 +117,7 @@ def test_voice_upload_is_forwarded_to_ai_module() -> None:
         "demo-session",
     )
     payload = response.json()
-    assert payload["audioBase64"] == "bXAzLWRhdGE="
+    assert payload["audioBase64"] == "cm91dGUtYXVkaW8="
     assert payload["route"] is not None
     assert payload["route"]["destination"].startswith("Budapest")
 

@@ -1,7 +1,7 @@
 import io
 
 from ...models.contracts import AssistantIntent, RouteResponse
-from ...services.assistant.ports import AIResult
+from ...services.assistant.ports import AIResult, RouteNarration
 from .client import OpenAIClient
 
 
@@ -42,9 +42,14 @@ class OpenAIAssistantModule:
         intent = AssistantIntent.model_validate(await self._client.extract_intent(text))
         return AIResult(transcript=text, intent=intent)
 
-    async def synthesize_route(self, route: RouteResponse) -> tuple[str, bytes]:
-        narration = build_route_narration(route)
-        return narration, await self._client.synthesize(narration)
+    async def synthesize_route(self, route: RouteResponse) -> RouteNarration:
+        narration = await self._client.narrate_route(
+            route.model_dump(mode="json", by_alias=True)
+        )
+        return RouteNarration(
+            text=narration,
+            audio=await self._client.synthesize(narration),
+        )
 
     async def process_voice(
         self,

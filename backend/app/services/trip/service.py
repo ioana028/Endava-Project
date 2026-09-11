@@ -70,8 +70,8 @@ class RouteService:
                 type="VEHICLE",
                 severity="WARNING",
                 message=(
-                    f"Your car has an estimated range of {vehicle_range:g} km and "
-                    "cannot cover this distance. Should I add a charging stop for you?"
+                    f"Vehicle estimated range is {vehicle_range:g} km; "
+                    f"route distance is {distance_km:g} km. Charging may be required."
                 ),
             )
         ]

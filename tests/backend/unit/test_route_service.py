@@ -119,7 +119,8 @@ def test_route_beyond_vehicle_range_returns_charging_question() -> None:
     assert len(route.alerts) == 1
     assert route.alerts[0].type == "VEHICLE"
     assert route.alerts[0].severity == "WARNING"
-    assert "Should I add a charging stop for you?" in route.alerts[0].message
+    assert "estimated range is 95 km" in route.alerts[0].message
+    assert "route distance is 243 km" in route.alerts[0].message
     assert route.stops == []
 
 
