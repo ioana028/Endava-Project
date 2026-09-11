@@ -39,7 +39,11 @@ class RouteService:
                 503, "ROUTING_UNAVAILABLE", "The routing service is unavailable."
             ) from error
 
-        if provider_route.distance_meters < 0 or provider_route.duration_seconds < 0:
+        if (
+            provider_route.distance_meters < 0
+            or provider_route.duration_seconds < 0
+            or len(provider_route.geometry) < 2
+        ):
             raise APIError(503, "INVALID_ROUTE", "The routing service returned invalid data.")
 
         distance_km = round(provider_route.distance_meters / 1000, 2)

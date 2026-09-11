@@ -55,6 +55,26 @@ class FailingRoutingProvider(FakeRoutingProvider):
         raise RoutingProviderError
 
 
+class InvalidRoutingProvider(FakeRoutingProvider):
+    def __init__(self, distance_meters: float, duration_seconds: float, geometry: tuple[tuple[float, float], ...]) -> None:
+        super().__init__(distance_meters)
+        self.duration_seconds = duration_seconds
+        self.geometry = geometry
+
+    async def route(
+        self,
+        origin: GeocodedPlace,
+        destination: GeocodedPlace,
+        priority: RoutePriority,
+    ) -> ProviderRoute:
+        del origin, destination, priority
+        return ProviderRoute(
+            distance_meters=self.distance_meters,
+            duration_seconds=self.duration_seconds,
+            geometry=self.geometry,
+        )
+
+
 def repository() -> FixtureRepository:
     fixture_repository = FixtureRepository(
         Path("data/vehicles/telemetry.json"), Path("data/partners/partners.json")
@@ -125,6 +145,28 @@ def test_provider_failure_returns_stable_api_error() -> None:
     assert error.value.code == "ROUTING_UNAVAILABLE"
 
 
+@pytest.mark.parametrize(
+    ("distance_meters", "duration_seconds", "geometry"),
+    [
+        (-1, 9_900, ((16.37, 48.20), (19.04, 47.50))),
+        (243_000, -1, ((16.37, 48.20), (19.04, 47.50))),
+        (243_000, 9_900, ((16.37, 48.20),)),
+    ],
+)
+def test_invalid_provider_route_returns_stable_api_error(
+    distance_meters: float,
+    duration_seconds: float,
+    geometry: tuple[tuple[float, float], ...],
+) -> None:
+    provider = InvalidRoutingProvider(distance_meters, duration_seconds, geometry)
+
+    with pytest.raises(APIError) as error:
+        asyncio.run(RouteService(provider, repository()).plan(intent()))
+
+    assert error.value.status_code == 503
+    assert error.value.code == "INVALID_ROUTE"
+
+
 def test_assistant_service_returns_route_from_extracted_intent() -> None:
     route_service = RouteService(FakeRoutingProvider(), repository())
     service = AssistantService(LocalTextAIModule(), route_service)
@@ -137,3 +179,7 @@ def test_assistant_service_returns_route_from_extracted_intent() -> None:
     assert response.route is not None
     assert response.route.stats.total_distance_km == 243
     assert response.route.alerts[0].type == "VEHICLE"
+    response_json = response.model_dump(by_alias=True)
+    assert response_json["spokenResponse"]
+    assert response_json["route"]["stats"]["totalDistanceKm"] == 243
+    assert response_json["route"]["stats"]["totalDurationMinutes"] == 165
