@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { sendVoice } from '../../../services/assistantApi'
 import type { AssistantResponse } from '../../../types/contracts'
 
@@ -7,6 +7,11 @@ export type AssistantState =
   | 'LISTENING'
   | 'PROCESSING'
   | 'SPEAKING'
+
+const processingAudioFiles = [
+  '/audio/calculating-route.mp3',
+  '/audio/checking-route.mp3',
+]
 
 function getSupportedMimeType() {
   const candidates = [
@@ -18,15 +23,51 @@ function getSupportedMimeType() {
   return candidates.find((type) => MediaRecorder.isTypeSupported(type))
 }
 
-function playBase64Audio(audioBase64: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const audio = new Audio(`data:audio/mpeg;base64,${audioBase64}`)
+interface AudioPlayback {
+  finished: Promise<void>
+  stop: () => void
+}
 
-    audio.onended = () => resolve()
-    audio.onerror = () => reject(new Error('Unable to play Suzanne audio'))
+function playAudioFile(path: string): AudioPlayback {
+  const audio = new Audio(path)
+  let resolveFinished: () => void = () => undefined
 
-    void audio.play().catch(reject)
+  const finished = new Promise<void>((resolve) => {
+    resolveFinished = resolve
   })
+
+  const finish = () => {
+    audio.onended = null
+    audio.onerror = null
+    resolveFinished()
+  }
+
+  audio.onended = finish
+  audio.onerror = finish
+
+  void audio.play().catch(finish)
+
+  return {
+    finished,
+    stop: () => {
+      audio.pause()
+      audio.currentTime = 0
+      finish()
+    },
+  }
+}
+
+function playProcessingAudio(): AudioPlayback {
+  const filename =
+    processingAudioFiles[
+      Math.floor(Math.random() * processingAudioFiles.length)
+    ]
+
+  return playAudioFile(filename)
+}
+
+function playBase64Audio(audioBase64: string): Promise<void> {
+  return playAudioFile(`data:audio/mpeg;base64,${audioBase64}`).finished
 }
 
 export function useVoiceAssistant() {
@@ -37,6 +78,18 @@ export function useVoiceAssistant() {
   const recorderRef = useRef<MediaRecorder | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
+  const processingAudioRef = useRef<AudioPlayback | null>(null)
+
+  function stopProcessingAudio() {
+    const playback = processingAudioRef.current
+
+    if (!playback) {
+      return
+    }
+
+    playback.stop()
+    processingAudioRef.current = null
+  }
 
   async function startListening() {
     setError(null)
@@ -62,6 +115,7 @@ export function useVoiceAssistant() {
     })
 
     recorder.addEventListener('stop', () => {
+      processingAudioRef.current = playProcessingAudio()
       void processRecording(recorder.mimeType)
     })
 
@@ -84,7 +138,14 @@ export function useVoiceAssistant() {
       })
 
       const assistantResponse = await sendVoice(audioBlob)
+
+      const processingAudio = processingAudioRef.current
       setResponse(assistantResponse)
+
+      if (processingAudio) {
+        await processingAudio.finished
+        processingAudioRef.current = null
+      }
 
       if (assistantResponse.audioBase64) {
         setState('SPEAKING')
@@ -93,11 +154,15 @@ export function useVoiceAssistant() {
 
       setState('IDLE')
     } catch (requestError) {
+      stopProcessingAudio()
+
       setError(
         requestError instanceof Error
           ? requestError.message
-          : 'Voice request failed',
+          : 'Unable to calculate your route.',
       )
+      setState('SPEAKING')
+      await playAudioFile('/audio/route-error.mp3').finished
       setState('IDLE')
     } finally {
       streamRef.current?.getTracks().forEach((track) => track.stop())
@@ -105,6 +170,13 @@ export function useVoiceAssistant() {
       chunksRef.current = []
     }
   }
+
+  useEffect(() => {
+    return () => {
+      stopProcessingAudio()
+      streamRef.current?.getTracks().forEach((track) => track.stop())
+    }
+  }, [])
 
   return {
     state,
