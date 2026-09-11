@@ -44,10 +44,17 @@ class OpenAIAssistantModule:
         return AIResult(transcript=text, intent=intent)
 
     async def synthesize_route(self, route: RouteResponse) -> RouteNarration:
+        route_facts = {
+            "destination": route.destination,
+            "distanceKm": route.stats.total_distance_km,
+            "durationMinutes": route.stats.total_duration_minutes,
+            "vehicleAlerts": [
+                alert.message for alert in route.alerts if alert.type == "VEHICLE"
+            ],
+        }
+
         try:
-            narration = await self._client.narrate_route(
-                route.model_dump(mode="json", by_alias=True)
-            )
+            narration = await self._client.narrate_route(route_facts)
             audio = await self._client.synthesize(narration)
         except APIError:
             raise
