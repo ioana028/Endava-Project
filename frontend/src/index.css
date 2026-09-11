@@ -109,3 +109,17 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+.route-map {
+  width: 100%;
+  height: 480px;
+  margin: 24px 0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+@media (max-width: 700px) {
+  .route-map {
+    height: 360px;
+  }
+}
