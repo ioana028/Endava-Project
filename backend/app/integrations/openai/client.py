@@ -1,8 +1,12 @@
 from typing import Any, BinaryIO, Protocol
 
+from ...core.errors import APIError
+
 
 class OpenAIClient(Protocol):
-    async def transcribe(self, audio: BinaryIO, filename: str) -> str:
+    async def transcribe(
+        self, audio: BinaryIO, filename: str, language: str = "en"
+    ) -> str:
         ...
 
     async def extract_intent(self, transcript: str) -> dict[str, str]:
@@ -20,10 +24,13 @@ class AsyncOpenAIClient:
 
         self._client = AsyncOpenAI(api_key=api_key)
 
-    async def transcribe(self, audio: BinaryIO, filename: str) -> str:
+    async def transcribe(
+        self, audio: BinaryIO, filename: str, language: str = "en"
+    ) -> str:
         result = await self._client.audio.transcriptions.create(
             model="whisper-1",
             file=(filename, audio),
+            language=language,
         )
         return result.text
 
@@ -73,12 +80,31 @@ class AsyncOpenAIClient:
                 "function": {"name": "extract_route_intent"},
             },
         )
+        if not response.choices or not response.choices[0].message.tool_calls:
+            raise APIError(
+                503,
+                "AI_UNAVAILABLE",
+                "The assistant could not extract a route intent.",
+            )
         tool_call = response.choices[0].message.tool_calls[0]
         arguments: Any = tool_call.function.arguments
         if isinstance(arguments, str):
             import json
 
-            arguments = json.loads(arguments)
+            try:
+                arguments = json.loads(arguments)
+            except json.JSONDecodeError as error:
+                raise APIError(
+                    503,
+                    "AI_UNAVAILABLE",
+                    "The assistant returned an invalid route intent.",
+                ) from error
+        if not isinstance(arguments, dict):
+            raise APIError(
+                503,
+                "AI_UNAVAILABLE",
+                "The assistant returned an invalid route intent.",
+            )
         return arguments
 
     async def synthesize(self, text: str) -> bytes:
