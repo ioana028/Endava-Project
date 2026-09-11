@@ -43,12 +43,16 @@ def test_text_fallback_matches_frontend_contract() -> None:
         )
 
     assert response.status_code == 200
-    assert response.json() == {
-        "transcript": "Suzanne, take me to Budapest fast",
-        "intent": {"destination": "Budapest", "priority": "FASTEST"},
-        "spokenResponse": "Calculating route based on your preferences, hold on",
-        "toastMessage": "INTENT: BUDAPEST (FASTEST)",
-    }
+    payload = response.json()
+    assert payload["transcript"] == "Suzanne, take me to Budapest fast"
+    assert payload["intent"] == {"destination": "Budapest", "priority": "FASTEST"}
+    assert payload["spokenResponse"] == "Calculating route based on your preferences, hold on"
+    assert payload["toastMessage"] == "INTENT: BUDAPEST (FASTEST)"
+    assert payload["route"] is not None
+    assert payload["route"]["destination"].startswith("Budapest")
+    assert payload["route"]["stats"]["totalDistanceKm"] > 0
+    assert payload["route"]["stats"]["totalDurationMinutes"] > 0
+    assert payload["route"]["geometry"]
 
 
 def test_voice_upload_is_forwarded_to_ai_module() -> None:
@@ -67,8 +71,10 @@ def test_voice_upload_is_forwarded_to_ai_module() -> None:
         "audio/webm",
         "demo-session",
     )
-    assert response.json()["audioBase64"] == "bXAzLWRhdGE="
-    assert "route" not in response.json()
+    payload = response.json()
+    assert payload["audioBase64"] == "bXAzLWRhdGE="
+    assert payload["route"] is not None
+    assert payload["route"]["destination"].startswith("Budapest")
 
 
 def test_fixtures_are_loaded_and_validated_at_startup() -> None:
