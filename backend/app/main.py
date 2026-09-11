@@ -1,6 +1,5 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -8,6 +7,7 @@ from .api.assistant import router as assistant_router
 from .core.errors import register_error_handlers
 from .core.fixture_repository import FixtureRepository
 from .core.settings import Settings
+from .integrations.google_maps.routing import GoogleMapsRoutingProvider
 from .integrations.openai.assistant import OpenAIAssistantModule
 from .integrations.openai.client import AsyncOpenAIClient
 from .models.contracts import HealthResponse
@@ -24,6 +24,10 @@ def create_app(
     fixture_repository = FixtureRepository(
         settings.telemetry_path, settings.partners_path
     )
+    route_service = route_service or RouteService(
+        GoogleMapsRoutingProvider(settings.google_server_api_key),
+        fixture_repository,
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -33,7 +37,7 @@ def create_app(
     application = FastAPI(title="Suzanne Backend", version="0.1.0", lifespan=lifespan)
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:5173"],
+        allow_origins=list(settings.cors_origins),
         allow_credentials=False,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Content-Type"],
