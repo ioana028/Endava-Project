@@ -66,6 +66,7 @@ class GoogleMapsRoutingProvider:
             "travelMode": "DRIVE",
             "routingPreference": self._routing_preference(priority),
             "polylineQuality": "HIGH_QUALITY",
+            "polylineEncoding": "GEO_JSON_LINESTRING",
             "units": "METRIC",
             "languageCode": "en-US",
         }
@@ -73,6 +74,7 @@ class GoogleMapsRoutingProvider:
             "X-Goog-Api-Key": self._api_key,
             "X-Goog-FieldMask": (
                 "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline"
+                ",routes.polyline.geoJsonLinestring"
             ),
         }
 
@@ -89,7 +91,10 @@ class GoogleMapsRoutingProvider:
             duration = _DURATION_PATTERN.fullmatch(route["duration"])
             if duration is None:
                 raise ValueError("Invalid Google duration")
-            geometry = tuple(_decode_polyline(route["polyline"]["encodedPolyline"]))
+            geometry = tuple(
+                (float(point[0]), float(point[1]))
+                for point in route["polyline"]["geoJsonLinestring"]["coordinates"]
+            )
             if len(geometry) < 2:
                 raise ValueError("Google route geometry is incomplete")
             return ProviderRoute(
@@ -110,33 +115,3 @@ class GoogleMapsRoutingProvider:
     @staticmethod
     def _routing_preference(priority: RoutePriority) -> str:
         return "TRAFFIC_AWARE_OPTIMAL" if priority == RoutePriority.FASTEST else "TRAFFIC_AWARE"
-
-
-def _decode_polyline(encoded: str) -> list[tuple[float, float]]:
-    points: list[tuple[float, float]] = []
-    index = latitude = longitude = 0
-
-    while index < len(encoded):
-        latitude_delta, index = _decode_value(encoded, index)
-        longitude_delta, index = _decode_value(encoded, index)
-        latitude += latitude_delta
-        longitude += longitude_delta
-        points.append((longitude / 1e5, latitude / 1e5))
-
-    return points
-
-
-def _decode_value(encoded: str, index: int) -> tuple[int, int]:
-    value = shift = 0
-
-    while True:
-        if index >= len(encoded):
-            raise ValueError("Invalid encoded polyline")
-        byte = ord(encoded[index]) - 63
-        index += 1
-        value |= (byte & 0x1F) << shift
-        shift += 5
-        if byte < 0x20:
-            break
-
-    return (-(value >> 1) if value & 1 else value >> 1), index
