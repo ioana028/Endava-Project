@@ -65,7 +65,7 @@ class GoogleMapsRoutingProvider:
             "destination": {"location": {"latLng": self._lat_lng(destination)}},
             "travelMode": "DRIVE",
             "routingPreference": self._routing_preference(priority),
-            "polylineQuality": "HIGH",
+            "polylineQuality": "HIGH_QUALITY",
             "units": "METRIC",
             "languageCode": "en-US",
         }
