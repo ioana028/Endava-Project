@@ -73,8 +73,8 @@ class GoogleMapsRoutingProvider:
         headers = {
             "X-Goog-Api-Key": self._api_key,
             "X-Goog-FieldMask": (
-                "routes.distanceMeters,routes.duration,routes.polyline.encodedPolyline"
-                ",routes.polyline.geoJsonLinestring"
+                "routes.distanceMeters,routes.duration,"
+                "routes.polyline.geoJsonLinestring"
             ),
         }
 
