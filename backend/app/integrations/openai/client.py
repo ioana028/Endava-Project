@@ -1,4 +1,5 @@
 import json
+import secrets
 from typing import Any, BinaryIO, Protocol
 
 from ...core.errors import APIError
@@ -121,6 +122,14 @@ class AsyncOpenAIClient:
         return await response.aread()
 
     async def narrate_route(self, route_facts: dict[str, Any]) -> str:
+        style = secrets.choice(
+            [
+                "Sound warm and concise.",
+                "Sound natural and lightly conversational.",
+                "Sound calm and reassuring.",
+                "Sound like a friendly professional concierge.",
+            ]
+        )
         response = await self._client.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0.2,
@@ -128,7 +137,8 @@ class AsyncOpenAIClient:
                 {
                     "role": "system",
                     "content": (
-                        "You are Suzanne, a concise, warm in-car route assistant. "
+                        "You are Suzanne, a concise in-car route assistant. "
+                        f"{style} Vary your phrasing naturally between requests. "
                         "Narrate only the supplied route facts. Mention destination, "
                         "distance, and duration. If a vehicle alert says charging "
                         "may be required, explain that fact and ask whether the "

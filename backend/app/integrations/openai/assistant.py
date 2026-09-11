@@ -1,6 +1,7 @@
 import io
 
 from ...models.contracts import AssistantIntent, RouteResponse
+from ...core.errors import APIError
 from ...services.assistant.ports import AIResult, RouteNarration
 from .client import OpenAIClient
 
@@ -43,13 +44,21 @@ class OpenAIAssistantModule:
         return AIResult(transcript=text, intent=intent)
 
     async def synthesize_route(self, route: RouteResponse) -> RouteNarration:
-        narration = await self._client.narrate_route(
-            route.model_dump(mode="json", by_alias=True)
-        )
-        return RouteNarration(
-            text=narration,
-            audio=await self._client.synthesize(narration),
-        )
+        try:
+            narration = await self._client.narrate_route(
+                route.model_dump(mode="json", by_alias=True)
+            )
+            audio = await self._client.synthesize(narration)
+        except APIError:
+            raise
+        except Exception as error:
+            raise APIError(
+                503,
+                "AI_UNAVAILABLE",
+                "Suzanne could not prepare the spoken route response.",
+            ) from error
+
+        return RouteNarration(text=narration, audio=audio)
 
     async def process_voice(
         self,
@@ -59,8 +68,17 @@ class OpenAIAssistantModule:
         session_id: str | None,
     ) -> AIResult:
         del content_type
-        transcript = await self._client.transcribe(
-            io.BytesIO(audio), filename, language=SUPPORTED_LANGUAGE
-        )
-        result = await self.process_text(transcript, session_id)
+        try:
+            transcript = await self._client.transcribe(
+                io.BytesIO(audio), filename, language=SUPPORTED_LANGUAGE
+            )
+            result = await self.process_text(transcript, session_id)
+        except APIError:
+            raise
+        except Exception as error:
+            raise APIError(
+                503,
+                "AI_UNAVAILABLE",
+                "Suzanne could not understand the voice request.",
+            ) from error
         return AIResult(transcript=transcript, intent=result.intent, audio=result.audio)
