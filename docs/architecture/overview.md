@@ -24,12 +24,13 @@ FastAPI modular monolith
 
 ## Technology choices
 
-- Frontend: React 18, TypeScript, Vite, TailwindCSS, MapLibre GL, Lucide.
+- Frontend: React 18, TypeScript, Vite, TailwindCSS, Google Maps JavaScript
+  API, Lucide.
 - Backend: Python 3.11+, FastAPI, Pydantic v2, Uvicorn, HTTPX.
 - AI: OpenAI Whisper `whisper-1`, tool calling/structured output, and TTS
   `tts-1` with the `nova` voice for the Day 1 demo.
-- Routing and POIs: OpenRouteService adapter, to be implemented after the
-  walking skeleton.
+- Routing: Google Routes and Geocoding API adapters, to be implemented after
+  the walking skeleton. Google Places is reserved for the later POI phase.
 - Data: flat JSON fixtures under `data/`; no remote database.
 
 ## Core principle

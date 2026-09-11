@@ -19,7 +19,7 @@ and lightweight integration reliability.
 
 ## Security and reliability rules
 
-- Never expose `OPENAI_API_KEY` or `OPENROUTESERVICE_API_KEY` to the browser.
+- Never expose `OPENAI_API_KEY` or `GOOGLE_SERVER_API_KEY` to the browser.
 - Validate uploaded audio size and MIME type before provider calls.
 - Keep provider errors behind stable API errors; do not leak stack traces.
 - Keep CORS explicit; do not use wildcard origins with credentials.

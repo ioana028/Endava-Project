@@ -43,7 +43,7 @@ bootstrap skeleton; do not claim routes or endpoints already exist.
 
 Keep the application a local modular monolith. API routes validate and
 delegate; deterministic services calculate facts; provider adapters isolate
-OpenRouteService and other external formats. The LLM may extract FASTEST,
+Google Maps Platform and other external formats. The LLM may extract FASTEST,
 CHEAPEST, SCENIC, or BALANCED intent, but it must never calculate or invent
 route geometry, distance, duration, prices, stations, weather, range, or
 transaction results.

@@ -26,11 +26,14 @@ Copy `.env.example` to `.env` at the repository root. Current variables are:
 | `PORT` | Backend port, normally `8000` |
 | `FRONTEND_PORT` | Frontend port, normally `5173` |
 | `OPENAI_API_KEY` | Backend-only OpenAI credential |
-| `OPENROUTESERVICE_API_KEY` | Backend-only routing credential |
+| `GOOGLE_SERVER_API_KEY` | Backend-only Google Routes, Geocoding, and later Places credential |
+| `VITE_GOOGLE_MAPS_BROWSER_KEY` | Frontend Google Maps JavaScript key, restricted to local/frontend origins |
 | `CORS_ORIGINS` | Comma-separated allowed browser origins |
 
-Never put either API key in frontend source, Vite-exposed variables, JSON
-fixtures, logs, or committed files. `.env` is ignored by Git; `.env.example`
+Never put `OPENAI_API_KEY` or `GOOGLE_SERVER_API_KEY` in frontend source,
+Vite-exposed variables, JSON fixtures, logs, or committed files. The browser
+Maps key is intentionally Vite-exposed and must be restricted by HTTP referrer
+to the allowed frontend origins. `.env` is ignored by Git; `.env.example`
 contains placeholders only.
 
 ## Health and startup behavior

@@ -160,10 +160,10 @@ The frontend must consume structured route fields. It must not parse
 
 ## Person D: Platform and integration
 
-- Integrate the agreed routing provider, such as OpenRouteService, behind the
-  provider-neutral boundary used by Person B.
-- Add routing-provider configuration through `.env` and keep all provider keys
-  backend-only.
+- Integrate Google Routes and Geocoding APIs behind the provider-neutral
+  boundary used by Person B.
+  key backend-only. Person A uses a separately restricted browser key for the
+  Google Maps JavaScript API when rendering the map.
 - Implement provider timeouts, bounded retries, and clear error handling for
   geocoding and route requests.
 - Add a deterministic local fixture or mock-routing mode for development and
