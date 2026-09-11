@@ -13,9 +13,13 @@ from .integrations.openai.client import AsyncOpenAIClient
 from .models.contracts import HealthResponse
 from .services.assistant.ports import AssistantAIModule
 from .services.assistant.service import AssistantService, LocalTextAIModule
+from .services.trip.service import RouteService
 
 
-def create_app(ai_module: AssistantAIModule | None = None) -> FastAPI:
+def create_app(
+    ai_module: AssistantAIModule | None = None,
+    route_service: RouteService | None = None,
+) -> FastAPI:
     settings = Settings()
     fixture_repository = FixtureRepository(
         settings.telemetry_path, settings.partners_path
@@ -44,7 +48,10 @@ def create_app(ai_module: AssistantAIModule | None = None) -> FastAPI:
         except ModuleNotFoundError as error:
             if error.name != "openai":
                 raise
-    application.state.assistant_service = AssistantService(configured_ai_module)
+    application.state.assistant_service = AssistantService(
+        configured_ai_module,
+        route_service=route_service,
+    )
     application.include_router(assistant_router)
     register_error_handlers(application)
 

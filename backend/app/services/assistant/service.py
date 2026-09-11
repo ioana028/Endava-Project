@@ -3,6 +3,7 @@ import re
 
 from ...core.errors import APIError
 from ...models.contracts import AssistantIntent, AssistantResponse, RoutePriority
+from ...services.trip.service import RouteService
 from .ports import AIResult, AssistantAIModule
 
 
@@ -49,13 +50,18 @@ class LocalTextAIModule:
 
 
 class AssistantService:
-	def __init__(self, ai_module: AssistantAIModule) -> None:
+	def __init__(
+		self,
+		ai_module: AssistantAIModule,
+		route_service: RouteService | None = None,
+	) -> None:
 		self._ai_module = ai_module
+		self._route_service = route_service
 
 	async def interact(self, text: str, session_id: str | None) -> AssistantResponse:
 		if not text.strip():
 			raise APIError(400, "INVALID_REQUEST", "Text must not be empty.")
-		return self._response(await self._ai_module.process_text(text, session_id))
+		return await self._response(await self._ai_module.process_text(text, session_id))
 
 	async def process_voice(
 		self,
@@ -67,10 +73,14 @@ class AssistantService:
 		result = await self._ai_module.process_voice(
 			audio, filename, content_type, session_id
 		)
-		return self._response(result)
+		return await self._response(result)
 
-	@staticmethod
-	def _response(result: AIResult) -> AssistantResponse:
+	async def _response(self, result: AIResult) -> AssistantResponse:
+		route = (
+			await self._route_service.plan(result.intent)
+			if self._route_service
+			else None
+		)
 		audio_base64 = (
 			base64.b64encode(result.audio).decode("ascii") if result.audio else None
 		)
@@ -79,7 +89,7 @@ class AssistantService:
 			intent=result.intent,
 			spoken_response=SPOKEN_RESPONSE,
 			audio_base64=audio_base64,
-			route=None,
+			route=route,
 			toast_message=(
 				f"INTENT: {result.intent.destination.upper()} "
 				f"({result.intent.priority.value})"
