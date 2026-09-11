@@ -48,7 +48,7 @@ local backend URL. The backend reads configuration from the root `.env`.
 ```
 
 `environment` comes from `ENVIRONMENT`. Health must not require OpenAI or
-OpenRouteService to be available.
+Google Maps Platform to be available.
 
 ## `POST /api/assistant/interact`
 

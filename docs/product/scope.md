@@ -27,7 +27,8 @@ understand -> plan -> adapt -> recommend -> book/pay (simulated)
     when no partner is available.
 - Vienna to Budapest demo corridor.
 - OpenAI STT, structured intent/tool calling, and TTS.
-- OpenRouteService adapter for future route and POI data.
+- Google Maps Platform adapters: Routes and Geocoding for route planning,
+  Maps JavaScript for frontend rendering, and Places for the future POI phase.
 - Flat JSON fixtures for demo vehicle and partners.
 - Optional partner suggestions and discounts with explicit voice consent; no
     on-screen confirmation buttons.

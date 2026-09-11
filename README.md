@@ -28,9 +28,11 @@ prototype does not use on-screen confirmation buttons.
 
 A local modular monolith designed for rapid iteration without cloud database overhead.
 
-- **Frontend:** React 18, TypeScript, TailwindCSS, MapLibre GL, Lucide Icons.
+- **Frontend:** React 18, TypeScript, TailwindCSS, Google Maps JavaScript API,
+  Lucide Icons.
 - **Backend:** Python 3.11+, FastAPI, Pydantic v2, Uvicorn, HTTPX.
-- **External Integrations:** OpenAI API (Structured Outputs / Tools), OpenRouteService (Routing & POIs).
+- **External Integrations:** OpenAI API (Structured Outputs / Tools), Google
+   Maps Platform (Routes, Geocoding, Maps JavaScript, and later Places).
 - **Data Stores:** Flat JSON files (data/vehicles/telemetry.json, data/partners/partners.json). Zero remote DB dependencies.
 
 ---
@@ -40,5 +42,6 @@ A local modular monolith designed for rapid iteration without cloud database ove
 1. **Prerequisites:** Node.js 18+, Python 3.11+, Git.
 2. **Environment:**
    cp .env.example .env
-   # Populate OPENAI_API_KEY and OPENROUTESERVICE_API_KEY in .env
+   # Populate OPENAI_API_KEY, GOOGLE_SERVER_API_KEY, and
+   # VITE_GOOGLE_MAPS_BROWSER_KEY in .env
 3. **Contracts Reference:** Review frontend/src/types/contracts.ts and docs/api/contracts.md before writing endpoints or UI state.
