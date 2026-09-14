@@ -37,7 +37,18 @@ class Coordinates(ContractModel):
 class StopPinpoint(ContractModel):
     id: str
     name: str
-    category: Literal["charging", "food", "rest", "toll", "vignette", "service"]
+    category: Literal[
+        "charging",
+        "food",
+        "rest",
+        "toll",
+        "vignette",
+        "service",
+        "hotel",
+        "restaurant",
+        "attraction",
+        "coffee",
+    ]
     coords: tuple[float, float]
     rating: float | None = None
     tag: str
@@ -78,6 +89,16 @@ class RealtimeToolRouteRequest(ContractModel):
 
 class RealtimeToolRouteResponse(ContractModel):
     route: RouteResponse
+
+
+class RealtimeToolSearchRoutePoiRequest(ContractModel):
+    category: str = Field(min_length=1, max_length=50)
+    location: str | None = None
+    preference: str | None = None
+
+
+class RealtimeToolSearchRoutePoiResponse(ContractModel):
+    results: list[StopPinpoint] = Field(default_factory=list)
 
 
 class RealtimeSessionResponse(ContractModel):

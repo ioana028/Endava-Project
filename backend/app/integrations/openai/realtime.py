@@ -31,6 +31,11 @@ is a warning or after introducing a warning. If vehicleAlerts is empty, do not
 mention range or charging. A successful result is never a snag or failed
 request.
 
+If the driver asks for a POI, call search_route_poi with the requested
+category, optional location, and optional preference. Route-aware POI results
+must be returned only as compact factual suggestions and must not mutate the
+active route unless the driver explicitly asks to add or route through one.
+
 Only describe an error when the tool result explicitly contains an error.
 Never invent or estimate destinations, distance, duration, range, traffic,
 charging, weather, partner benefits, prices, or any other route fact.
@@ -59,7 +64,37 @@ REALTIME_TOOLS = [
             "required": ["destination", "priority"],
             "additionalProperties": False,
         },
-    }
+    },
+    {
+        "type": "function",
+        "name": "search_route_poi",
+        "description": (
+            "Search a route-aware POI such as a hotel, restaurant, attraction, "
+            "charger, coffee stop, rest area, or service point."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "description": (
+                        "The requested POI category, such as hotel, restaurant, "
+                        "attraction, charging, coffee, rest, or service."
+                    ),
+                },
+                "location": {
+                    "type": "string",
+                    "description": "Optional location hint such as near the route or near the destination.",
+                },
+                "preference": {
+                    "type": "string",
+                    "description": "Optional preference like Italian, cheap, scenic, or family-friendly.",
+                },
+            },
+            "required": ["category"],
+            "additionalProperties": False,
+        },
+    },
 ]
 
 

@@ -1,7 +1,14 @@
 from ...core.errors import APIError
 from ...core.fixture_repository import FixtureRepository
+from ...core.route_country_rules import (
+    derive_route_requirements,
+    detect_border_crossings,
+    load_route_country_rules,
+)
+from ...integrations.places.provider import LocalPlacesProvider
 from ...models.contracts import (
     AssistantIntent,
+    Coordinates,
     RouteAlert,
     RouteResponse,
     StopPinpoint,
@@ -24,10 +31,14 @@ class RouteService:
         provider: RoutingProvider,
         fixture_repository: FixtureRepository,
         origin: str = DEFAULT_ORIGIN,
+        places_provider: LocalPlacesProvider | None = None,
     ) -> None:
         self._provider = provider
         self._fixture_repository = fixture_repository
         self._origin = origin
+        self._places_provider = places_provider or LocalPlacesProvider(
+            fixture_repository
+        )
 
     async def plan(self, intent: AssistantIntent) -> RouteResponse:
         try:
@@ -53,11 +64,37 @@ class RouteService:
             raise APIError(503, "INVALID_ROUTE", "The routing service returned invalid data.")
 
         distance_km = round(provider_route.distance_meters / 1000, 2)
+        charging_stop = self._build_charging_stop(distance_km)
+        if charging_stop is not None:
+            waypoint = GeocodedPlace(
+                display_name=charging_stop.name,
+                coordinates=Coordinates(
+                    lng=charging_stop.coords[0],
+                    lat=charging_stop.coords[1],
+                ),
+            )
+            try:
+                provider_route = await self._provider.route(
+                    origin,
+                    destination,
+                    intent.priority,
+                    waypoints=(waypoint,),
+                )
+            except (RoutingProviderError, OSError) as error:
+                raise APIError(
+                    503, "ROUTING_UNAVAILABLE", "The routing service is unavailable."
+                ) from error
+            distance_km = round(provider_route.distance_meters / 1000, 2)
+
         driving_duration_minutes = round(provider_route.duration_seconds / 60, 1)
         alerts = self._range_alert(distance_km)
-        charging_stop = self._build_charging_stop(distance_km)
-        border_crossings = self._detect_border_crossings(origin, destination)
-        route_requirements = self._route_requirements(border_crossings, destination)
+        country_rules = load_route_country_rules()
+        border_crossings = detect_border_crossings(
+            origin.display_name,
+            destination.display_name,
+            country_rules,
+        )
+        route_requirements = derive_route_requirements(border_crossings, country_rules)
 
         return RouteResponse(
             origin=origin.display_name,
@@ -73,6 +110,21 @@ class RouteService:
             border_crossings=border_crossings,
             route_requirements=route_requirements,
         )
+
+    async def search_route_poi(
+        self,
+        category: str,
+        location: str | None = None,
+        preference: str | None = None,
+    ) -> list[StopPinpoint]:
+        try:
+            return await self._places_provider.search(category, location, preference)
+        except ValueError as error:
+            raise APIError(
+                400,
+                "INVALID_POI_CATEGORY",
+                "The requested POI category is not supported.",
+            ) from error
 
     def _range_alert(self, distance_km: float) -> list[RouteAlert]:
         vehicle_range = self._fixture_repository.fixtures.telemetry.estimated_range_km
@@ -129,25 +181,3 @@ class RouteService:
             partner_benefit=partner_benefit,
         )
 
-    def _route_requirements(
-        self, border_crossings: list[str], destination: GeocodedPlace
-    ) -> list[str]:
-        requirements: list[str] = []
-        if border_crossings and (
-            "Hungary" in destination.display_name or "Budapest" in destination.display_name
-        ):
-            requirements.append("Hungarian motorway vignette")
-        return requirements
-
-    def _detect_border_crossings(
-        self, origin: GeocodedPlace, destination: GeocodedPlace
-    ) -> list[str]:
-        origin_display = origin.display_name
-        destination_display = destination.display_name
-
-        if (
-            "Austria" in origin_display
-            and ("Hungary" in destination_display or "Budapest" in destination_display)
-        ):
-            return ["Austria-Hungary"]
-        return []

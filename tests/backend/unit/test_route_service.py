@@ -34,8 +34,9 @@ class FakeRoutingProvider:
         origin: GeocodedPlace,
         destination: GeocodedPlace,
         priority: RoutePriority,
+        waypoints: tuple[GeocodedPlace, ...] | None = None,
     ) -> ProviderRoute:
-        del origin, destination, priority
+        del origin, destination, priority, waypoints
         return ProviderRoute(
             distance_meters=self.distance_meters,
             duration_seconds=9_900,
@@ -49,8 +50,9 @@ class FailingRoutingProvider(FakeRoutingProvider):
         origin: GeocodedPlace,
         destination: GeocodedPlace,
         priority: RoutePriority,
+        waypoints: tuple[GeocodedPlace, ...] | None = None,
     ) -> ProviderRoute:
-        del origin, destination, priority
+        del origin, destination, priority, waypoints
         raise RoutingProviderError
 
 
@@ -65,8 +67,9 @@ class InvalidRoutingProvider(FakeRoutingProvider):
         origin: GeocodedPlace,
         destination: GeocodedPlace,
         priority: RoutePriority,
+        waypoints: tuple[GeocodedPlace, ...] | None = None,
     ) -> ProviderRoute:
-        del origin, destination, priority
+        del origin, destination, priority, waypoints
         return ProviderRoute(
             distance_meters=self.distance_meters,
             duration_seconds=self.duration_seconds,
@@ -124,6 +127,23 @@ def test_route_beyond_vehicle_range_returns_range_warning_and_charging_stop() ->
     assert route.charging_stop.name == "Ionity Győr"
     assert route.border_crossings == ["Austria-Hungary"]
     assert route.route_requirements == ["Hungarian motorway vignette"]
+
+
+def test_search_route_poi_returns_generic_results_without_mutating_route() -> None:
+    route_service = RouteService(FakeRoutingProvider(distance_meters=243_000), repository())
+
+    results = asyncio.run(
+        route_service.search_route_poi(
+            category="restaurant",
+            location="Budapest",
+            preference="Italian",
+        )
+    )
+
+    assert len(results) >= 1
+    assert results[0].category == "restaurant"
+    assert results[0].name == "Italia Ristorante"
+    assert results[0].partner_benefit is None
 
 
 def test_invalid_destination_returns_stable_api_error() -> None:
