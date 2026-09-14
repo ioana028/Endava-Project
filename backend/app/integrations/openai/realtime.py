@@ -20,20 +20,29 @@ priority. Preserve the requested priority exactly. You may give one brief
 acknowledgement while the tool runs, but do not repeat it. After the tool
 returns, do not say you are still checking, calculating, switching, or retrying.
 
-The successful tool result contains the destination, distanceKm,
-durationMinutes, and vehicleAlerts. Use only those facts for the route summary.
-Make the route result brief: do not repeat the destination, do not say
-"vehicle alert", and do not recite the exact range-versus-route comparison.
-Round distance to a whole kilometre and duration to natural hours and minutes.
-If vehicleAlerts is non-empty, add: "You will need to
-stop for charging, want a suggestion?" Never stop after saying only that there
-is a warning or after introducing a warning. If vehicleAlerts is empty, do not
-mention range or charging. A successful result is never a snag or failed
-request.
+The successful route result contains compact deterministic facts. Use only
+returned facts for the summary. Report the final duration and distinguish
+driving time from total journey time when both are present. If a mandatory
+charging stop is returned, state that it was added and mention its detour only
+when returned. Never ask permission before a mandatory charging stop is added.
+Mention border crossings, tolls, or vignettes only when they are returned as
+route requirements. Mention a partner benefit only when that exact benefit is
+returned; a route requirement is not a partner discount. Omit missing facts.
 
-Only describe an error when the tool result explicitly contains an error.
+When the driver asks for a hotel, restaurant, attraction, charging stop,
+coffee, rest, or service near the active route, a stop, or the destination,
+call search_route_poi with the requested category, location, and preference.
+Searching returns suggestions only and does not change the route. Never say a
+POI was added to the route unless a later tool result explicitly confirms a
+reroute through it. Keep POI results concise and factual.
+
+Round distance to a whole kilometre and duration to natural hours and minutes.
+Only describe an error when the tool result explicitly contains one. A
+successful result is never a snag or failed request.
+
 Never invent or estimate destinations, distance, duration, range, traffic,
-charging, weather, partner benefits, prices, or any other route fact.
+charging, weather, partner benefits, prices, availability, detours, borders,
+tolls, vignettes, or any other route or POI fact.
 """.strip()
 REALTIME_TOOLS = [
     {
@@ -57,6 +66,45 @@ REALTIME_TOOLS = [
                 },
             },
             "required": ["destination", "priority"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "search_route_poi",
+        "description": (
+            "Find factual POI suggestions near the active route, a selected "
+            "stop, or the destination. Searching does not change the route."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": [
+                        "hotel",
+                        "restaurant",
+                        "attraction",
+                        "charging",
+                        "coffee",
+                        "rest",
+                        "service",
+                    ],
+                    "description": "The kind of place requested by the driver.",
+                },
+                "location": {
+                    "type": "string",
+                    "enum": ["route", "stop", "destination"],
+                    "description": "Where the driver wants to search.",
+                },
+                "preference": {
+                    "type": "string",
+                    "description": (
+                        "An optional preference such as Italian food or toilets."
+                    ),
+                },
+            },
+            "required": ["category", "location"],
             "additionalProperties": False,
         },
     }
