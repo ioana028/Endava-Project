@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AssistantResponse, RouteResponse } from '../../../types/contracts'
+import type {
+  AssistantResponse,
+  RouteResponse,
+  StopPinpoint,
+} from '../../../types/contracts'
 import {
   createRealtimeSession,
   planRouteWithTool,
+  searchRoutePoiWithTool,
 } from '../../../services/realtimeAssistantApi'
 
 export type RealtimeAssistantState =
@@ -26,6 +31,40 @@ function createRouteResponse(
     },
     spokenResponse,
     route,
+  }
+}
+
+function compactRouteFacts(route: RouteResponse) {
+  const chargingStop = route.chargingStop ?? route.stops.find((stop) => stop.mandatory)
+  const partnerBenefit = chargingStop?.partner?.benefit ?? chargingStop?.partnerBenefit
+
+  return {
+    status: 'success',
+    destination: route.destination,
+    distanceKm: route.stats.totalDistanceKm,
+    drivingDurationMinutes: route.stats.drivingDurationMinutes,
+    totalDurationMinutes: route.stats.totalDurationMinutes,
+    ...(chargingStop
+      ? {
+          chargingStop: {
+            name: chargingStop.name,
+            detourMinutes: chargingStop.detourMinutes,
+            chargingDurationMinutes: chargingStop.chargingDurationMinutes,
+            partnerLocation: Boolean(chargingStop.partner),
+            ...(partnerBenefit ? { partnerBenefit } : {}),
+          },
+        }
+      : {}),
+    ...(route.borderCrossings.length > 0
+      ? {
+          borderCrossings: route.borderCrossings.map(
+            (crossing) => `${crossing.fromCountry}-${crossing.toCountry}`,
+          ),
+        }
+      : {}),
+    ...(route.routeRequirements.length > 0
+      ? { routeRequirements: route.routeRequirements.map((requirement) => requirement.name) }
+      : {}),
   }
 }
 
@@ -68,6 +107,7 @@ export function useRealtimeAssistant() {
   const [state, setState] = useState<RealtimeAssistantState>('IDLE')
   const [transcript, setTranscript] = useState('')
   const [response, setResponse] = useState<AssistantResponse | null>(null)
+  const [poiResults, setPoiResults] = useState<StopPinpoint[]>([])
   const [error, setError] = useState<string | null>(null)
   const connectionRef = useRef<RTCPeerConnection | null>(null)
   const channelRef = useRef<RTCDataChannel | null>(null)
@@ -94,6 +134,7 @@ export function useRealtimeAssistant() {
     toolAbortRef.current?.abort()
     toolAbortRef.current = null
     pendingRouteRef.current = null
+    setPoiResults([])
     assistantTranscriptRef.current = ''
     channelRef.current?.close()
     channelRef.current = null
@@ -118,7 +159,7 @@ export function useRealtimeAssistant() {
     name: string
     arguments: string
   }) {
-    if (event.name !== 'plan_route') {
+    if (event.name !== 'plan_route' && event.name !== 'search_route_poi') {
       return
     }
 
@@ -127,6 +168,37 @@ export function useRealtimeAssistant() {
     toolAbortRef.current = toolController
 
     try {
+      if (event.name === 'search_route_poi') {
+        const result = await searchRoutePoiWithTool(
+          event.arguments,
+          toolController.signal,
+        )
+        if (!startingRef.current) {
+          return
+        }
+
+        setPoiResults(result.results)
+        sendEvent({
+          type: 'conversation.item.create',
+          item: {
+            type: 'function_call_output',
+            call_id: event.call_id,
+            output: JSON.stringify({
+              status: 'success',
+              results: result.results.map((stop) => ({
+                name: stop.name,
+                category: stop.category,
+                rating: stop.rating,
+                detourMinutes: stop.detourMinutes,
+                tag: stop.tag,
+              })),
+            }),
+          },
+        })
+        sendEvent({ type: 'response.create' })
+        return
+      }
+
       const result = await planRouteWithTool(event.arguments, toolController.signal)
       if (!startingRef.current) {
         return
@@ -141,15 +213,7 @@ export function useRealtimeAssistant() {
         item: {
           type: 'function_call_output',
           call_id: event.call_id,
-          output: JSON.stringify({
-            status: 'success',
-            destination: result.route.destination,
-            distanceKm: result.route.stats.totalDistanceKm,
-            durationMinutes: result.route.stats.totalDurationMinutes,
-            vehicleAlerts: result.route.alerts
-              .filter((alert) => alert.type === 'VEHICLE')
-              .map((alert) => alert.message),
-          }),
+          output: JSON.stringify(compactRouteFacts(result.route)),
         },
       })
       sendEvent({ type: 'response.create' })
@@ -346,6 +410,7 @@ export function useRealtimeAssistant() {
     state,
     transcript,
     response,
+    poiResults,
     error,
     enable,
     disable: closeSession,

@@ -7,6 +7,7 @@ from ...services.trip.ports import (
     GeocodedPlace,
     InvalidDestinationError,
     ProviderRoute,
+    ProviderToll,
     RoutingProviderError,
 )
 
@@ -56,6 +57,7 @@ class GoogleMapsRoutingProvider:
         origin: GeocodedPlace,
         destination: GeocodedPlace,
         priority: RoutePriority,
+        waypoints: tuple[GeocodedPlace, ...] | None = None,
     ) -> ProviderRoute:
         if not self._api_key:
             raise RoutingProviderError("GOOGLE_SERVER_API_KEY is not configured")
@@ -69,12 +71,18 @@ class GoogleMapsRoutingProvider:
             "polylineEncoding": "GEO_JSON_LINESTRING",
             "units": "METRIC",
             "languageCode": "en-US",
+            "extraComputations": ["TOLLS"],
         }
+        if waypoints:
+            request["intermediates"] = [
+                {"location": {"latLng": self._lat_lng(waypoint)}}
+                for waypoint in waypoints
+            ]
         headers = {
             "X-Goog-Api-Key": self._api_key,
             "X-Goog-FieldMask": (
                 "routes.distanceMeters,routes.duration,"
-                "routes.polyline.geoJsonLinestring"
+                "routes.polyline.geoJsonLinestring,routes.travelAdvisory.tollInfo"
             ),
         }
 
@@ -97,10 +105,20 @@ class GoogleMapsRoutingProvider:
             )
             if len(geometry) < 2:
                 raise ValueError("Google route geometry is incomplete")
+            tolls = tuple(
+                ProviderToll(
+                    amount=float(price.get("units", 0))
+                    + float(price.get("nanos", 0)) / 1_000_000_000,
+                    currency=str(price["currencyCode"]),
+                )
+                for price in (route.get("travelAdvisory", {}).get("tollInfo", {})
+                              .get("estimatedPrice", []) or [])
+            )
             return ProviderRoute(
                 distance_meters=float(route["distanceMeters"]),
                 duration_seconds=float(duration.group("seconds")),
                 geometry=geometry,
+                tolls=tolls,
             )
         except (IndexError, KeyError, TypeError, ValueError) as error:
             raise RoutingProviderError("Google route response was invalid") from error

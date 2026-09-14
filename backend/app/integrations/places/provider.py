@@ -1,0 +1,244 @@
+from __future__ import annotations
+
+from ...core.fixture_repository import FixtureRepository
+from ...models.contracts import StopPinpoint
+from ...services.trip.ports import ProviderRoute
+
+
+class LocalPlacesProvider:
+    _GENERIC_POIS = (
+        {
+            "id": "hotel-route-view",
+            "name": "RouteView Hotel",
+            "category": "hotel",
+            "coords": (19.0409, 47.4988),
+            "rating": 4.6,
+            "tag": "Boutique stay near the route",
+            "detour_minutes": 6,
+        },
+        {
+            "id": "restaurant-italia-budapest",
+            "name": "Italia Ristorante",
+            "category": "restaurant",
+            "coords": (19.0531, 47.4987),
+            "rating": 4.8,
+            "tag": "Italian dining near the destination",
+            "detour_minutes": 3,
+        },
+        {
+            "id": "attraction-riverfront",
+            "name": "Riverfront Walk",
+            "category": "attraction",
+            "coords": (19.0438, 47.5000),
+            "rating": 4.4,
+            "tag": "Scenic attraction near the destination",
+            "detour_minutes": 4,
+        },
+        {
+            "id": "coffee-route-stop",
+            "name": "Route Café",
+            "category": "coffee",
+            "coords": (18.2300, 47.9000),
+            "rating": 4.5,
+            "tag": "Coffee stop on the motorway",
+            "detour_minutes": 2,
+        },
+        {
+            "id": "rest-area-boost",
+            "name": "Boost Rest Area",
+            "category": "rest",
+            "coords": (18.1600, 47.7200),
+            "rating": 4.3,
+            "tag": "Rest stop and toilets",
+            "detour_minutes": 1,
+        },
+        {
+            "id": "service-point-safety",
+            "name": "Safety Service Point",
+            "category": "service",
+            "coords": (18.3300, 47.8400),
+            "rating": 4.2,
+            "tag": "Vehicle support and service",
+            "detour_minutes": 2,
+        },
+    )
+
+    def __init__(self, fixture_repository: FixtureRepository) -> None:
+        self._fixture_repository = fixture_repository
+
+    async def search(
+        self,
+        category: str,
+        location: str | None = None,
+        preference: str | None = None,
+        route: ProviderRoute | None = None,
+    ) -> list[StopPinpoint]:
+        normalized = self._normalize_category(category)
+
+        candidates: list[StopPinpoint] = []
+        candidates.extend(self._partner_matches(normalized))
+        candidates.extend(self._generic_matches(normalized))
+
+        if preference:
+            preference_lower = preference.lower()
+            candidates = [
+                candidate
+                for candidate in candidates
+                if preference_lower in candidate.name.lower()
+                or preference_lower in candidate.tag.lower()
+            ]
+
+        location_context = (location or "destination").strip().lower()
+        if location_context not in {"route", "stop", "destination"}:
+            location_context = "destination"
+
+        candidates = [
+            candidate
+            for candidate in candidates
+            if self._matches_location(candidate, location_context, route)
+        ]
+        candidates.sort(
+            key=lambda candidate: (
+                self._route_distance(candidate, location_context, route),
+                candidate.detour_minutes,
+                -(candidate.rating or 0),
+                candidate.name,
+            )
+        )
+        return candidates[:10]
+
+    @staticmethod
+    def _matches_location(
+        candidate: StopPinpoint,
+        location: str,
+        route: ProviderRoute | None,
+    ) -> bool:
+        if route is None or not route.geometry:
+            return True
+        distance = LocalPlacesProvider._route_distance(candidate, location, route)
+        return distance <= 0.35 if location == "route" else distance <= 0.6
+
+    @staticmethod
+    def _route_distance(
+        candidate: StopPinpoint,
+        location: str,
+        route: ProviderRoute | None,
+    ) -> float:
+        if route is None or not route.geometry:
+            return 0
+        point = candidate.coords
+        if location == "destination":
+            reference = route.geometry[-1]
+            return LocalPlacesProvider._distance(point, reference)
+        if location == "stop":
+            reference_points = route.geometry[1:-1] or route.geometry
+            return min(
+                LocalPlacesProvider._distance(point, reference)
+                for reference in reference_points
+            )
+        return min(
+            LocalPlacesProvider._distance_to_segment(point, start, end)
+            for start, end in zip(route.geometry, route.geometry[1:])
+        )
+
+    @staticmethod
+    def _distance(first: tuple[float, float], second: tuple[float, float]) -> float:
+        longitude_delta = first[0] - second[0]
+        latitude_delta = first[1] - second[1]
+        return (longitude_delta**2 + latitude_delta**2) ** 0.5
+
+    @staticmethod
+    def _distance_to_segment(
+        point: tuple[float, float],
+        start: tuple[float, float],
+        end: tuple[float, float],
+    ) -> float:
+        segment_longitude = end[0] - start[0]
+        segment_latitude = end[1] - start[1]
+        length_squared = segment_longitude**2 + segment_latitude**2
+        if length_squared == 0:
+            return LocalPlacesProvider._distance(point, start)
+
+        projection = (
+            (point[0] - start[0]) * segment_longitude
+            + (point[1] - start[1]) * segment_latitude
+        ) / length_squared
+        projection = max(0, min(1, projection))
+        closest = (
+            start[0] + projection * segment_longitude,
+            start[1] + projection * segment_latitude,
+        )
+        return LocalPlacesProvider._distance(point, closest)
+
+    def _partner_matches(self, category: str) -> list[StopPinpoint]:
+        partners = self._fixture_repository.fixtures.partners
+        results: list[StopPinpoint] = []
+        for partner in partners:
+            if category == "food" and partner.category == "food":
+                results.append(self._partner_to_stop(partner))
+                continue
+            if partner.category == category:
+                results.append(self._partner_to_stop(partner))
+        return results
+
+    def _generic_matches(self, category: str) -> list[StopPinpoint]:
+        results: list[StopPinpoint] = []
+        for item in self._GENERIC_POIS:
+            if item["category"] != category:
+                continue
+            results.append(
+                StopPinpoint(
+                    id=item["id"],
+                    name=item["name"],
+                    category=item["category"],
+                    coords=item["coords"],
+                    rating=item["rating"],
+                    tag=item["tag"],
+                    detour_minutes=item["detour_minutes"],
+                )
+            )
+        return results
+
+    def _partner_to_stop(self, partner: object) -> StopPinpoint:
+        tag = partner.tag
+        partner_benefit = None
+        tag_lower = tag.lower()
+        if partner.category != "vignette" and any(
+            keyword in tag_lower for keyword in ("discount", "rate", "benefit")
+        ):
+            partner_benefit = tag
+
+        return StopPinpoint(
+            id=partner.id,
+            name=partner.name,
+            category=partner.category,
+            coords=(partner.coords[0], partner.coords[1]),
+            rating=partner.rating,
+            tag=tag,
+            detour_minutes=float(partner.detour_minutes),
+            partner_benefit=partner_benefit,
+        )
+
+    @staticmethod
+    def _normalize_category(category: str) -> str:
+        normalized = category.strip().lower()
+        aliases = {
+            "hotel": "hotel",
+            "hotels": "hotel",
+            "restaurant": "restaurant",
+            "restaurants": "restaurant",
+            "food": "food",
+            "attraction": "attraction",
+            "attractions": "attraction",
+            "coffee": "coffee",
+            "rest": "rest",
+            "service": "service",
+            "charger": "charging",
+            "charging": "charging",
+            "charge": "charging",
+            "toll": "toll",
+            "vignette": "vignette",
+        }
+        if normalized not in aliases:
+            raise ValueError(f"Unsupported POI category: {category}")
+        return aliases[normalized]

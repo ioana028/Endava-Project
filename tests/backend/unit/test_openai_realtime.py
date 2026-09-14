@@ -48,9 +48,34 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
     assert kwargs["session"]["model"] == "gpt-realtime-2.1-mini"
     assert kwargs["session"]["output_modalities"] == ["audio"]
     assert kwargs["session"]["audio"]["output"]["voice"] == "marin"
-    assert kwargs["session"]["tools"][0]["name"] == "plan_route"
-    assert "vehicleAlerts" in kwargs["session"]["instructions"]
-    assert "Never stop after saying only" in kwargs["session"]["instructions"]
+    tools = kwargs["session"]["tools"]
+    assert [tool["name"] for tool in tools] == [
+        "plan_route",
+        "search_route_poi",
+    ]
+    instructions = kwargs["session"]["instructions"]
+    assert "Never ask permission before a mandatory charging stop is added" in instructions
+    assert "at most two short sentences" in instructions
+    assert "vehicleAlerts" not in instructions
+    assert "Should I add a charging stop" not in instructions
+    assert "Searching returns suggestions only and does not change the route" in instructions
+
+    poi_tool = tools[1]
+    assert poi_tool["parameters"]["required"] == ["category", "location"]
+    assert poi_tool["parameters"]["properties"]["category"]["enum"] == [
+        "hotel",
+        "restaurant",
+        "attraction",
+        "charging",
+        "coffee",
+        "rest",
+        "service",
+    ]
+    assert poi_tool["parameters"]["properties"]["location"]["enum"] == [
+        "route",
+        "stop",
+        "destination",
+    ]
 
 
 def test_realtime_provider_rejects_missing_server_key() -> None:

@@ -1,0 +1,12 @@
+{
+  "border_crossings": [
+    {
+      "id": "Austria-Hungary",
+      "from_country": "Austria",
+      "to_country": "Hungary",
+      "route_requirements": [
+        "Hungarian motorway vignette"
+      ]
+    }
+  ]
+}

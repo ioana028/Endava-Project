@@ -5,7 +5,17 @@
 
 export type RoutePriority = 'FASTEST' | 'CHEAPEST' | 'SCENIC' | 'BALANCED';
 
-export type StopCategory = 'charging' | 'food' | 'rest' | 'toll' | 'vignette' | 'service';
+export type StopCategory =
+  | 'charging'
+  | 'food'
+  | 'rest'
+  | 'toll'
+  | 'vignette'
+  | 'service'
+  | 'hotel'
+  | 'restaurant'
+  | 'attraction'
+  | 'coffee';
 
 export interface VehicleState {
   vehicleId: string;
@@ -30,6 +40,14 @@ export interface StopPinpoint {
   rating?: number;
   tag: string;                     // e.g., "Fast Charger · 250kW" or "Italian Dining"
   detourMinutes: number;
+  chargingDurationMinutes?: number;
+  mandatory?: boolean;
+  partner?: {
+    id: string;
+    name: string;
+    benefit?: string | null;
+  } | null;
+  partnerBenefit?: string | null;
 }
 
 export interface RouteAlert {
@@ -41,8 +59,22 @@ export interface RouteAlert {
 
 export interface TripStats {
   totalDistanceKm: number;
+  drivingDurationMinutes: number;
   totalDurationMinutes: number;
   totalPriceEur: number;           // Aggregated estimates (tolls + charging)
+}
+
+export interface BorderCrossing {
+  fromCountry: string;
+  toCountry: string;
+}
+
+export interface RouteRequirement {
+  id: string;
+  name: string;
+  country: string;
+  kind: 'toll' | 'vignette';
+  mandatory: boolean;
 }
 
 export interface RouteResponse {
@@ -52,6 +84,13 @@ export interface RouteResponse {
   geometry: [number, number][];    // Full route polyline coordinates [[lng, lat], ...]
   stops: StopPinpoint[];
   alerts: RouteAlert[];
+  chargingStop?: StopPinpoint | null;
+  borderCrossings: BorderCrossing[];
+  routeRequirements: RouteRequirement[];
+}
+
+export interface RoutePoiResponse {
+  results: StopPinpoint[];
 }
 
 export interface AssistantIntent {
@@ -65,5 +104,6 @@ export interface AssistantResponse {
   spokenResponse: string;          // Plain text fallback
   audioBase64?: string;            // MP3 audio bytes from OpenAI TTS
   route?: RouteResponse;           // Populated on Day 2; null on Day 1
+  poiResults?: StopPinpoint[];
   toastMessage?: string;           // e.g. "ROUTE: BUDAPEST (FASTEST)"
 }

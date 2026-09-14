@@ -3,10 +3,11 @@
     "id": "ionity-gyor",
     "name": "Ionity Győr",
     "category": "charging",
-    "coords": [17.6351, 47.6875],
+    "coords": [17.5505239, 47.6768425],
     "rating": 4.8,
     "tag": "Ultra-Fast 350kW · 15% Partner Rate",
-    "detourMinutes": 2
+    "detourMinutes": 2,
+    "chargingDurationMinutes": 25
   },
   {
     "id": "matrica-hu-10d",

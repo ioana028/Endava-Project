@@ -8,6 +8,7 @@ from .core.errors import register_error_handlers
 from .core.fixture_repository import FixtureRepository
 from .core.settings import Settings
 from .integrations.google_maps.routing import GoogleMapsRoutingProvider
+from .integrations.places.google import GooglePlacesProvider
 from .integrations.openai.realtime import (
     OpenAIRealtimeProvider,
     RealtimeSessionProvider,
@@ -27,6 +28,11 @@ def create_app(
     route_service = route_service or RouteService(
         GoogleMapsRoutingProvider(settings.google_server_api_key),
         fixture_repository,
+        places_provider=(
+            GooglePlacesProvider(settings.google_server_api_key)
+            if settings.google_server_api_key
+            else None
+        ),
     )
 
     @asynccontextmanager

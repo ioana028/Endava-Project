@@ -1,4 +1,5 @@
 import { AssistantStatus } from './features/assistant/components/AssistantStatus'
+import { PoiResults } from './features/assistant/components/PoiResults'
 import { useRealtimeAssistant } from './features/assistant/hooks/useRealtimeAssistant'
 import { RouteMap } from './features/map/components/RouteMap'
 import { RouteSummary } from './features/trip/components/RouteSummary'
@@ -35,10 +36,12 @@ function App() {
 
       {route && (
         <>
-          <RouteMap route={route} />
+          <RouteMap route={route} poiResults={assistant.poiResults} />
           <RouteSummary route={route} />
         </>
       )}
+
+      <PoiResults results={assistant.poiResults} />
 
     </main>
   )

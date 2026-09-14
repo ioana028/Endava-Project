@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
-import type { RouteResponse } from '../../../types/contracts'
+import type { RouteResponse, StopPinpoint } from '../../../types/contracts'
 import { toGooglePath } from '../utils/routeGeometry'
 
 const browserKey = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY
@@ -26,9 +26,10 @@ if (browserKey) {
 
 interface RouteMapProps {
   route: RouteResponse
+  poiResults?: StopPinpoint[]
 }
 
-export function RouteMap({ route }: RouteMapProps) {
+export function RouteMap({ route, poiResults = [] }: RouteMapProps) {
   const mapElementRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
   const polylineRef = useRef<google.maps.Polyline | null>(null)
@@ -277,13 +278,47 @@ export function RouteMap({ route }: RouteMapProps) {
           zIndex: 3,
         })
 
+        const stopMarkers = route.stops.map(
+          (stop) =>
+            new google.maps.Marker({
+              map,
+              position: { lat: stop.coords[1], lng: stop.coords[0] },
+              title: stop.name,
+              label: stop.category === 'charging' ? 'C' : undefined,
+              zIndex: 2,
+            }),
+        )
+
+        const poiMarkers = poiResults.map(
+          (poi) =>
+            new google.maps.Marker({
+              map,
+              position: { lat: poi.coords[1], lng: poi.coords[0] },
+              title: poi.name,
+              icon: {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 6,
+                fillColor: '#f59e0b',
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 2,
+              },
+              zIndex: 1,
+            }),
+        )
+
         const durationOverlay = new DurationOverlay(
           path[Math.floor(path.length / 2)],
           formatDuration(route.stats.totalDurationMinutes),
         )
         durationOverlay.setMap(map)
 
-        markersRef.current = [originMarker, destinationMarker]
+        markersRef.current = [
+          originMarker,
+          destinationMarker,
+          ...stopMarkers,
+          ...poiMarkers,
+        ]
         durationOverlayRef.current = durationOverlay
       } catch {
         if (!cancelled) {
@@ -304,7 +339,7 @@ export function RouteMap({ route }: RouteMapProps) {
       durationOverlayRef.current = null
       mapRef.current = null
     }
-  }, [route])
+  }, [poiResults, route])
 
   if (error) {
     return <p role="alert">{error}</p>
