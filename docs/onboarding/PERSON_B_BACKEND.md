@@ -9,9 +9,8 @@ selection, and recommendation scoring.
 ## Day 1 work
 
 - Set up FastAPI on port 8000 with Pydantic v2.
-- Implement `POST /api/assistant/voice` as an audio handoff to Person C's
-  assistant service.
-- Implement `POST /api/assistant/interact` as the text fallback.
+- Do not add multipart voice or text assistant endpoints. The active API is the
+  Realtime session and deterministic tool boundary.
 - Load `data/vehicles/telemetry.json` and `data/partners/partners.json` via
   a small loader/repository boundary.
 - Return `AssistantResponse` with the extracted `intent` and `route` absent or
@@ -21,9 +20,20 @@ selection, and recommendation scoring.
 
 The demo vehicle is a BEV Honda E with 42% battery, 95 km estimated range,
 17.2 kWh/100 km consumption, and summer tyres. The Vienna to Budapest route
-is about 243 km, so the deterministic narrative requires a charging stop at
-Ionity Győr. Do not hard-code spoken claims into the route service; expose
-facts through typed models.
+is about 243 km, so the deterministic planner automatically requires a
+charging stop. Ionity Győr is the expected suitable candidate, but must win by
+route and vehicle rules before partner enrichment is applied. The planner must
+also detect the Austria-Hungary border and the Hungarian motorway vignette.
+The HU vignette partner record has no benefit. Do not hard-code spoken claims;
+expose all facts through typed models.
+
+## Day 3 EOD
+
+Make `plan_route` return the final safe route, automatically adding charging
+when necessary and including border crossings and toll/vignette requirements.
+Add a provider-neutral generic POI search for charging, hotels, restaurants,
+and attractions. Search results must work without partners and must not alter
+the route without explicit reroute intent.
 
 ## General Prompt
 

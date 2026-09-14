@@ -11,8 +11,10 @@ Suzanne is an executive in-cabin concierge designed for luxury Battery Electric 
 - **Two-Sided Marketplace:** Seamlessly surfaces commercial partner services (charging, dining, digital vignettes) without disrupting the drive.
 - **Advisory, Non-Enforced Monetization:** Partner perks (discounts, fast-charging priority) are suggested organically with driver benefit highlighted (e.g., "There is a partner location near your destination offering a 10% discount. Should I book that?"). The driver retains executive veto power—partners are never forced.
 
-The interaction is voice-first. Confirmations are spoken by Suzanne; the
-prototype does not use on-screen confirmation buttons.
+The interaction is voice-first. The driver explicitly presses Start Suzanne to
+open a short-lived Realtime WebRTC session and Stop Suzanne to close it and
+release the microphone. Confirmations are spoken by Suzanne; the prototype
+does not use on-screen confirmation buttons or a wake word.
 
 ---
 
@@ -31,7 +33,7 @@ A local modular monolith designed for rapid iteration without cloud database ove
 - **Frontend:** React 18, TypeScript, TailwindCSS, Google Maps JavaScript API,
   Lucide Icons.
 - **Backend:** Python 3.11+, FastAPI, Pydantic v2, Uvicorn, HTTPX.
-- **External Integrations:** OpenAI API (Structured Outputs / Tools), Google
+- **External Integrations:** OpenAI Realtime API (WebRTC and tools), Google
    Maps Platform (Routes, Geocoding, Maps JavaScript, and later Places).
 - **Data Stores:** Flat JSON files (data/vehicles/telemetry.json, data/partners/partners.json). Zero remote DB dependencies.
 

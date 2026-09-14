@@ -1,22 +1,23 @@
 # Day 1 Walking Skeleton
 
-## Acceptance goal
+## Acceptance goal (historical)
 
 By the end of Day 1, the team can run the stack locally with one Docker
 command, press the microphone button, say `Suzanne, take me to Budapest fast`,
 see the extracted intent returned by the backend, and hear Suzanne say:
 `Calculating route based on your preferences, hold on`.
 
-Day 1 stops there. It does not calculate or display a route. It has no
-on-screen confirmation buttons; confirmation is voice-only.
+This document records the original upload/intent/TTS walking skeleton. The
+active implementation now uses Start/Stop Realtime WebRTC sessions; see the
+runtime and API contract docs for the current flow.
 
 ## Deliverables
 
 ### Person A
 
-React/Vite/Tailwind shell on 5173, assistant state visuals, MediaRecorder
-capture, voice upload, read-only intent display, base64 audio playback, and
-text fallback UI. Do not add confirmation buttons.
+React/Vite/Tailwind shell on 5173, assistant state visuals, explicit
+Start/Stop Realtime controls, WebRTC audio, read-only route display, and text
+fallback UI. Do not add confirmation buttons.
 
 ### Person B
 
@@ -25,8 +26,9 @@ frontend, and `AssistantResponse` output with no route result yet.
 
 ### Person C
 
-Whisper `whisper-1`, destination/priority extraction, the fixed Day 1 spoken
-response, and TTS `tts-1` with `nova`.
+The current Realtime provider, destination/priority tool schema, compact route
+facts, and concise spoken output. The old Whisper/TTS path remains historical
+compatibility code only.
 
 ### Person D
 

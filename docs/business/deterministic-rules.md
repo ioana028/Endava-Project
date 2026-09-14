@@ -12,10 +12,19 @@ The demo corridor is Vienna, Austria to Budapest, Hungary, approximately
 243 km via the M1 motorway. The fixture vehicle begins with an estimated range
 of 95 km. Therefore a charging stop is required for the demonstration.
 
-The initial fixture identifies Ionity Győr as the intended charging stop. A
-future routing implementation must validate the stop against route position,
-vehicle compatibility, energy need, and detour rather than selecting it only
-because it has a partner label.
+The initial fixture identifies Ionity Győr as the expected charging candidate.
+The route planner must automatically validate and select it only when route
+position, vehicle compatibility, energy need, and detour make it suitable.
+Partner status is a late tie-breaker, never the reason a stop is mandatory.
+
+## Border and route-requirement rule
+
+The route planner must derive crossed countries from the resolved route and
+evaluate toll and vignette requirements using deterministic country/road data.
+A partner fixture may enrich a requirement for later commerce, but it cannot
+create the requirement. For Vienna-Budapest, Suzanne must identify the
+Austria-Hungary crossing and the Hungarian motorway vignette. The HU partner
+record has no benefit and must not be narrated as a discount.
 
 ## Ranking order
 
@@ -26,7 +35,8 @@ Recommendations are evaluated in this order:
 3. Explicit driver route priority.
 4. Journey suitability and detour.
 5. Family or other contextual preferences.
-6. Partner/commercial preference as a secondary differentiator.
+6. Partner/commercial preference as a secondary differentiator, only when an
+	explicit benefit exists.
 
 A sponsored location must not introduce a material detour when the driver
 requested the fastest route.
@@ -44,8 +54,10 @@ for a result. For an active route, rank candidates using:
 5. Ratings or other quality signals.
 6. Partner benefit as a secondary differentiator.
 
-`I want to stop to eat` therefore produces a food POI search even if every
-candidate is non-partner.
+`I want to stop to eat`, `Find a hotel near the route`, and `Find a tourist
+attraction near my destination` therefore produce generic POI searches even if
+every candidate is non-partner. Searching does not mutate the active route
+without explicit add/reroute intent.
 
 ## Route narration rule
 

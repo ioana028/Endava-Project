@@ -7,16 +7,23 @@ infotainment HMI, map rendering, assistant states, and presentation polish.
 The first target is a reliable 2D walking skeleton; the 3D cockpit comes
 later.
 
-## Day 1 work
+## Active Realtime work
 
 - Set up React 18, Vite, TypeScript, and TailwindCSS on port 5173.
-- Build the microphone button with `IDLE`, `LISTENING`, `PROCESSING`, and
-  `SPEAKING` states.
-- Capture browser audio with `MediaRecorder` after explicit permission.
-- Send the recording as `audio` to `POST /api/assistant/voice`.
-- Render the returned intent as read-only information and play returned
-  `audioBase64` through `HTMLAudioElement`.
-- Keep a text fallback for `POST /api/assistant/interact`.
+- Build explicit `Start Suzanne` and `Stop Suzanne` controls with
+  `CONNECTING`, `LISTENING`, `PROCESSING`, `SPEAKING`, and `ERROR` states.
+- Request microphone permission only after Start and connect over WebRTC using
+  the short-lived backend client secret.
+- Close the peer connection and stop every microphone track on Stop.
+- Forward only Realtime tool arguments to the backend and keep full route data
+  local for the map and route summary.
+- Send only compact narration facts back to Realtime; never send geometry.
+- Use the active Realtime WebRTC path for route requests and tool calls.
+- Day 3 renders the final route after automatic charging, shows border
+  crossings and toll/vignette requirements, and distinguishes driving time
+  from total time including charging.
+- Day 3 supports voice-driven generic POI results for charging, hotels,
+  restaurants, and attractions without selectors or confirmation cards.
 
 ## Frontend rules
 
@@ -27,8 +34,11 @@ later.
 - Do not parse `spokenResponse` to infer route state.
 - Do not create confirmation buttons; all confirmations are spoken.
 - Release media tracks and old audio URLs after use.
-- Do not send OpenAI credentials or audio directly to OpenAI.
+- Do not send the server OpenAI credential to the browser. Browser audio may go
+  directly to OpenAI only through the user-started ephemeral WebRTC session.
 - Keep controls usable on desktop and mobile widths.
+- Never show the Hungarian vignette as a partner benefit; render only an
+  optional benefit supplied by the structured contract.
 
 ## General Prompt
 
@@ -54,12 +64,10 @@ vehicle, price, weather, POI, partner, booking, or payment facts. The frontend
 must consume structured backend responses and never parse speech to decide UI
 state.
 
-For Day 1, prioritize the four assistant states, MediaRecorder capture,
-POST /api/assistant/voice, POST /api/assistant/interact, returning the
-extracted intent to the UI, base64 MP3 playback of the exact phrase
-"Calculating route based on your preferences, hold on", and clear errors. Do
-not add on-screen confirmation buttons. Add focused tests
-or a repeatable verification step for behavior you change. If a shared
-contract or architecture decision must change, explain the impact and update
-the relevant documentation.
+For the active path, prioritize explicit Start/Stop controls, the Realtime
+WebRTC lifecycle, compact tool payloads, structured route rendering, and clear
+connection errors. Do not add on-screen confirmation buttons or a wake-word
+listener. Add focused tests or a repeatable verification step for behavior you
+change. If a shared contract or architecture decision must change, explain the
+impact and update the relevant documentation.
 ```

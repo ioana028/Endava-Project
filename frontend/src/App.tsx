@@ -1,16 +1,10 @@
 import { AssistantStatus } from './features/assistant/components/AssistantStatus'
-import { useVoiceAssistant } from './features/assistant/hooks/useVoiceAssistant'
-import { useWakeWord } from './features/assistant/hooks/useWakeWord'
+import { useRealtimeAssistant } from './features/assistant/hooks/useRealtimeAssistant'
 import { RouteMap } from './features/map/components/RouteMap'
 import { RouteSummary } from './features/trip/components/RouteSummary'
 
 function App() {
-  const assistant = useVoiceAssistant()
-  const wakeWord = useWakeWord({
-    state: assistant.state,
-    startListening: assistant.startListening,
-    stopListening: assistant.stopListening,
-  })
+  const assistant = useRealtimeAssistant()
 
   const route = assistant.response?.route
 
@@ -22,11 +16,12 @@ function App() {
       </header>
 
       <AssistantStatus
-        enabled={wakeWord.enabled}
+        enabled={assistant.enabled}
         state={assistant.state}
-        transcript={wakeWord.transcript}
-        error={wakeWord.error}
-        onEnable={() => void wakeWord.enable()}
+        transcript={assistant.transcript}
+        error={assistant.error}
+        onEnable={() => void assistant.enable()}
+        onDisable={assistant.disable}
       />
 
       {assistant.response && (
@@ -45,7 +40,6 @@ function App() {
         </>
       )}
 
-      {assistant.error && <p role="alert">{assistant.error}</p>}
     </main>
   )
 }

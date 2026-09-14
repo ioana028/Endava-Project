@@ -2,34 +2,35 @@
 
 ## Scenario A: Fastest route
 
-Driver: `Suzanne, take me to Budapest fast.`
+Driver presses `Start Suzanne`, then says: `Take me to Budapest fast.`
 
-Expected Day 1 story:
+Expected Realtime story:
 
-- microphone capture and Whisper transcript;
-- intent contains destination Budapest and `FASTEST` priority;
-- backend returns the extracted intent to the frontend;
-- Suzanne speaks exactly: `Calculating route based on your preferences, hold on`;
-- no route is calculated or shown yet;
-- no confirmation button is rendered.
+- the local listening jingle plays immediately;
+- Realtime calls `plan_route` with Budapest and `FASTEST`;
+- the backend returns the full structured route to the frontend;
+- the map displays the route and the summary displays distance and duration;
+- only compact destination, distance, duration, and vehicle-alert facts return
+  to Realtime for narration;
+- the driver presses `Stop Suzanne` to close the session and release the
+  microphone.
 
-Day 1 proves voice input -> AI intent -> backend response -> voice output.
-Route geometry, route statistics, and charging logic are Day 2 work.
+This scenario proves explicit Start -> Realtime voice -> deterministic tool ->
+map update -> spoken result -> explicit Stop. Every route fact comes from the
+backend; geometry never enters the model conversation.
 
-## Scenario A2: Smart route result and follow-up
+## Scenario A2: Automatic safe route result and follow-up
 
-After routing is implemented, the same interaction continues:
+While the same Realtime session is active:
 
 ```text
-Driver: Hey Suzanne
-Suzanne: Yeah?
-Driver: I want to get to Budapest as fast as possible, can you plot a route for me?
-Suzanne: On it, give me a second.
-Suzanne: Your route is being displayed. You can get to Budapest in 2 hours 45 minutes via the M1. Total trip cost is estimated at 42 euros with a mandatory charging stop at Ionity Győr and a mandatory Hungarian vignette. Heavy rain is expected near Győr. Would you like any more help?
+Driver: I want to get to Budapest as fast as possible, can you plot a route?
+Suzanne: Aaalright, let me check.
+Suzanne: Budapest is about 251 kilometres and roughly 3 hours 10 minutes including a charging stop at Ionity Győr. You cross into Hungary and need a Hungarian motorway vignette.
 ```
 
 The exact duration, cost, road, charging requirement, vignette, and weather
-alert must come from deterministic services or configured provider data. The
+facts must come from deterministic services or configured provider data. The
 example wording is illustrative and must not be hard-coded with invented
 facts.
 
@@ -47,12 +48,13 @@ A deterministic weather input identifies snow along a route segment while the
 vehicle fixture reports summer tyres. The system creates a vehicle/weather
 alert. The LLM may explain the returned alert but may not create it.
 
-## Scenario D: Partner and vignette
+## Scenario D: Border, vignette, and partner distinction
 
-The route enters Hungary. Suzanne may eventually offer a simulated e-vignette
-purchase and requires explicit spoken confirmation. There are no on-screen
-confirmation buttons. Partner or discount placement never overrides route
-safety or driver intent.
+The route enters Hungary. Suzanne detects the Austria-Hungary border crossing
+and reports the Hungarian motorway vignette as a route requirement. The
+Hungarian vignette is listed in `partners.json` for future simulated commerce,
+but it has no partner benefit. Partner or discount placement never overrides
+route safety or driver intent.
 
 ## Scenario E: Generic food stop
 
@@ -61,6 +63,15 @@ Driver: `I want to stop to eat.`
 Suzanne searches generic POI data along the active route and returns suitable
 food stops ranked by detour and route relevance. A result is valid even when
 there is no partner relationship or discount attached.
+
+## Scenario E2: Generic hotel or attraction search
+
+Driver: `Find a hotel near the route.`
+
+Suzanne searches generic route-aware POI data and returns a factual hotel
+result. The same flow supports restaurants, tourist attractions, coffee, rest,
+and charging. Searching does not alter the active route unless the driver
+explicitly asks Suzanne to add the place as a stop.
 
 ## Scenario F: Dining and commerce
 

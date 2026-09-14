@@ -1,62 +1,36 @@
-from typing import Annotated
+from fastapi import APIRouter, Request
 
-from fastapi import APIRouter, File, Form, Request, UploadFile
-
-from ..core.errors import APIError
-from ..models.contracts import AssistantResponse, InteractRequest
-from ..services.assistant.service import AssistantService
+from ..models.contracts import (
+    AssistantIntent,
+    RealtimeSessionResponse,
+    RealtimeToolRouteRequest,
+    RealtimeToolRouteResponse,
+)
 
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
-SUPPORTED_AUDIO_TYPES = {
-    "audio/mpeg",
-    "audio/mp4",
-    "audio/ogg",
-    "audio/wav",
-    "audio/webm",
-    "video/webm",
-}
-
-
-def get_assistant_service(request: Request) -> AssistantService:
-    return request.app.state.assistant_service
-
 
 @router.post(
-    "/interact",
-    response_model=AssistantResponse,
-    response_model_exclude_none=True,
+    "/realtime/session",
+    response_model=RealtimeSessionResponse,
 )
-async def interact(payload: InteractRequest, request: Request) -> AssistantResponse:
-    return await get_assistant_service(request).interact(
-        payload.text, payload.session_id
+async def realtime_session(request: Request) -> RealtimeSessionResponse:
+    client_secret = await request.app.state.realtime_provider.create_client_secret()
+    return RealtimeSessionResponse(
+        client_secret=client_secret,
+        model=request.app.state.settings.realtime_model,
     )
 
 
 @router.post(
-    "/voice",
-    response_model=AssistantResponse,
-    response_model_exclude_none=True,
+    "/realtime/tools/plan-route",
+    response_model=RealtimeToolRouteResponse,
 )
-async def voice(
+async def realtime_plan_route(
+    payload: RealtimeToolRouteRequest,
     request: Request,
-    audio: Annotated[UploadFile, File()],
-    session_id: Annotated[str | None, Form(alias="sessionId")] = None,
-) -> AssistantResponse:
-    content_type = (audio.content_type or "").lower().split(";", 1)[0].strip()
-    if content_type not in SUPPORTED_AUDIO_TYPES:
-        raise APIError(400, "INVALID_AUDIO", "The uploaded audio format is not supported.")
-
-    max_bytes = request.app.state.settings.max_audio_bytes
-    audio_bytes = await audio.read(max_bytes + 1)
-    if not audio_bytes:
-        raise APIError(400, "INVALID_AUDIO", "The uploaded audio is empty.")
-    if len(audio_bytes) > max_bytes:
-        raise APIError(413, "PAYLOAD_TOO_LARGE", "The uploaded audio is too large.")
-
-    return await get_assistant_service(request).process_voice(
-        audio_bytes,
-        audio.filename or "recording",
-        content_type,
-        session_id,
+) -> RealtimeToolRouteResponse:
+    route = await request.app.state.route_service.plan(
+        AssistantIntent(destination=payload.destination, priority=payload.priority)
     )
+    return RealtimeToolRouteResponse(route=route)

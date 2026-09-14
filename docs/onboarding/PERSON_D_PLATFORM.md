@@ -25,6 +25,11 @@ and lightweight integration reliability.
 - Keep CORS explicit; do not use wildcard origins with credentials.
 - Simulated wallet data is not real card data.
 - Health checks should work even when remote providers are unavailable.
+- Day 3 keeps Routes, Geocoding, Places, and country/road data behind
+  backend-only adapters and supports waypoint routing for automatic charging
+  or an explicitly requested POI.
+- Provider normalization must preserve border, toll/vignette, duration, and
+  optional partner-benefit facts without leaking provider payloads.
 
 ## General Prompt
 

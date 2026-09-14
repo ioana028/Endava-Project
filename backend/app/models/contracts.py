@@ -66,18 +66,18 @@ class RouteResponse(ContractModel):
     alerts: list[RouteAlert] = Field(default_factory=list)
 
 
-class AssistantResponse(ContractModel):
-    transcript: str
-    intent: AssistantIntent
-    spoken_response: str
-    audio_base64: str | None = None
-    route: RouteResponse | None = None
-    toast_message: str | None = None
+class RealtimeToolRouteRequest(ContractModel):
+    destination: str = Field(min_length=1, max_length=200)
+    priority: RoutePriority
 
 
-class InteractRequest(ContractModel):
-    text: str = Field(min_length=1)
-    session_id: str | None = None
+class RealtimeToolRouteResponse(ContractModel):
+    route: RouteResponse
+
+
+class RealtimeSessionResponse(ContractModel):
+    client_secret: str = Field(min_length=1)
+    model: str = Field(min_length=1)
 
 
 class HealthResponse(ContractModel):

@@ -15,8 +15,8 @@ understand -> plan -> adapt -> recommend -> book/pay (simulated)
 
 ## In scope
 
-- Local React HMI with microphone, assistant state, map, route cards, alerts,
-  and audio playback.
+- Local React HMI with explicit Start/Stop microphone controls, Realtime
+    assistant state, map, route cards, alerts, and audio playback.
 - Local FastAPI modular monolith.
 - Destination and route-style planning for fastest, scenic, cheapest, and
     balanced journeys.
@@ -26,7 +26,9 @@ understand -> plan -> adapt -> recommend -> book/pay (simulated)
 - Generic POI discovery for food, coffee, rest, toilets, and other stops even
     when no partner is available.
 - Vienna to Budapest demo corridor.
-- OpenAI STT, structured intent/tool calling, and TTS.
+- OpenAI Realtime speech-to-speech with backend-owned deterministic tools.
+- Compact model context: send only facts needed for the current spoken answer;
+    keep geometry and map presentation data in the frontend.
 - Google Maps Platform adapters: Routes and Geocoding for route planning,
   Maps JavaScript for frontend rendering, and Places for the future POI phase.
 - Flat JSON fixtures for demo vehicle and partners.
