@@ -37,16 +37,41 @@ class Coordinates(ContractModel):
 class StopPinpoint(ContractModel):
     id: str
     name: str
-    category: Literal["charging", "food", "rest", "toll", "vignette", "service"]
+    category: Literal[
+        "charging", "hotel", "restaurant", "attraction", "coffee", "food",
+        "rest", "toll", "vignette", "service"
+    ]
     coords: tuple[float, float]
     rating: float | None = None
-    tag: str
-    detour_minutes: float = Field(ge=0)
+    tag: str = ""
+    detour_minutes: float = Field(ge=0, default=0)
+    mandatory: bool = False
+    partner: "PartnerEnrichment | None" = None
+
+
+class PartnerEnrichment(ContractModel):
+    id: str
+    name: str
+    benefit: str | None = None
+
+
+class BorderCrossing(ContractModel):
+    from_country: str
+    to_country: str
+
+
+class RouteRequirement(ContractModel):
+    id: str
+    name: str
+    country: str
+    kind: Literal["toll", "vignette"]
+    mandatory: bool = True
 
 
 class TripStats(ContractModel):
     total_distance_km: float = Field(ge=0)
     total_duration_minutes: float = Field(ge=0)
+    driving_duration_minutes: float = Field(ge=0, default=0)
     total_price_eur: float = Field(ge=0, default=0)
 
 
@@ -64,6 +89,8 @@ class RouteResponse(ContractModel):
     geometry: list[tuple[float, float]]
     stops: list[StopPinpoint] = Field(default_factory=list)
     alerts: list[RouteAlert] = Field(default_factory=list)
+    border_crossings: list[BorderCrossing] = Field(default_factory=list)
+    route_requirements: list[RouteRequirement] = Field(default_factory=list)
 
 
 class RealtimeToolRouteRequest(ContractModel):
