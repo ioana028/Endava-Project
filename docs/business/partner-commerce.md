@@ -7,9 +7,12 @@ vignettes, and other journey services. It is still a smart route planner when
 no partner is available. Recommendations should be useful to the driver first
 and commercially relevant second.
 
-Partner benefits may include discounts or priority, but Suzanne must explain
-the driver benefit and preserve an explicit choice through voice. The current
-prototype must not add on-screen confirmation buttons.
+Partner benefits may include discounts or priority, but only an explicit
+benefit returned by the partner fixture may be spoken. Suzanne must explain
+the driver benefit and preserve an explicit choice for commerce through voice.
+The current prototype must not add on-screen confirmation buttons. A route
+requirement such as the Hungarian vignette remains a requirement even when its
+partner record has no benefit.
 
 Partner enrichment is optional. Generic POI search must be able to return a
 food, coffee, rest, or destination restaurant result without a partner offer.

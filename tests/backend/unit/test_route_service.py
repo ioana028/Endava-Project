@@ -13,7 +13,6 @@ from backend.app.services.trip.ports import (
     RoutingProviderError,
 )
 from backend.app.services.trip.service import RouteService
-from backend.app.services.assistant.service import AssistantService, LocalTextAIModule
 
 
 class FakeRoutingProvider:
@@ -109,7 +108,7 @@ def test_route_within_vehicle_range_has_no_range_warning() -> None:
     assert route.alerts == []
 
 
-def test_route_beyond_vehicle_range_returns_charging_question() -> None:
+def test_route_beyond_vehicle_range_returns_range_warning() -> None:
     route = asyncio.run(
         RouteService(FakeRoutingProvider(distance_meters=243_000), repository()).plan(
             intent()
@@ -167,20 +166,3 @@ def test_invalid_provider_route_returns_stable_api_error(
     assert error.value.status_code == 503
     assert error.value.code == "INVALID_ROUTE"
 
-
-def test_assistant_service_returns_route_from_extracted_intent() -> None:
-    route_service = RouteService(FakeRoutingProvider(), repository())
-    service = AssistantService(LocalTextAIModule(), route_service)
-
-    response = asyncio.run(
-        service.interact("Suzanne, take me to Budapest fast", "day2-test")
-    )
-
-    assert response.intent.destination == "Budapest"
-    assert response.route is not None
-    assert response.route.stats.total_distance_km == 243
-    assert response.route.alerts[0].type == "VEHICLE"
-    response_json = response.model_dump(by_alias=True)
-    assert response_json["spokenResponse"]
-    assert response_json["route"]["stats"]["totalDistanceKm"] == 243
-    assert response_json["route"]["stats"]["totalDurationMinutes"] == 165

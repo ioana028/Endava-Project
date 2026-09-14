@@ -26,6 +26,8 @@ Copy `.env.example` to `.env` at the repository root. Current variables are:
 | `PORT` | Backend port, normally `8000` |
 | `FRONTEND_PORT` | Frontend port, normally `5173` |
 | `OPENAI_API_KEY` | Backend-only OpenAI credential |
+| `OPENAI_REALTIME_MODEL` | Realtime voice model, normally `gpt-realtime-2.1-mini` |
+| `OPENAI_REALTIME_SECRET_SECONDS` | Lifetime of browser Realtime client secrets, normally `300` |
 | `GOOGLE_SERVER_API_KEY` | Backend-only Google Routes, Geocoding, and later Places credential |
 | `VITE_GOOGLE_MAPS_BROWSER_KEY` | Frontend Google Maps JavaScript key, restricted to local/frontend origins |
 | `CORS_ORIGINS` | Comma-separated allowed browser origins |
@@ -35,6 +37,14 @@ Vite-exposed variables, JSON fixtures, logs, or committed files. The browser
 Maps key is intentionally Vite-exposed and must be restricted by HTTP referrer
 to the allowed frontend origins. `.env` is ignored by Git; `.env.example`
 contains placeholders only.
+
+The backend exposes a short-lived Realtime client secret to the frontend through
+`POST /api/assistant/realtime/session`. The frontend uses that secret only to
+establish the user-started WebRTC session; it never receives `OPENAI_API_KEY`.
+The Realtime session is configured server-side with the deterministic
+`plan_route` tool. The browser sends tool arguments to
+`POST /api/assistant/realtime/tools/plan-route`, which delegates to the existing
+route service and returns the structured `RouteResponse`.
 
 ## Health and startup behavior
 
@@ -62,7 +72,9 @@ The first fixtures are:
 - `data/vehicles/telemetry.json`: Honda E demo vehicle, BEV, 42% battery,
   95 km estimated range, summer tyres.
 - `data/partners/partners.json`: Ionity Győr, Hungarian e-vignette, and a
-  Budapest restaurant offer.
+  Budapest restaurant offer. The vignette entry has no partner benefit; it is
+  matched only as optional commerce enrichment for a deterministic route
+  requirement.
 
 Load fixtures through a small repository/loader boundary. Do not let each
 endpoint open and interpret JSON independently.

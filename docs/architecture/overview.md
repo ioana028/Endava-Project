@@ -11,7 +11,7 @@ required cloud deployment targets.
 ```text
 Browser / HMI
     |
-    | HTTP and multipart voice upload
+    | Realtime WebRTC audio + JSON tool calls
     v
 FastAPI modular monolith
     |
@@ -27,10 +27,14 @@ FastAPI modular monolith
 - Frontend: React 18, TypeScript, Vite, TailwindCSS, Google Maps JavaScript
   API, Lucide.
 - Backend: Python 3.11+, FastAPI, Pydantic v2, Uvicorn, HTTPX.
-- AI: OpenAI Whisper `whisper-1`, tool calling/structured output, and TTS
-  `tts-1` with the `nova` voice for the Day 1 demo.
-- Routing: Google Routes and Geocoding API adapters, to be implemented after
-  the walking skeleton. Google Places is reserved for the later POI phase.
+- AI: OpenAI Realtime `gpt-realtime-2.1-mini` over browser WebRTC, with
+  backend-owned deterministic tools. The browser uses an explicit Start/Stop
+  session lifecycle; it does not use a wake word, MediaRecorder uploads, or a
+  separate TTS step on the active path.
+- Routing: Google Routes and Geocoding adapters plus a backend-only Places
+  adapter for charging and generic route-aware POIs. Routes accepts selected
+  waypoints; Places discovers candidates. Country/road rules remain
+  deterministic application logic.
 - Data: flat JSON fixtures under `data/`; no remote database.
 
 ## Core principle
@@ -45,10 +49,10 @@ The AI may:
 - maintain conversational context;
 - turn returned facts into concise speech.
 
-On Day 1, the AI returns the extracted intent to the backend, and the backend
-returns that intent to the frontend. The frontend then plays the fixed voice
-response `Calculating route based on your preferences, hold on`. No route is
-calculated on Day 1.
+The active voice path begins only after the driver presses Start Suzanne. The
+backend mints a short-lived Realtime client secret, the browser connects over
+WebRTC, and Stop closes the peer connection and microphone tracks. Realtime
+selects tools; deterministic backend services calculate every factual result.
 
 The AI must not invent route geometry, distance, duration, charging stations,
 prices, vehicle range, weather, partner offers, booking success, or payment
@@ -97,7 +101,7 @@ services consume typed application models.
 |---|---|---|
 | A | What does the driver see and how does it fit together? | Product, architecture, React/HMI, map |
 | B | What is the best factual journey? | Trip, vehicle, range, stops, scoring |
-| C | What does the driver mean and hear? | Whisper, intent, tools, context, TTS |
+| C | What does the driver mean and hear? | Realtime instructions, tools, context, spoken output |
 | D | How does it run and connect reliably? | Runtime, API plumbing, config, CORS, security |
 
 Ownership is not a silo. Shared contracts and architecture changes involve A;

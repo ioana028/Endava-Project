@@ -15,7 +15,8 @@ Every AI working in this repository should:
 - avoid duplicate models, microservices, cloud infrastructure, and speculative
   abstractions;
 - keep deterministic facts out of LLM-generated guesses;
-- treat Day 1 as voice input -> intent -> backend response -> voice output;
+- treat the active path as Start -> Realtime WebRTC -> backend tool -> spoken
+  result, with the original Day 1 upload path marked historical;
 - never add on-screen confirmation buttons; confirmations are spoken;
 - add tests for behavior owned by the change;
 - say clearly when a requested behavior is Day 2 or Future rather than

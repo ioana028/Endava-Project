@@ -8,17 +8,17 @@ from .core.errors import register_error_handlers
 from .core.fixture_repository import FixtureRepository
 from .core.settings import Settings
 from .integrations.google_maps.routing import GoogleMapsRoutingProvider
-from .integrations.openai.assistant import OpenAIAssistantModule
-from .integrations.openai.client import AsyncOpenAIClient
+from .integrations.openai.realtime import (
+    OpenAIRealtimeProvider,
+    RealtimeSessionProvider,
+)
 from .models.contracts import HealthResponse
-from .services.assistant.ports import AssistantAIModule
-from .services.assistant.service import AssistantService, LocalTextAIModule
 from .services.trip.service import RouteService
 
 
 def create_app(
-    ai_module: AssistantAIModule | None = None,
     route_service: RouteService | None = None,
+    realtime_provider: RealtimeSessionProvider | None = None,
 ) -> FastAPI:
     settings = Settings()
     fixture_repository = FixtureRepository(
@@ -43,18 +43,11 @@ def create_app(
         allow_headers=["Content-Type"],
     )
     application.state.settings = settings
-    configured_ai_module = ai_module or LocalTextAIModule()
-    if ai_module is None and settings.openai_api_key:
-        try:
-            configured_ai_module = OpenAIAssistantModule(
-                AsyncOpenAIClient(settings.openai_api_key)
-            )
-        except ModuleNotFoundError as error:
-            if error.name != "openai":
-                raise
-    application.state.assistant_service = AssistantService(
-        configured_ai_module,
-        route_service=route_service,
+    application.state.route_service = route_service
+    application.state.realtime_provider = realtime_provider or OpenAIRealtimeProvider(
+        settings.openai_api_key,
+        settings.realtime_model,
+        settings.realtime_secret_seconds,
     )
     application.include_router(assistant_router)
     register_error_handlers(application)

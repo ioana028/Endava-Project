@@ -24,6 +24,8 @@ trip statistics, route geometry, stops, and alerts. It represents the driver's
 requested route plus factual mandatory requirements and useful optional stops.
 A route is not merely a spoken answer: the map and cards consume its
 structured fields.
+Day 3 extends it with driving duration, total duration including mandatory
+charging time, border crossings, and explicit toll/vignette requirements.
 
 ## Stops and partners
 
@@ -42,6 +44,10 @@ The planner distinguishes:
 	destination restaurant selected from generic POI data.
 - **Partner enrichment:** a discount, booking option, or service attached to
 	an otherwise relevant stop.
+
+Partner enrichment is optional. The Hungarian vignette is a route requirement,
+but its partner fixture entry has no benefit and must not be represented as a
+discount or other commercial advantage.
 
 Current partner fixture entries are Ionity Győr, a Hungarian 10-day e-vignette,
 and Trattoria Venice Budapest.

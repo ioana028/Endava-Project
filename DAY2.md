@@ -1,8 +1,9 @@
-# Day 2 Deliverables: Route Planning and Voice Feedback
+# Day 2 Deliverables: Route Planning on Realtime
 
 ## Goal
 
-By EOD Day 2, the driver can ask Suzanne for a route to a destination and
+By EOD Day 2, after pressing Start Suzanne, the driver can ask Suzanne for a
+route to a destination in one active Realtime session and
 receive:
 
 - a visually displayed route;
@@ -28,25 +29,23 @@ The wording may vary slightly, but the response must be based on returned
 structured facts. Suzanne must not invent distance, duration, range, or
 charging requirements.
 
-## Voice feedback while processing
+## Realtime feedback while processing
 
-The frontend must not wait for the backend before giving the driver feedback.
-After the request is locally accepted and processing starts, play a small
-pre-recorded message queue, for example:
+The frontend must not wait for the Realtime session or route tool before giving
+the driver feedback. Start plays the local listening jingle immediately. While
+the tool is running, Realtime may provide at most one short natural
+acknowledgement.
 
 ```text
 Calculating your route, give me a few seconds.
 I'm checking the distance and travel time now.
 ```
 
-The messages must:
+The feedback must:
 
-- be stored as local frontend audio assets;
-- play in order while the backend request is running;
-- start independently of backend TTS latency;
-- stop immediately when the request finishes or errors;
-- never play after a known error; and
-- never claim route facts that the backend has not returned.
+- be started by the user's explicit Start action;
+- never claim route facts that the tool has not returned;
+- stop when the route response completes or the user presses Stop.
 
 The final backend response replaces the filler queue with one natural,
 conversational route summary. The frontend must not wait for the filler audio
@@ -106,8 +105,11 @@ The frontend must consume structured route fields. It must not parse
 - Keep the route display read-only.
 - Do not add POI cards, partner cards, route-editing controls, or charging-stop
   selection controls.
-- Keep the existing microphone, transcript, intent, and audio playback flow.
-- Play the backend's spoken route summary and charging question.
+- Use the active Realtime microphone, transcript, and audio flow.
+- Do not use a wake word, `MediaRecorder`, multipart upload, Whisper, or a
+  separate TTS request on the active path.
+- Keep the full route response local for the map; send only compact narration
+  facts back to Realtime.
 - Add focused frontend verification for a populated route response and a route
   response with a range warning.
 
@@ -139,8 +141,8 @@ The frontend must consume structured route fields. It must not parse
 
 ## Person C: AI and voice orchestration
 
-- Preserve the existing Whisper transcription and structured destination and
-  priority extraction.
+- Configure Realtime tool calling for structured destination and priority
+  extraction.
 - Pass the extracted intent to the deterministic route service through the
   backend orchestration boundary.
 - Generate a concise, human, conversational spoken route summary from the
@@ -152,9 +154,8 @@ The frontend must consume structured route fields. It must not parse
   charging wording.
 - Keep the spoken response in English for the Day 2 demo and configure
   transcription language consistently with the supported driver language.
-- Keep TTS output concise and natural enough for repeated route narration.
-- Do not generate filler messages through the backend on every request; the
-  frontend owns the pre-recorded processing messages so they start immediately.
+- Keep Realtime output concise and natural enough for repeated route narration.
+- Do not send geometry or other presentation-only route data to Realtime.
 - Add tests with fake route data and fake OpenAI clients so route narration is
   deterministic and does not require live provider calls.
 
