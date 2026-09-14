@@ -56,6 +56,7 @@ class GoogleMapsRoutingProvider:
         origin: GeocodedPlace,
         destination: GeocodedPlace,
         priority: RoutePriority,
+        waypoints: tuple[GeocodedPlace, ...] | None = None,
     ) -> ProviderRoute:
         if not self._api_key:
             raise RoutingProviderError("GOOGLE_SERVER_API_KEY is not configured")
@@ -70,6 +71,11 @@ class GoogleMapsRoutingProvider:
             "units": "METRIC",
             "languageCode": "en-US",
         }
+        if waypoints:
+            request["intermediates"] = [
+                {"location": {"latLng": self._lat_lng(waypoint)}}
+                for waypoint in waypoints
+            ]
         headers = {
             "X-Goog-Api-Key": self._api_key,
             "X-Goog-FieldMask": (

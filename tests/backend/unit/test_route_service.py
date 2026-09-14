@@ -108,7 +108,7 @@ def test_route_within_vehicle_range_has_no_range_warning() -> None:
     assert route.alerts == []
 
 
-def test_route_beyond_vehicle_range_returns_range_warning() -> None:
+def test_route_beyond_vehicle_range_returns_range_warning_and_charging_stop() -> None:
     route = asyncio.run(
         RouteService(FakeRoutingProvider(distance_meters=243_000), repository()).plan(
             intent()
@@ -120,7 +120,10 @@ def test_route_beyond_vehicle_range_returns_range_warning() -> None:
     assert route.alerts[0].severity == "WARNING"
     assert "estimated range is 95 km" in route.alerts[0].message
     assert "route distance is 243 km" in route.alerts[0].message
-    assert route.stops == []
+    assert route.charging_stop is not None
+    assert route.charging_stop.name == "Ionity Győr"
+    assert route.border_crossings == ["Austria-Hungary"]
+    assert route.route_requirements == ["Hungarian motorway vignette"]
 
 
 def test_invalid_destination_returns_stable_api_error() -> None:

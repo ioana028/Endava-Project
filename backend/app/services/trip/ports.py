@@ -33,4 +33,5 @@ class RoutingProvider(Protocol):
         origin: GeocodedPlace,
         destination: GeocodedPlace,
         priority: RoutePriority,
+        waypoints: tuple[GeocodedPlace, ...] | None = None,
     ) -> ProviderRoute: ...

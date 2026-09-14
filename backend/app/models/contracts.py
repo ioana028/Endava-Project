@@ -42,10 +42,12 @@ class StopPinpoint(ContractModel):
     rating: float | None = None
     tag: str
     detour_minutes: float = Field(ge=0)
+    partner_benefit: str | None = None
 
 
 class TripStats(ContractModel):
     total_distance_km: float = Field(ge=0)
+    driving_duration_minutes: float = Field(ge=0, default=0)
     total_duration_minutes: float = Field(ge=0)
     total_price_eur: float = Field(ge=0, default=0)
 
@@ -64,6 +66,9 @@ class RouteResponse(ContractModel):
     geometry: list[tuple[float, float]]
     stops: list[StopPinpoint] = Field(default_factory=list)
     alerts: list[RouteAlert] = Field(default_factory=list)
+    charging_stop: StopPinpoint | None = None
+    border_crossings: list[str] = Field(default_factory=list)
+    route_requirements: list[str] = Field(default_factory=list)
 
 
 class RealtimeToolRouteRequest(ContractModel):
