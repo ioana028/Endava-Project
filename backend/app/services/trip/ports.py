@@ -12,6 +12,10 @@ class RoutingProviderError(RuntimeError):
     """Raised when a routing provider cannot complete a request."""
 
 
+class JourneyProviderError(RuntimeError):
+    """Raised when charging or POI data cannot be retrieved."""
+
+
 @dataclass(frozen=True, slots=True)
 class GeocodedPlace:
     display_name: str

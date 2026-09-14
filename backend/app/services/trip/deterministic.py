@@ -51,7 +51,19 @@ def rank_pois(
 
 
 def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpoint:
-    partner = next((item for item in partners if item.id == stop.id), None)
+    partner_list = tuple(partners)
+    partner = next((item for item in partner_list if item.id == stop.id), None)
+    if partner is None:
+        normalized_name = " ".join(stop.name.casefold().split())
+        partner = next(
+            (
+                item
+                for item in partner_list
+                if item.category == stop.category
+                and " ".join(item.name.casefold().split()) == normalized_name
+            ),
+            None,
+        )
     if partner is None:
         return stop
     benefit = None if partner.category == "vignette" else partner.tag or None

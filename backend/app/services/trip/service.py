@@ -15,6 +15,7 @@ from .ports import (
     GeocodedPlace,
     InvalidDestinationError,
     ChargingProvider,
+    JourneyProviderError,
     RoutingProvider,
     RoutingProviderError,
 )
@@ -68,34 +69,50 @@ class RouteService:
         stops = []
         total_minutes = driving_minutes
         if self._charging_provider and distance_km > self._safe_distance_km():
-            candidate = select_charger(
-                await self._charging_provider.search_charging(
+            try:
+                candidates = await self._charging_provider.search_charging(
                     provider_route, self._safe_distance_km()
-                ),
-                self._safe_distance_km(),
-            )
+                )
+            except (JourneyProviderError, OSError) as error:
+                raise APIError(
+                    503,
+                    "CHARGING_UNAVAILABLE",
+                    "The charging service is unavailable.",
+                ) from error
+            candidate = select_charger(candidates, self._safe_distance_km())
+            if candidate is None:
+                raise APIError(
+                    422,
+                    "NO_SUITABLE_CHARGER",
+                    "No suitable charging stop was found for this route.",
+                )
             if candidate is not None:
                 stop = enrich_partner(
                     candidate.stop, self._fixture_repository.fixtures.partners
                 ).model_copy(update={"mandatory": True})
                 stops.append(stop)
-                if self._supports_waypoints():
-                    waypoint = GeocodedPlace(
-                        stop.name,
-                        Coordinates(lng=stop.coords[0], lat=stop.coords[1]),
+                if not self._supports_waypoints():
+                    raise APIError(
+                        503,
+                        "ROUTING_UNAVAILABLE",
+                        "The routing service cannot route through a charging stop.",
                     )
-                    try:
-                        provider_route = await self._provider.route(
-                            origin, destination, intent.priority, (waypoint,)
-                        )
-                    except (RoutingProviderError, OSError) as error:
-                        raise APIError(
-                            503,
-                            "ROUTING_UNAVAILABLE",
-                            "The routing service is unavailable.",
-                        ) from error
-                    distance_km = round(provider_route.distance_meters / 1000, 2)
-                    driving_minutes = round(provider_route.duration_seconds / 60, 1)
+                waypoint = GeocodedPlace(
+                    stop.name,
+                    Coordinates(lng=stop.coords[0], lat=stop.coords[1]),
+                )
+                try:
+                    provider_route = await self._provider.route(
+                        origin, destination, intent.priority, (waypoint,)
+                    )
+                except (RoutingProviderError, OSError) as error:
+                    raise APIError(
+                        503,
+                        "ROUTING_UNAVAILABLE",
+                        "The routing service is unavailable.",
+                    ) from error
+                distance_km = round(provider_route.distance_meters / 1000, 2)
+                driving_minutes = round(provider_route.duration_seconds / 60, 1)
                 total_minutes = round(driving_minutes + stop.detour_minutes, 1)
 
         alerts = self._range_alert(distance_km) if not stops else []
