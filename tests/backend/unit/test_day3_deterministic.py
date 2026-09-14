@@ -21,6 +21,7 @@ from backend.app.services.trip.ports import (
 )
 from backend.app.services.trip.service import RouteService
 from backend.app.models.contracts import AssistantIntent, Coordinates, RoutePriority
+from backend.app.integrations.places.google import GooglePlacesProvider
 
 
 def stop(stop_id: str, category: str = "charging", detour: float = 1) -> StopPinpoint:
@@ -229,3 +230,35 @@ def test_poi_route_through_calls_waypoint_routing_explicitly() -> None:
 
     assert result.distance_meters == 251_000
     assert provider.waypoints[0][0].display_name == "hotel"
+
+
+def test_google_places_provider_maps_and_filters_route_results() -> None:
+    provider = GooglePlacesProvider("test-key")
+    route = ProviderRoute(1000, 60, ((17.0, 47.0), (18.0, 47.0)))
+
+    result = provider._to_stop(
+        {
+            "id": "places/cool-place",
+            "displayName": {"text": "Cool Place"},
+            "location": {"longitude": 17.5, "latitude": 47.005},
+            "rating": 4.7,
+            "editorialSummary": {"text": "A memorable stop"},
+        },
+        "attraction",
+        route,
+    )
+
+    assert result is not None
+    assert result.name == "Cool Place"
+    assert result.category == "attraction"
+    assert result.rating == 4.7
+    assert result.tag == "A memorable stop"
+    assert provider._to_stop(
+        {
+            "id": "places/far-away",
+            "displayName": {"text": "Far Away"},
+            "location": {"longitude": 17.5, "latitude": 47.1},
+        },
+        "attraction",
+        route,
+    ) is None

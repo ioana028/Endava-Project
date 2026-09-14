@@ -45,8 +45,10 @@ class StopPinpoint(ContractModel):
     rating: float | None = None
     tag: str = ""
     detour_minutes: float = Field(ge=0, default=0)
+    charging_duration_minutes: float = Field(ge=0, default=0)
     mandatory: bool = False
     partner: "PartnerEnrichment | None" = None
+    partner_benefit: str | None = None
 
 
 class PartnerEnrichment(ContractModel):
@@ -70,8 +72,8 @@ class RouteRequirement(ContractModel):
 
 class TripStats(ContractModel):
     total_distance_km: float = Field(ge=0)
-    total_duration_minutes: float = Field(ge=0)
     driving_duration_minutes: float = Field(ge=0, default=0)
+    total_duration_minutes: float = Field(ge=0)
     total_price_eur: float = Field(ge=0, default=0)
 
 
@@ -91,6 +93,7 @@ class RouteResponse(ContractModel):
     alerts: list[RouteAlert] = Field(default_factory=list)
     border_crossings: list[BorderCrossing] = Field(default_factory=list)
     route_requirements: list[RouteRequirement] = Field(default_factory=list)
+    charging_stop: StopPinpoint | None = None
 
 
 class RealtimeToolRouteRequest(ContractModel):
@@ -100,6 +103,16 @@ class RealtimeToolRouteRequest(ContractModel):
 
 class RealtimeToolRouteResponse(ContractModel):
     route: RouteResponse
+
+
+class RealtimeToolSearchRoutePoiRequest(ContractModel):
+    category: str = Field(min_length=1, max_length=50)
+    location: str | None = None
+    preference: str | None = None
+
+
+class RealtimeToolSearchRoutePoiResponse(ContractModel):
+    results: list[StopPinpoint] = Field(default_factory=list)
 
 
 class RealtimeSessionResponse(ContractModel):

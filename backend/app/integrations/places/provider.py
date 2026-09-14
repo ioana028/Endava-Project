@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from ...core.fixture_repository import FixtureRepository
 from ...models.contracts import StopPinpoint
+from ...services.trip.ports import ProviderRoute
 
 
 class LocalPlacesProvider:
@@ -70,6 +71,7 @@ class LocalPlacesProvider:
         category: str,
         location: str | None = None,
         preference: str | None = None,
+        route: ProviderRoute | None = None,
     ) -> list[StopPinpoint]:
         normalized = self._normalize_category(category)
 
@@ -86,16 +88,87 @@ class LocalPlacesProvider:
                 or preference_lower in candidate.tag.lower()
             ]
 
-        location_text = (location or "").lower()
+        location_context = (location or "destination").strip().lower()
+        if location_context not in {"route", "stop", "destination"}:
+            location_context = "destination"
+
+        candidates = [
+            candidate
+            for candidate in candidates
+            if self._matches_location(candidate, location_context, route)
+        ]
         candidates.sort(
             key=lambda candidate: (
-                0 if location_text and location_text in candidate.name.lower() else 1,
+                self._route_distance(candidate, location_context, route),
                 candidate.detour_minutes,
                 -(candidate.rating or 0),
                 candidate.name,
             )
         )
         return candidates[:10]
+
+    @staticmethod
+    def _matches_location(
+        candidate: StopPinpoint,
+        location: str,
+        route: ProviderRoute | None,
+    ) -> bool:
+        if route is None or not route.geometry:
+            return True
+        distance = LocalPlacesProvider._route_distance(candidate, location, route)
+        return distance <= 0.35 if location == "route" else distance <= 0.6
+
+    @staticmethod
+    def _route_distance(
+        candidate: StopPinpoint,
+        location: str,
+        route: ProviderRoute | None,
+    ) -> float:
+        if route is None or not route.geometry:
+            return 0
+        point = candidate.coords
+        if location == "destination":
+            reference = route.geometry[-1]
+            return LocalPlacesProvider._distance(point, reference)
+        if location == "stop":
+            reference_points = route.geometry[1:-1] or route.geometry
+            return min(
+                LocalPlacesProvider._distance(point, reference)
+                for reference in reference_points
+            )
+        return min(
+            LocalPlacesProvider._distance_to_segment(point, start, end)
+            for start, end in zip(route.geometry, route.geometry[1:])
+        )
+
+    @staticmethod
+    def _distance(first: tuple[float, float], second: tuple[float, float]) -> float:
+        longitude_delta = first[0] - second[0]
+        latitude_delta = first[1] - second[1]
+        return (longitude_delta**2 + latitude_delta**2) ** 0.5
+
+    @staticmethod
+    def _distance_to_segment(
+        point: tuple[float, float],
+        start: tuple[float, float],
+        end: tuple[float, float],
+    ) -> float:
+        segment_longitude = end[0] - start[0]
+        segment_latitude = end[1] - start[1]
+        length_squared = segment_longitude**2 + segment_latitude**2
+        if length_squared == 0:
+            return LocalPlacesProvider._distance(point, start)
+
+        projection = (
+            (point[0] - start[0]) * segment_longitude
+            + (point[1] - start[1]) * segment_latitude
+        ) / length_squared
+        projection = max(0, min(1, projection))
+        closest = (
+            start[0] + projection * segment_longitude,
+            start[1] + projection * segment_latitude,
+        )
+        return LocalPlacesProvider._distance(point, closest)
 
     def _partner_matches(self, category: str) -> list[StopPinpoint]:
         partners = self._fixture_repository.fixtures.partners
@@ -130,7 +203,9 @@ class LocalPlacesProvider:
         tag = partner.tag
         partner_benefit = None
         tag_lower = tag.lower()
-        if any(keyword in tag_lower for keyword in ("discount", "rate", "benefit")):
+        if partner.category != "vignette" and any(
+            keyword in tag_lower for keyword in ("discount", "rate", "benefit")
+        ):
             partner_benefit = tag
 
         return StopPinpoint(

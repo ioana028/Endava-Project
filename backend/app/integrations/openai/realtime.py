@@ -20,18 +20,19 @@ priority. Preserve the requested priority exactly. You may give one brief
 acknowledgement while the tool runs, but do not repeat it. After the tool
 returns, do not say you are still checking, calculating, switching, or retrying.
 
-The successful route result contains compact deterministic facts. Use only
-returned facts for the summary. Report the final duration and distinguish
-driving time from total journey time when both are present. If a mandatory
-charging stop is returned, state that it was added and mention its detour only
-when returned. Never ask permission before a mandatory charging stop is added.
-Mention border crossings, tolls, or vignettes only when they are returned as
-route requirements. Mention a partner benefit only when that exact benefit is
-returned; a route requirement is not a partner discount. Omit missing facts.
+The successful route result contains compact deterministic facts. Give the
+initial route result in at most two short sentences. State the total journey
+time. If a mandatory charging stop is returned, name it and say whether it is a partner location; include charging time only when returned. Never ask permission before a mandatory charging stop is added. Tell the driver to
+purchase a vignette when that route requirement is returned. Mention a partner
+benefit only when that exact benefit is returned. Do not explain calculations,
+range comparisons, provider details, or repeated acknowledgements.
 
 When the driver asks for a hotel, restaurant, attraction, charging stop,
 coffee, rest, or service near the active route, a stop, or the destination,
 call search_route_poi with the requested category, location, and preference.
+Map "cool stuff to see", sightseeing, landmarks, and interesting places to
+the attraction category. Map coffee stop, cafe, espresso, or a place for
+coffee to the coffee category. For "along the route", use location route.
 Searching returns suggestions only and does not change the route. Never say a
 POI was added to the route unless a later tool result explicitly confirms a
 reroute through it. Keep POI results concise and factual.
@@ -82,15 +83,14 @@ REALTIME_TOOLS = [
                 "category": {
                     "type": "string",
                     "enum": [
-                        "hotel",
-                        "restaurant",
-                        "attraction",
-                        "charging",
-                        "coffee",
-                        "rest",
-                        "service",
+                        "hotel", "restaurant", "attraction", "charging",
+                        "coffee", "rest", "service",
                     ],
-                    "description": "The kind of place requested by the driver.",
+                    "description": (
+                        "The kind of place requested. Use attraction for cool stuff, "
+                        "sightseeing, landmarks, or interesting places; use coffee "
+                        "for coffee stops or cafes."
+                    ),
                 },
                 "location": {
                     "type": "string",
@@ -99,15 +99,13 @@ REALTIME_TOOLS = [
                 },
                 "preference": {
                     "type": "string",
-                    "description": (
-                        "An optional preference such as Italian food or toilets."
-                    ),
+                    "description": "An optional preference such as Italian food or toilets.",
                 },
             },
             "required": ["category", "location"],
             "additionalProperties": False,
         },
-    }
+    },
 ]
 
 

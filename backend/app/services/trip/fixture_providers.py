@@ -23,8 +23,10 @@ class FixtureChargingProvider:
                     rating=partner.rating,
                     tag=partner.tag,
                     detour_minutes=partner.detour_minutes,
+                    charging_duration_minutes=partner.charging_duration_minutes,
                 ),
                 distance_from_route_km=min(max_distance_km, 1),
+                charging_duration_minutes=partner.charging_duration_minutes,
             )
             for partner in self._partners
             if partner.category == "charging"

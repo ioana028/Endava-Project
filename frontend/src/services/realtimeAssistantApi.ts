@@ -1,4 +1,4 @@
-import type { RouteResponse } from '../types/contracts'
+import type { RoutePoiResponse, RouteResponse } from '../types/contracts'
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -53,4 +53,25 @@ export async function planRouteWithTool(
   }
 
   return (await response.json()) as PlanRouteToolResponse
+}
+
+export async function searchRoutePoiWithTool(
+  argumentsJson: string,
+  signal?: AbortSignal,
+): Promise<RoutePoiResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/assistant/realtime/tools/search-route-poi`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: argumentsJson,
+      signal,
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error(`POI search failed with HTTP ${response.status}`)
+  }
+
+  return (await response.json()) as RoutePoiResponse
 }

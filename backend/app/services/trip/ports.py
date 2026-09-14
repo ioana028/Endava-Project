@@ -23,12 +23,19 @@ class GeocodedPlace:
 
 
 @dataclass(frozen=True, slots=True)
+class ProviderToll:
+    amount: float
+    currency: str
+
+
+@dataclass(frozen=True, slots=True)
 class ProviderRoute:
     distance_meters: float
     duration_seconds: float
     geometry: tuple[tuple[float, float], ...]
     countries: tuple[str, ...] = ()
     border_crossings: tuple[tuple[str, str], ...] = ()
+    tolls: tuple[ProviderToll, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +44,7 @@ class ChargingCandidate:
     compatible: bool = True
     available: bool = True
     distance_from_route_km: float = 0
+    charging_duration_minutes: float = 0
 
 
 @dataclass(frozen=True, slots=True)

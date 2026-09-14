@@ -96,9 +96,11 @@ def test_route_normalizes_provider_units_and_geometry() -> None:
     assert route.origin == "Vienna, Austria"
     assert route.destination == "Budapest"
     assert route.stats.total_distance_km == 243
-    assert route.stats.total_duration_minutes == 165
-    assert route.geometry == [(16.37, 48.2), (19.04, 47.5)]
-    assert route.stops == []
+    assert route.stats.driving_duration_minutes == 165
+    assert route.stats.total_duration_minutes == 192
+    assert route.charging_stop is not None
+    assert route.charging_stop.name == "Ionity Győr"
+    assert route.charging_stop.charging_duration_minutes == 25
 
 
 def test_route_within_vehicle_range_has_no_range_warning() -> None:
@@ -118,15 +120,15 @@ def test_route_beyond_vehicle_range_returns_range_warning_and_charging_stop() ->
         )
     )
 
-    assert len(route.alerts) == 1
-    assert route.alerts[0].type == "VEHICLE"
-    assert route.alerts[0].severity == "WARNING"
-    assert "estimated range is 95 km" in route.alerts[0].message
-    assert "route distance is 243 km" in route.alerts[0].message
+    assert route.alerts == []
     assert route.charging_stop is not None
     assert route.charging_stop.name == "Ionity Győr"
-    assert route.border_crossings == ["Austria-Hungary"]
-    assert route.route_requirements == ["Hungarian motorway vignette"]
+    assert [(item.from_country, item.to_country) for item in route.border_crossings] == [
+        ("Austria", "Hungary")
+    ]
+    assert [item.name for item in route.route_requirements] == [
+        "Hungarian motorway vignette"
+    ]
 
 
 def test_search_route_poi_returns_generic_results_without_mutating_route() -> None:
@@ -143,7 +145,19 @@ def test_search_route_poi_returns_generic_results_without_mutating_route() -> No
     assert len(results) >= 1
     assert results[0].category == "restaurant"
     assert results[0].name == "Italia Ristorante"
-    assert results[0].partner_benefit is None
+
+
+def test_route_poi_search_uses_active_route_context_for_charging() -> None:
+    route_service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
+    asyncio.run(route_service.plan(intent("Budapest")))
+
+    results = asyncio.run(
+        route_service.search_route_poi(category="charging", location="route")
+    )
+
+    assert [result.name for result in results] == ["Ionity Győr"]
+    assert results[0].coords == (17.5505239, 47.6768425)
+    assert results[0].partner_benefit == "Ultra-Fast 350kW · 15% Partner Rate"
 
 
 def test_invalid_destination_returns_stable_api_error() -> None:

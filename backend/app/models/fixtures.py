@@ -26,6 +26,7 @@ class Partner(ContractModel):
     rating: float | None = Field(default=None, ge=0, le=5)
     tag: str = ""
     detour_minutes: int = Field(ge=0)
+    charging_duration_minutes: float = Field(ge=0, default=0)
 
 
 class Fixtures(ContractModel):

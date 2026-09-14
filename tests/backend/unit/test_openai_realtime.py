@@ -55,6 +55,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
     ]
     instructions = kwargs["session"]["instructions"]
     assert "Never ask permission before a mandatory charging stop is added" in instructions
+    assert "at most two short sentences" in instructions
     assert "vehicleAlerts" not in instructions
     assert "Should I add a charging stop" not in instructions
     assert "Searching returns suggestions only and does not change the route" in instructions
