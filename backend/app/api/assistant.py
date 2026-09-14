@@ -5,6 +5,8 @@ from ..models.contracts import (
     RealtimeSessionResponse,
     RealtimeToolRouteRequest,
     RealtimeToolRouteResponse,
+    RealtimeToolSearchRoutePoiRequest,
+    RealtimeToolSearchRoutePoiResponse,
 )
 
 
@@ -34,3 +36,19 @@ async def realtime_plan_route(
         AssistantIntent(destination=payload.destination, priority=payload.priority)
     )
     return RealtimeToolRouteResponse(route=route)
+
+
+@router.post(
+    "/realtime/tools/search-route-poi",
+    response_model=RealtimeToolSearchRoutePoiResponse,
+)
+async def realtime_search_route_poi(
+    payload: RealtimeToolSearchRoutePoiRequest,
+    request: Request,
+) -> RealtimeToolSearchRoutePoiResponse:
+    results = await request.app.state.route_service.search_route_poi(
+        category=payload.category,
+        location=payload.location,
+        preference=payload.preference,
+    )
+    return RealtimeToolSearchRoutePoiResponse(results=results)

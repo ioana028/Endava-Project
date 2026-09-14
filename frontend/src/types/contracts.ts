@@ -5,7 +5,17 @@
 
 export type RoutePriority = 'FASTEST' | 'CHEAPEST' | 'SCENIC' | 'BALANCED';
 
-export type StopCategory = 'charging' | 'food' | 'rest' | 'toll' | 'vignette' | 'service';
+export type StopCategory =
+  | 'charging'
+  | 'food'
+  | 'rest'
+  | 'toll'
+  | 'vignette'
+  | 'service'
+  | 'hotel'
+  | 'restaurant'
+  | 'attraction'
+  | 'coffee';
 
 export interface VehicleState {
   vehicleId: string;
