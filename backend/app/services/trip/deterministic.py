@@ -1,8 +1,53 @@
 from collections.abc import Iterable
+from math import cos, radians, sqrt
 
 from ...models.contracts import PartnerEnrichment, StopPinpoint
 from ...models.fixtures import Partner
 from .ports import ChargingCandidate, POICandidate
+
+
+POI_MAX_RESULTS = 2
+POI_CORRIDOR_RADIUS_KM = 35.0
+POI_DIVERSITY_DISTANCE_KM = 15.0
+
+
+def distance_km(first: tuple[float, float], second: tuple[float, float]) -> float:
+    latitude = radians((first[1] + second[1]) / 2)
+    longitude_km = (first[0] - second[0]) * 111.32 * cos(latitude)
+    latitude_km = (first[1] - second[1]) * 111.32
+    return sqrt(longitude_km**2 + latitude_km**2)
+
+
+def distance_to_route_km(
+    point: tuple[float, float], geometry: tuple[tuple[float, float], ...]
+) -> float:
+    if not geometry:
+        return float("inf")
+    return min(distance_km(point, vertex) for vertex in geometry)
+
+
+def select_route_pois(
+    candidates: Iterable[POICandidate], preference: str | None = None
+) -> list[POICandidate]:
+    ranked = rank_pois(candidates, preference)
+    selected: list[POICandidate] = []
+    deferred: list[POICandidate] = []
+    for candidate in ranked:
+        if any(
+            distance_km(candidate.stop.coords, chosen.stop.coords)
+            < POI_DIVERSITY_DISTANCE_KM
+            for chosen in selected
+        ):
+            deferred.append(candidate)
+            continue
+        selected.append(candidate)
+        if len(selected) == POI_MAX_RESULTS:
+            break
+    for candidate in deferred:
+        if len(selected) == POI_MAX_RESULTS:
+            break
+        selected.append(candidate)
+    return selected
 
 
 def select_charger(

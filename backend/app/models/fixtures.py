@@ -20,11 +20,12 @@ class Partner(ContractModel):
     name: str
     category: Literal[
         "charging", "hotel", "restaurant", "attraction", "coffee", "food",
-        "rest", "toll", "vignette", "service"
+        "rest", "toilets", "fuel", "toll", "vignette", "service"
     ]
     coords: tuple[float, float]
     rating: float | None = Field(default=None, ge=0, le=5)
     tag: str = ""
+    amenities: tuple[str, ...] = ()
     detour_minutes: int = Field(ge=0)
     charging_duration_minutes: float = Field(ge=0, default=0)
 
