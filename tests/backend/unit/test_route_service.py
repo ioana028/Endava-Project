@@ -151,6 +151,7 @@ def test_route_beyond_vehicle_range_returns_range_warning_and_charging_stop() ->
 
 def test_search_route_poi_returns_generic_results_without_mutating_route() -> None:
     route_service = RouteService(FakeRoutingProvider(distance_meters=243_000), repository())
+    asyncio.run(route_service.plan(intent()))
 
     results = asyncio.run(
         route_service.search_route_poi(
@@ -163,6 +164,55 @@ def test_search_route_poi_returns_generic_results_without_mutating_route() -> No
     assert len(results) >= 1
     assert results[0].category == "restaurant"
     assert results[0].name == "Italia Ristorante"
+
+
+def test_search_route_poi_rejects_missing_active_route() -> None:
+    route_service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
+
+    with pytest.raises(APIError) as error:
+        asyncio.run(route_service.search_route_poi(category="coffee", location="route"))
+
+    assert error.value.code == "NO_ACTIVE_ROUTE"
+
+
+def test_search_route_poi_returns_at_most_two_diverse_results() -> None:
+    class ManyPlacesProvider:
+        async def search(self, category, location, preference, route):
+            del category, location, preference, route
+            return [
+                StopPinpoint(
+                    id="near-a",
+                    name="Near A",
+                    category="attraction",
+                    coords=(16.37, 48.20),
+                    rating=5,
+                ),
+                StopPinpoint(
+                    id="near-b",
+                    name="Near B",
+                    category="attraction",
+                    coords=(16.38, 48.20),
+                    rating=4.9,
+                ),
+                StopPinpoint(
+                    id="farther",
+                    name="Farther",
+                    category="attraction",
+                    coords=(18.0, 47.8),
+                    rating=4,
+                ),
+            ]
+
+    route_service = RouteService(
+        FakeRoutingProvider(distance_meters=95_000),
+        repository(),
+        places_provider=ManyPlacesProvider(),
+    )
+    asyncio.run(route_service.plan(intent("Bratislava")))
+
+    results = asyncio.run(route_service.search_route_poi("attraction", "route"))
+
+    assert [result.id for result in results] == ["near-a", "farther"]
 
 
 def test_route_poi_search_uses_active_route_context_for_charging() -> None:

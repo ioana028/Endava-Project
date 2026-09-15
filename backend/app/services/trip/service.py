@@ -20,7 +20,12 @@ from ...models.contracts import (
     TripStats,
 )
 from .country_rules import derive_requirements, detect_border_crossings
-from .deterministic import enrich_partner, select_charger
+from .deterministic import (
+    POI_COORDINATE_TOLERANCE,
+    enrich_partner,
+    select_charger,
+    select_route_stops,
+)
 from .fixture_providers import FixtureChargingProvider
 from .ports import (
     ChargingProvider,
@@ -161,11 +166,20 @@ class RouteService:
         preference: str | None = None,
     ) -> list[StopPinpoint]:
         try:
+            if self._active_provider_route is None:
+                raise APIError(
+                    409,
+                    "NO_ACTIVE_ROUTE",
+                    "Plan a route before searching for places.",
+                )
             results = await self._places_provider.search(
                 category,
                 location,
                 preference,
                 route=self._active_provider_route,
+            )
+            results = select_route_stops(
+                results, tuple(self._active_provider_route.geometry), preference
             )
             self._active_search_id = uuid4().hex
             self._active_search_results = {result.id: result for result in results}
@@ -205,7 +219,8 @@ class RouteService:
         if coords is not None and self._invalid_coordinates(coords):
             raise APIError(422, "INVALID_POI_COORDINATES", "The selected place coordinates are invalid.")
         if coords is not None and any(
-            abs(coords[index] - stop.coords[index]) > 0.01 for index in (0, 1)
+            abs(coords[index] - stop.coords[index]) > POI_COORDINATE_TOLERANCE
+            for index in (0, 1)
         ):
             raise APIError(422, "INVALID_POI_COORDINATES", "The selected place coordinates are invalid.")
         if not self._supports_waypoints():

@@ -13,7 +13,6 @@ class FixtureChargingProvider:
     async def search_charging(
         self, route: ProviderRoute, max_distance_km: float
     ) -> tuple[ChargingCandidate, ...]:
-        del route
         return tuple(
             ChargingCandidate(
                 stop=StopPinpoint(
@@ -26,11 +25,17 @@ class FixtureChargingProvider:
                     detour_minutes=partner.detour_minutes,
                     charging_duration_minutes=partner.charging_duration_minutes,
                 ),
-                distance_from_route_km=min(max_distance_km, 1),
+                distance_from_route_km=distance_to_route_km(
+                    partner.coords, tuple(route.geometry)
+                ),
                 charging_duration_minutes=partner.charging_duration_minutes,
             )
             for partner in self._partners
-            if partner.category == "charging"
+            if (
+                partner.category == "charging"
+                and distance_to_route_km(partner.coords, tuple(route.geometry))
+                <= max_distance_km
+            )
         )
 
 
