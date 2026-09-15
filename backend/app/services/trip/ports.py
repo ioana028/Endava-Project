@@ -44,6 +44,8 @@ class ChargingCandidate:
     compatible: bool = True
     available: bool = True
     distance_from_route_km: float = 0
+    distance_from_origin_km: float | None = None
+    charging_power_kw: float | None = None
     charging_duration_minutes: float = 0
 
 

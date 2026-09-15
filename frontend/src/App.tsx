@@ -11,9 +11,12 @@ function App() {
 
   return (
     <main>
-      <header>
-        <h1>Suzanne</h1>
-        <p>Voice-first route planning</p>
+      <header className="app-header">
+        <div>
+          <p className="eyebrow">Mobility concierge</p>
+          <h1>Suzanne</h1>
+          <p className="header-subtitle">Your route, thoughtfully handled.</p>
+        </div>
       </header>
 
       <AssistantStatus
@@ -36,12 +39,22 @@ function App() {
 
       {route && (
         <>
-          <RouteMap route={route} poiResults={assistant.poiResults} />
+          <RouteMap
+            route={route}
+            poiResults={assistant.poiResults}
+            selectedPoiId={assistant.selectedPoi?.id}
+            onPoiSelect={assistant.selectPoi}
+          />
           <RouteSummary route={route} />
         </>
       )}
 
-      <PoiResults results={assistant.poiResults} />
+      <PoiResults
+        results={assistant.poiResults}
+        selectedPoiId={assistant.selectedPoi?.id}
+        actionState={assistant.poiActionState}
+        onSelect={assistant.selectPoi}
+      />
 
     </main>
   )

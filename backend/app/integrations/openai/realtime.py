@@ -22,20 +22,37 @@ returns, do not say you are still checking, calculating, switching, or retrying.
 
 The successful route result contains compact deterministic facts. Give the
 initial route result in at most two short sentences. State the total journey
-time. If a mandatory charging stop is returned, name it and say whether it is a partner location; include charging time only when returned. Never ask permission before a mandatory charging stop is added. Tell the driver to
+time. Treat chargingRequired as authoritative. If chargingRequired is true,
+name the returned chargingStop and say that it is mandatory; never say there
+is no charging stop. If chargingRequired is false, do not invent or mention a
+charging stop. Say that a stop is a partner location only when the returned
+partnerLocation is true, and never call a non-partner stop a partner. Include
+charging time only when returned. Never ask permission before a mandatory charging stop is added. Tell the driver to
 purchase a vignette when that route requirement is returned. Mention a partner
 benefit only when that exact benefit is returned. Do not explain calculations,
 range comparisons, provider details, or repeated acknowledgements.
 
 When the driver asks for a hotel, restaurant, attraction, charging stop,
-coffee, rest, or service near the active route, a stop, or the destination,
+coffee, rest, toilets, fuel, or service near the active route, a stop, or the destination,
 call search_route_poi with the requested category, location, and preference.
 Map "cool stuff to see", sightseeing, landmarks, and interesting places to
 the attraction category. Map coffee stop, cafe, espresso, or a place for
 coffee to the coffee category. For "along the route", use location route.
+Map fuel station or gas station to fuel, and restroom or toilet to toilets.
+Use only amenity labels returned by the tool; a fuel result alone does not
+prove that coffee, toilets, or rest facilities are available. When a search
+result includes route_id and search_id, preserve both exact values for the
+later reroute call; never invent or substitute either value.
 Searching returns suggestions only and does not change the route. Never say a
 POI was added to the route unless a later tool result explicitly confirms a
-reroute through it. Keep POI results concise and factual.
+reroute through it. After the driver selects a suggestion, state the proposed
+change and ask for explicit confirmation. Only call reroute_through_poi after
+the driver clearly says yes, confirms, or otherwise accepts the proposed
+change. Do not treat selecting, tapping, or naming a POI as confirmation. The
+confirmation field must be exactly "confirmed". Keep POI results concise and
+factual. A reroute result is
+the only authority for saying that the route changed or for stating its new
+distance or duration.
 
 Round distance to a whole kilometre and duration to natural hours and minutes.
 Only describe an error when the tool result explicitly contains one. A
@@ -84,12 +101,13 @@ REALTIME_TOOLS = [
                     "type": "string",
                     "enum": [
                         "hotel", "restaurant", "attraction", "charging",
-                        "coffee", "rest", "service",
+                        "coffee", "rest", "toilets", "fuel", "service",
                     ],
                     "description": (
                         "The kind of place requested. Use attraction for cool stuff, "
                         "sightseeing, landmarks, or interesting places; use coffee "
-                        "for coffee stops or cafes."
+                        "for coffee stops or cafes; use fuel for fuel or gas stations; "
+                        "use toilets for restrooms."
                     ),
                 },
                 "location": {
@@ -103,6 +121,38 @@ REALTIME_TOOLS = [
                 },
             },
             "required": ["category", "location"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "reroute_through_poi",
+        "description": (
+            "Add a previously suggested POI as a waypoint after the driver "
+            "explicitly confirms the proposed reroute."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "poi_id": {
+                    "type": "string",
+                    "description": "The stable ID of the selected search result.",
+                },
+                "route_id": {
+                    "type": "string",
+                    "description": "The exact route_id returned with the selected search result.",
+                },
+                "search_id": {
+                    "type": "string",
+                    "description": "The exact search_id returned with the selected search result.",
+                },
+                "confirmation": {
+                    "type": "string",
+                    "enum": ["confirmed"],
+                    "description": "Use exactly confirmed, and only after the driver clearly accepts the proposed route change.",
+                },
+            },
+            "required": ["poi_id", "route_id", "search_id", "confirmation"],
             "additionalProperties": False,
         },
     },

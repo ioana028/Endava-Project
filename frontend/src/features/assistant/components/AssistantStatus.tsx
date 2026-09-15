@@ -18,7 +18,7 @@ export function AssistantStatus({
   onDisable,
 }: AssistantStatusProps) {
   return (
-    <section aria-live="polite">
+    <section className="assistant-panel" aria-live="polite">
       {!enabled && state !== 'CONNECTING' && (
         <button type="button" onClick={onEnable}>
           Start Suzanne
@@ -31,7 +31,7 @@ export function AssistantStatus({
         </button>
       )}
 
-      <p>Assistant state: {state}</p>
+      <p className="assistant-state"><span className={`state-dot state-${state.toLowerCase()}`} /> {state}</p>
 
       {state === 'CONNECTING' && <p>Connecting Suzanne...</p>}
 
@@ -55,7 +55,7 @@ export function AssistantStatus({
 
       {state === 'ERROR' && <p>Realtime connection needs attention.</p>}
 
-      {error && <p role="alert">{error}</p>}
+      {error && <p className="error-message" role="alert">{error}</p>}
     </section>
   )
 }

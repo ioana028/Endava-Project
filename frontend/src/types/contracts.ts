@@ -15,7 +15,9 @@ export type StopCategory =
   | 'hotel'
   | 'restaurant'
   | 'attraction'
-  | 'coffee';
+  | 'coffee'
+  | 'toilets'
+  | 'fuel';
 
 export interface VehicleState {
   vehicleId: string;
@@ -39,6 +41,7 @@ export interface StopPinpoint {
   coords: [number, number];        // [lng, lat]
   rating?: number;
   tag: string;                     // e.g., "Fast Charger · 250kW" or "Italian Dining"
+  amenities?: string[];
   detourMinutes: number;
   chargingDurationMinutes?: number;
   mandatory?: boolean;
@@ -91,6 +94,8 @@ export interface RouteResponse {
 
 export interface RoutePoiResponse {
   results: StopPinpoint[];
+  routeId?: string | null;
+  searchId?: string | null;
 }
 
 export interface AssistantIntent {

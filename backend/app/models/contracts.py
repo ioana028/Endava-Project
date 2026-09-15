@@ -39,11 +39,13 @@ class StopPinpoint(ContractModel):
     name: str
     category: Literal[
         "charging", "hotel", "restaurant", "attraction", "coffee", "food",
-        "rest", "toll", "vignette", "service"
+        "rest", "toilets", "fuel", "toll", "vignette", "service"
     ]
     coords: tuple[float, float]
     rating: float | None = None
     tag: str = ""
+    amenities: tuple[str, ...] = ()
+    charging_power_kw: float | None = Field(default=None, ge=0)
     detour_minutes: float = Field(ge=0, default=0)
     charging_duration_minutes: float = Field(ge=0, default=0)
     mandatory: bool = False
@@ -113,6 +115,21 @@ class RealtimeToolSearchRoutePoiRequest(ContractModel):
 
 class RealtimeToolSearchRoutePoiResponse(ContractModel):
     results: list[StopPinpoint] = Field(default_factory=list)
+    route_id: str | None = None
+    search_id: str | None = None
+
+
+class RealtimeToolRerouteRequest(ContractModel):
+    poi_id: str = Field(min_length=1, max_length=200)
+    route_id: str = Field(min_length=1, max_length=200)
+    search_id: str = Field(min_length=1, max_length=200)
+    coords: tuple[float, float] | None = None
+    priority: RoutePriority | None = None
+    confirmation: Literal["confirmed"]
+
+
+class RealtimeToolRerouteResponse(ContractModel):
+    route: RouteResponse
 
 
 class RealtimeSessionResponse(ContractModel):
@@ -124,3 +141,12 @@ class HealthResponse(ContractModel):
     status: str
     service: str
     environment: str
+
+
+class ProviderHealthResponse(ContractModel):
+    status: str
+    environment: str
+    openai_configured: bool
+    google_routes_configured: bool
+    google_places_configured: bool
+    places_provider: str

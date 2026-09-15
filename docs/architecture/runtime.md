@@ -29,6 +29,11 @@ Copy `.env.example` to `.env` at the repository root. Current variables are:
 | `OPENAI_REALTIME_MODEL` | Realtime voice model, normally `gpt-realtime-2.1-mini` |
 | `OPENAI_REALTIME_SECRET_SECONDS` | Lifetime of browser Realtime client secrets, normally `300` |
 | `GOOGLE_SERVER_API_KEY` | Backend-only Google Routes, Geocoding, and later Places credential |
+| `PLACES_PROVIDER` | `auto`, `google`, or explicit `offline` provider selection |
+| `GOOGLE_PLACES_TIMEOUT_SECONDS` | Google Places request timeout |
+| `GOOGLE_PLACES_SEARCH_RADIUS_METERS` | Route-corridor search radius |
+| `GOOGLE_PLACES_SAMPLE_INTERVAL_KM` | Distance interval for route sampling |
+| `GOOGLE_PLACES_MAX_SEARCH_POINTS` | Upper bound on route-corridor Places calls |
 | `VITE_GOOGLE_MAPS_BROWSER_KEY` | Frontend Google Maps JavaScript key, restricted to local/frontend origins |
 | `CORS_ORIGINS` | Comma-separated allowed browser origins |
 
@@ -46,12 +51,37 @@ The Realtime session is configured server-side with the deterministic
 `POST /api/assistant/realtime/tools/plan-route`, which delegates to the existing
 route service and returns the structured `RouteResponse`.
 
+The voice tool lifecycle for route-aware POIs is:
+
+1. Suzanne calls `search_route_poi`; search is read-only and returns factual
+  suggestions.
+2. Suzanne presents one or two returned suggestions without inventing ratings,
+  amenities, availability, or detour values.
+3. After the driver selects a suggestion, Suzanne states the proposed change
+  and asks for explicit voice confirmation.
+4. Only a clear acceptance invokes `reroute_through_poi` with the selected POI
+  ID, the exact opaque active-route context, and `confirmation: "confirmed"`.
+5. The route is considered changed only after a successful deterministic
+  response. Realtime receives compact speech facts, never geometry or raw
+  provider data.
+
+The frontend preserves structured tool error codes and messages for concise
+spoken error handling. Stopping voice closes the WebRTC session, aborts or
+ignores late tool work, and does not by itself erase the last valid route or
+POI suggestions. New route planning and successful rerouting explicitly
+replace stale suggestion state.
+
 ## Health and startup behavior
 
 `GET /health` must remain available even when external providers are down. A
 healthy process means the local API is running, not that OpenAI or routing is
 reachable. Provider failures should be reported by the relevant feature with a
 stable API error.
+
+`GET /health/config` reports only non-secret configuration state, including
+whether backend credentials are present and whether Places resolved to Google
+or the explicit offline provider. It never returns credentials or provider
+payloads.
 
 ## CORS
 

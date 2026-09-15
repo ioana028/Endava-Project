@@ -27,15 +27,24 @@ if (browserKey) {
 interface RouteMapProps {
   route: RouteResponse
   poiResults?: StopPinpoint[]
+  selectedPoiId?: string | null
+  onPoiSelect?: (poiId: string) => void
 }
 
-export function RouteMap({ route, poiResults = [] }: RouteMapProps) {
+export function RouteMap({
+  route,
+  poiResults = [],
+  selectedPoiId = null,
+  onPoiSelect,
+}: RouteMapProps) {
   const mapElementRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
   const polylineRef = useRef<google.maps.Polyline | null>(null)
   const markersRef = useRef<google.maps.Marker[]>([])
+  const poiMarkersRef = useRef<google.maps.Marker[]>([])
   const durationOverlayRef = useRef<google.maps.OverlayView | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [mapReady, setMapReady] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -44,9 +53,12 @@ export function RouteMap({ route, poiResults = [] }: RouteMapProps) {
     polylineRef.current = null
     markersRef.current.forEach((marker) => marker.setMap(null))
     markersRef.current = []
+    poiMarkersRef.current.forEach((marker) => marker.setMap(null))
+    poiMarkersRef.current = []
     durationOverlayRef.current?.setMap(null)
     durationOverlayRef.current = null
     mapRef.current = null
+    setMapReady(false)
 
     async function renderMap() {
       if (!browserKey) {
@@ -289,24 +301,6 @@ export function RouteMap({ route, poiResults = [] }: RouteMapProps) {
             }),
         )
 
-        const poiMarkers = poiResults.map(
-          (poi) =>
-            new google.maps.Marker({
-              map,
-              position: { lat: poi.coords[1], lng: poi.coords[0] },
-              title: poi.name,
-              icon: {
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 6,
-                fillColor: '#f59e0b',
-                fillOpacity: 1,
-                strokeColor: '#ffffff',
-                strokeWeight: 2,
-              },
-              zIndex: 1,
-            }),
-        )
-
         const durationOverlay = new DurationOverlay(
           path[Math.floor(path.length / 2)],
           formatDuration(route.stats.totalDurationMinutes),
@@ -317,9 +311,9 @@ export function RouteMap({ route, poiResults = [] }: RouteMapProps) {
           originMarker,
           destinationMarker,
           ...stopMarkers,
-          ...poiMarkers,
         ]
         durationOverlayRef.current = durationOverlay
+        setMapReady(true)
       } catch {
         if (!cancelled) {
           setError('Unable to load Google Maps.')
@@ -335,16 +329,52 @@ export function RouteMap({ route, poiResults = [] }: RouteMapProps) {
       polylineRef.current = null
       markersRef.current.forEach((marker) => marker.setMap(null))
       markersRef.current = []
+      poiMarkersRef.current.forEach((marker) => marker.setMap(null))
+      poiMarkersRef.current = []
       durationOverlayRef.current?.setMap(null)
       durationOverlayRef.current = null
       mapRef.current = null
+      setMapReady(false)
     }
-  }, [poiResults, route])
+  }, [route])
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) {
+      return
+    }
+
+    poiMarkersRef.current.forEach((marker) => marker.setMap(null))
+    poiMarkersRef.current = poiResults.map((poi) => {
+      const marker = new google.maps.Marker({
+        map: mapRef.current,
+        position: { lat: poi.coords[1], lng: poi.coords[0] },
+        title: poi.name,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: poi.id === selectedPoiId ? 9 : 7,
+          fillColor: poi.id === selectedPoiId ? '#f97316' : '#facc15',
+          fillOpacity: 1,
+          strokeColor: '#ffffff',
+          strokeWeight: poi.id === selectedPoiId ? 3 : 2,
+        },
+        zIndex: poi.id === selectedPoiId ? 5 : 4,
+        clickable: Boolean(onPoiSelect),
+      })
+      if (onPoiSelect) {
+        marker.addListener('click', () => onPoiSelect(poi.id))
+      }
+      return marker
+    })
+
+    return () => {
+      poiMarkersRef.current.forEach((marker) => marker.setMap(null))
+      poiMarkersRef.current = []
+    }
+  }, [mapReady, onPoiSelect, poiResults, selectedPoiId])
 
   if (error) {
     return <p role="alert">{error}</p>
   }
-
   if (route.geometry.length === 0) {
     return <p role="status">No route geometry is available.</p>
   }
