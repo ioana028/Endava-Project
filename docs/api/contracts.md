@@ -49,6 +49,13 @@ local backend URL. The backend reads configuration from the root `.env`.
 `environment` comes from `ENVIRONMENT`. Health must not require OpenAI or
 Google Maps Platform to be available.
 
+### `GET /health/config`
+
+Returns non-secret provider configuration state for local diagnostics. The
+response includes boolean `openaiConfigured`, `googleRoutesConfigured`, and
+`googlePlacesConfigured` fields plus the resolved `placesProvider` value
+(`google` or `offline`). Credentials and provider payloads are never returned.
+
 ## `POST /api/assistant/realtime/session`
 
 Creates a short-lived browser credential. The server API key, instructions, and

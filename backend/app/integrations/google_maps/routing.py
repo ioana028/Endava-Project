@@ -33,7 +33,7 @@ class GoogleMapsRoutingProvider:
                 )
                 response.raise_for_status()
                 payload = response.json()
-        except (httpx.HTTPError, ValueError, TypeError) as error:
+        except (httpx.HTTPError, AttributeError, ValueError, TypeError) as error:
             raise RoutingProviderError("Google geocoding request failed") from error
 
         results = payload.get("results") or []
@@ -91,7 +91,7 @@ class GoogleMapsRoutingProvider:
                 response = await client.post(ROUTES_URL, json=request, headers=headers)
                 response.raise_for_status()
                 payload = response.json()
-        except (httpx.HTTPError, ValueError, TypeError) as error:
+        except (httpx.HTTPError, AttributeError, ValueError, TypeError) as error:
             raise RoutingProviderError("Google route request failed") from error
 
         try:

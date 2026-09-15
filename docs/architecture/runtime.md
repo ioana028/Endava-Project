@@ -29,6 +29,11 @@ Copy `.env.example` to `.env` at the repository root. Current variables are:
 | `OPENAI_REALTIME_MODEL` | Realtime voice model, normally `gpt-realtime-2.1-mini` |
 | `OPENAI_REALTIME_SECRET_SECONDS` | Lifetime of browser Realtime client secrets, normally `300` |
 | `GOOGLE_SERVER_API_KEY` | Backend-only Google Routes, Geocoding, and later Places credential |
+| `PLACES_PROVIDER` | `auto`, `google`, or explicit `offline` provider selection |
+| `GOOGLE_PLACES_TIMEOUT_SECONDS` | Google Places request timeout |
+| `GOOGLE_PLACES_SEARCH_RADIUS_METERS` | Route-corridor search radius |
+| `GOOGLE_PLACES_SAMPLE_INTERVAL_KM` | Distance interval for route sampling |
+| `GOOGLE_PLACES_MAX_SEARCH_POINTS` | Upper bound on route-corridor Places calls |
 | `VITE_GOOGLE_MAPS_BROWSER_KEY` | Frontend Google Maps JavaScript key, restricted to local/frontend origins |
 | `CORS_ORIGINS` | Comma-separated allowed browser origins |
 
@@ -52,6 +57,11 @@ route service and returns the structured `RouteResponse`.
 healthy process means the local API is running, not that OpenAI or routing is
 reachable. Provider failures should be reported by the relevant feature with a
 stable API error.
+
+`GET /health/config` reports only non-secret configuration state, including
+whether backend credentials are present and whether Places resolved to Google
+or the explicit offline provider. It never returns credentials or provider
+payloads.
 
 ## CORS
 

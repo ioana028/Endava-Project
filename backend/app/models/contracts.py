@@ -39,7 +39,7 @@ class StopPinpoint(ContractModel):
     name: str
     category: Literal[
         "charging", "hotel", "restaurant", "attraction", "coffee", "food",
-        "rest", "toll", "vignette", "service"
+        "rest", "toilets", "fuel", "toll", "vignette", "service"
     ]
     coords: tuple[float, float]
     rating: float | None = None
@@ -124,3 +124,12 @@ class HealthResponse(ContractModel):
     status: str
     service: str
     environment: str
+
+
+class ProviderHealthResponse(ContractModel):
+    status: str
+    environment: str
+    openai_configured: bool
+    google_routes_configured: bool
+    google_places_configured: bool
+    places_provider: str

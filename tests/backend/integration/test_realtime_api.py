@@ -74,3 +74,19 @@ def test_realtime_plan_route_rejects_unknown_priority() -> None:
 
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_health_config_reports_provider_presence_without_credentials() -> None:
+    app = create_app(
+        route_service=FakeRouteService(),
+        realtime_provider=FakeRealtimeProvider(),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/health/config")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["placesProvider"] in {"google", "offline"}
+    assert "googleServerApiKey" not in payload
+    assert "openaiApiKey" not in payload

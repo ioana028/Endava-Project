@@ -1,70 +1,22 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from ...core.fixture_repository import FixtureRepository
 from ...models.contracts import StopPinpoint
 from ...services.trip.ports import ProviderRoute
 
 
 class LocalPlacesProvider:
-    _GENERIC_POIS = (
-        {
-            "id": "hotel-route-view",
-            "name": "RouteView Hotel",
-            "category": "hotel",
-            "coords": (19.0409, 47.4988),
-            "rating": 4.6,
-            "tag": "Boutique stay near the route",
-            "detour_minutes": 6,
-        },
-        {
-            "id": "restaurant-italia-budapest",
-            "name": "Italia Ristorante",
-            "category": "restaurant",
-            "coords": (19.0531, 47.4987),
-            "rating": 4.8,
-            "tag": "Italian dining near the destination",
-            "detour_minutes": 3,
-        },
-        {
-            "id": "attraction-riverfront",
-            "name": "Riverfront Walk",
-            "category": "attraction",
-            "coords": (19.0438, 47.5000),
-            "rating": 4.4,
-            "tag": "Scenic attraction near the destination",
-            "detour_minutes": 4,
-        },
-        {
-            "id": "coffee-route-stop",
-            "name": "Route Café",
-            "category": "coffee",
-            "coords": (18.2300, 47.9000),
-            "rating": 4.5,
-            "tag": "Coffee stop on the motorway",
-            "detour_minutes": 2,
-        },
-        {
-            "id": "rest-area-boost",
-            "name": "Boost Rest Area",
-            "category": "rest",
-            "coords": (18.1600, 47.7200),
-            "rating": 4.3,
-            "tag": "Rest stop and toilets",
-            "detour_minutes": 1,
-        },
-        {
-            "id": "service-point-safety",
-            "name": "Safety Service Point",
-            "category": "service",
-            "coords": (18.3300, 47.8400),
-            "rating": 4.2,
-            "tag": "Vehicle support and service",
-            "detour_minutes": 2,
-        },
-    )
-
-    def __init__(self, fixture_repository: FixtureRepository) -> None:
+    def __init__(
+        self,
+        fixture_repository: FixtureRepository,
+        places_path: Path | None = None,
+    ) -> None:
         self._fixture_repository = fixture_repository
+        self._places_path = places_path or Path(__file__).resolve().parents[4] / "data" / "places" / "places.json"
+        self._generic_pois = self._load_generic_pois()
 
     async def search(
         self,
@@ -183,7 +135,7 @@ class LocalPlacesProvider:
 
     def _generic_matches(self, category: str) -> list[StopPinpoint]:
         results: list[StopPinpoint] = []
-        for item in self._GENERIC_POIS:
+        for item in self._generic_pois:
             if item["category"] != category:
                 continue
             results.append(
@@ -198,6 +150,16 @@ class LocalPlacesProvider:
                 )
             )
         return results
+
+    def _load_generic_pois(self) -> tuple[dict[str, object], ...]:
+        try:
+            with self._places_path.open(encoding="utf-8") as fixture_file:
+                records = json.load(fixture_file)
+        except (OSError, json.JSONDecodeError) as error:
+            raise RuntimeError("Unable to load offline Places fixtures") from error
+        if not isinstance(records, list):
+            raise RuntimeError("Offline Places fixtures must be a JSON array")
+        return tuple(record for record in records if isinstance(record, dict))
 
     def _partner_to_stop(self, partner: object) -> StopPinpoint:
         tag = partner.tag
@@ -242,3 +204,6 @@ class LocalPlacesProvider:
         if normalized not in aliases:
             raise ValueError(f"Unsupported POI category: {category}")
         return aliases[normalized]
+
+
+OfflinePlacesProvider = LocalPlacesProvider
