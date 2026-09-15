@@ -27,9 +27,16 @@ if (browserKey) {
 interface RouteMapProps {
   route: RouteResponse
   poiResults?: StopPinpoint[]
+  selectedPoiId?: string | null
+  onPoiSelect?: (poiId: string) => void
 }
 
-export function RouteMap({ route, poiResults = [] }: RouteMapProps) {
+export function RouteMap({
+  route,
+  poiResults = [],
+  selectedPoiId = null,
+  onPoiSelect,
+}: RouteMapProps) {
   const mapElementRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
   const polylineRef = useRef<google.maps.Polyline | null>(null)
@@ -290,21 +297,27 @@ export function RouteMap({ route, poiResults = [] }: RouteMapProps) {
         )
 
         const poiMarkers = poiResults.map(
-          (poi) =>
-            new google.maps.Marker({
+          (poi) => {
+            const marker = new google.maps.Marker({
               map,
               position: { lat: poi.coords[1], lng: poi.coords[0] },
               title: poi.name,
               icon: {
                 path: google.maps.SymbolPath.CIRCLE,
-                scale: 6,
-                fillColor: '#f59e0b',
+                scale: poi.id === selectedPoiId ? 9 : 7,
+                fillColor: poi.id === selectedPoiId ? '#f97316' : '#facc15',
                 fillOpacity: 1,
                 strokeColor: '#ffffff',
-                strokeWeight: 2,
+                strokeWeight: poi.id === selectedPoiId ? 3 : 2,
               },
-              zIndex: 1,
-            }),
+              zIndex: poi.id === selectedPoiId ? 5 : 4,
+              clickable: Boolean(onPoiSelect),
+            })
+            if (onPoiSelect) {
+              marker.addListener('click', () => onPoiSelect(poi.id))
+            }
+            return marker
+          },
         )
 
         const durationOverlay = new DurationOverlay(
@@ -339,7 +352,7 @@ export function RouteMap({ route, poiResults = [] }: RouteMapProps) {
       durationOverlayRef.current = null
       mapRef.current = null
     }
-  }, [poiResults, route])
+  }, [onPoiSelect, poiResults, route, selectedPoiId])
 
   if (error) {
     return <p role="alert">{error}</p>

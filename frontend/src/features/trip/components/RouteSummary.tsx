@@ -13,17 +13,20 @@ function formatDuration(totalMinutes: number) {
 
 export function RouteSummary({ route }: RouteSummaryProps) {
   return (
-    <section aria-live="polite">
+    <section className="route-summary" aria-live="polite">
+      <p className="eyebrow">Active journey</p>
       <h2>Route</h2>
-      <p>
+      <p className="route-endpoints">
         {route.origin} to {route.destination}
       </p>
-      <p>{route.stats.totalDistanceKm} km</p>
-      <p>Driving: {formatDuration(route.stats.drivingDurationMinutes)}</p>
-      <p>Total journey: {formatDuration(route.stats.totalDurationMinutes)}</p>
+      <div className="route-metrics">
+        <div><strong>{Math.round(route.stats.totalDistanceKm)}</strong><span>km</span></div>
+        <div><strong>{formatDuration(route.stats.drivingDurationMinutes)}</strong><span>driving</span></div>
+        <div><strong>{formatDuration(route.stats.totalDurationMinutes)}</strong><span>total journey</span></div>
+      </div>
 
       {route.chargingStop && (
-        <section>
+        <section className="fact-block">
           <h3>Automatic charging stop</h3>
           <p>{route.chargingStop.name}</p>
           <p>
@@ -42,7 +45,7 @@ export function RouteSummary({ route }: RouteSummaryProps) {
       )}
 
       {route.borderCrossings.length > 0 && (
-        <section>
+        <section className="fact-block">
           <h3>Border crossings</h3>
           {route.borderCrossings.map((crossing) => (
             <p key={`${crossing.fromCountry}-${crossing.toCountry}`}>
@@ -53,7 +56,7 @@ export function RouteSummary({ route }: RouteSummaryProps) {
       )}
 
       {route.routeRequirements.length > 0 && (
-        <section>
+        <section className="fact-block">
           <h3>Route requirements</h3>
           {route.routeRequirements.map((requirement) => (
             <p key={requirement.id}>{requirement.name}</p>

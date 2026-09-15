@@ -1,26 +1,71 @@
 import type { StopPinpoint } from '../../../types/contracts'
+import type { PoiActionState } from '../hooks/useRealtimeAssistant'
 
 interface PoiResultsProps {
   results: StopPinpoint[]
+  selectedPoiId?: string | null
+  actionState?: PoiActionState
+  onSelect?: (poiId: string) => void
 }
 
-export function PoiResults({ results }: PoiResultsProps) {
+export function PoiResults({
+  results,
+  selectedPoiId = null,
+  actionState = 'IDLE',
+  onSelect,
+}: PoiResultsProps) {
   if (results.length === 0) {
     return null
   }
 
   return (
-    <section aria-live="polite">
-      <h2>Route suggestions</h2>
-      {results.map((result) => (
-        <article key={result.id}>
-          <h3>{result.name}</h3>
-          <p>{result.category}</p>
-          {result.rating !== undefined && <p>Rating: {result.rating}</p>}
-          <p>{result.detourMinutes} min detour</p>
-          <p>{result.tag}</p>
-        </article>
-      ))}
+    <section className="poi-results" aria-live="polite">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Along your route</p>
+          <h2>Suggested stops</h2>
+        </div>
+        <span className="result-count">{Math.min(results.length, 2)} found</span>
+      </div>
+      <div className="poi-list">
+        {results.slice(0, 2).map((result) => {
+          const selected = result.id === selectedPoiId
+          return (
+            <button
+              className={`poi-card${selected ? ' poi-card-selected' : ''}`}
+              key={result.id}
+              type="button"
+              aria-pressed={selected}
+              onClick={() => onSelect?.(result.id)}
+            >
+              <span className="poi-card-topline">
+                <span className="poi-category">{result.category}</span>
+                {result.rating !== undefined && <span>{result.rating.toFixed(1)} / 5</span>}
+              </span>
+              <strong>{result.name}</strong>
+              <span className="poi-tag">{result.tag}</span>
+              <span className="poi-detour">+{Math.round(result.detourMinutes)} min detour</span>
+              {selected && <span className="poi-selected-label">Selected for voice confirmation</span>}
+            </button>
+          )
+        })}
+      </div>
+      {actionState === 'CONFIRMATION_PENDING' && (
+        <p className="poi-action-message" role="status">
+          Say yes to Suzanne to add the selected stop to your route.
+        </p>
+      )}
+      {actionState === 'REROUTING_IN_PROGRESS' && (
+        <p className="poi-action-message" role="status">Updating your route through this stop...</p>
+      )}
+      {actionState === 'REROUTE_SUCCESS' && (
+        <p className="poi-action-message" role="status">Route updated successfully.</p>
+      )}
+      {actionState === 'REROUTE_FAILED' && (
+        <p className="poi-action-message poi-action-error" role="alert">
+          That stop could not be added. Your previous route is unchanged.
+        </p>
+      )}
     </section>
   )
 }

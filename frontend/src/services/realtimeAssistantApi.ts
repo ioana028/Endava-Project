@@ -12,6 +12,10 @@ interface PlanRouteToolResponse {
   route: RouteResponse
 }
 
+interface RerouteThroughPoiToolResponse {
+  route: RouteResponse
+}
+
 export async function createRealtimeSession(): Promise<RealtimeSessionResponse> {
   const response = await fetch(`${API_BASE_URL}/api/assistant/realtime/session`, {
     method: 'POST',
@@ -74,4 +78,25 @@ export async function searchRoutePoiWithTool(
   }
 
   return (await response.json()) as RoutePoiResponse
+}
+
+export async function rerouteThroughPoiWithTool(
+  argumentsJson: string,
+  signal?: AbortSignal,
+): Promise<RerouteThroughPoiToolResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/assistant/realtime/tools/reroute-through-poi`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: argumentsJson,
+      signal,
+    },
+  )
+
+  if (!response.ok) {
+    throw new Error('The selected stop could not be added to the route.')
+  }
+
+  return (await response.json()) as RerouteThroughPoiToolResponse
 }
