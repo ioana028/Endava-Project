@@ -1,0 +1,56 @@
+[
+  {
+    "id": "hotel-route-view",
+    "name": "RouteView Hotel",
+    "category": "hotel",
+    "coords": [19.0409, 47.4988],
+    "rating": 4.6,
+    "tag": "Offline fixture: boutique stay near the route",
+    "detour_minutes": 6
+  },
+  {
+    "id": "restaurant-italia-budapest",
+    "name": "Italia Ristorante",
+    "category": "restaurant",
+    "coords": [19.0531, 47.4987],
+    "rating": 4.8,
+    "tag": "Offline fixture: Italian dining near the destination",
+    "detour_minutes": 3
+  },
+  {
+    "id": "attraction-riverfront",
+    "name": "Riverfront Walk",
+    "category": "attraction",
+    "coords": [19.0438, 47.5000],
+    "rating": 4.4,
+    "tag": "Offline fixture: scenic attraction near the destination",
+    "detour_minutes": 4
+  },
+  {
+    "id": "coffee-route-stop",
+    "name": "Route Cafe",
+    "category": "coffee",
+    "coords": [18.2300, 47.9000],
+    "rating": 4.5,
+    "tag": "Offline fixture: coffee stop on the motorway",
+    "detour_minutes": 2
+  },
+  {
+    "id": "rest-area-boost",
+    "name": "Boost Rest Area",
+    "category": "rest",
+    "coords": [18.1600, 47.7200],
+    "rating": 4.3,
+    "tag": "Offline fixture: rest stop and toilets",
+    "detour_minutes": 1
+  },
+  {
+    "id": "service-point-safety",
+    "name": "Safety Service Point",
+    "category": "service",
+    "coords": [18.3300, 47.8400],
+    "rating": 4.2,
+    "tag": "Offline fixture: vehicle support and service",
+    "detour_minutes": 2
+  }
+]
