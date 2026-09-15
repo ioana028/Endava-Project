@@ -52,6 +52,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
     assert [tool["name"] for tool in tools] == [
         "plan_route",
         "search_route_poi",
+        "reroute_through_poi",
     ]
     instructions = kwargs["session"]["instructions"]
     assert "Never ask permission before a mandatory charging stop is added" in instructions
@@ -69,12 +70,24 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "charging",
         "coffee",
         "rest",
+        "toilets",
+        "fuel",
         "service",
     ]
     assert poi_tool["parameters"]["properties"]["location"]["enum"] == [
         "route",
         "stop",
         "destination",
+    ]
+
+    reroute_tool = tools[2]
+    assert reroute_tool["parameters"]["required"] == [
+        "poi_id",
+        "active_route_context",
+        "confirmation",
+    ]
+    assert reroute_tool["parameters"]["properties"]["confirmation"]["enum"] == [
+        "confirmed"
     ]
 
 

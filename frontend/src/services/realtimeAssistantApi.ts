@@ -12,6 +12,48 @@ interface PlanRouteToolResponse {
   route: RouteResponse
 }
 
+interface RerouteToolResponse {
+  route: RouteResponse
+}
+
+export interface RealtimeToolError {
+  code: string
+  message: string
+}
+
+export class RealtimeToolRequestError extends Error {
+  readonly code: string
+
+  constructor(error: RealtimeToolError) {
+    super(error.message)
+    this.name = 'RealtimeToolRequestError'
+    this.code = error.code
+  }
+}
+
+async function throwToolError(response: Response, fallback: string): Promise<never> {
+  const payload = (await response.json().catch(() => null)) as {
+    error?: RealtimeToolError
+  } | null
+  if (payload?.error?.code && payload.error.message) {
+    throw new RealtimeToolRequestError(payload.error)
+  }
+
+  throw new Error(fallback)
+}
+
+export function getRealtimeToolErrorMessage(code: string, fallback: string): string {
+  const messages: Record<string, string> = {
+    INVALID_POI_CATEGORY: 'That place category is not available for this route.',
+    POI_UNAVAILABLE: 'I cannot search places along the route right now.',
+    STALE_POI_SELECTION: 'That suggestion is no longer available for this route.',
+    REROUTE_UNAVAILABLE: 'I cannot change the route through that stop right now.',
+    VALIDATION_ERROR: 'I could not validate that assistant request.',
+  }
+
+  return messages[code] ?? fallback
+}
+
 export async function createRealtimeSession(): Promise<RealtimeSessionResponse> {
   const response = await fetch(`${API_BASE_URL}/api/assistant/realtime/session`, {
     method: 'POST',
@@ -49,7 +91,7 @@ export async function planRouteWithTool(
   )
 
   if (!response.ok) {
-    throw new Error(`Route tool failed with HTTP ${response.status}`)
+    return throwToolError(response, 'The route request could not be completed.')
   }
 
   return (await response.json()) as PlanRouteToolResponse
@@ -70,8 +112,29 @@ export async function searchRoutePoiWithTool(
   )
 
   if (!response.ok) {
-    throw new Error(`POI search failed with HTTP ${response.status}`)
+    return throwToolError(response, 'The place search could not be completed.')
   }
 
   return (await response.json()) as RoutePoiResponse
+}
+
+export async function rerouteWithTool(
+  argumentsJson: string,
+  signal?: AbortSignal,
+): Promise<RerouteToolResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/assistant/realtime/tools/reroute-through-poi`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: argumentsJson,
+      signal,
+    },
+  )
+
+  if (!response.ok) {
+    return throwToolError(response, 'The route change could not be completed.')
+  }
+
+  return (await response.json()) as RerouteToolResponse
 }

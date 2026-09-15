@@ -15,7 +15,9 @@ export type StopCategory =
   | 'hotel'
   | 'restaurant'
   | 'attraction'
-  | 'coffee';
+  | 'coffee'
+  | 'toilets'
+  | 'fuel';
 
 export interface VehicleState {
   vehicleId: string;

@@ -1,10 +1,13 @@
 from fastapi import APIRouter, Request
 
+from ..core.errors import APIError
 from ..models.contracts import (
     AssistantIntent,
     RealtimeSessionResponse,
     RealtimeToolRouteRequest,
     RealtimeToolRouteResponse,
+    RealtimeToolRerouteRequest,
+    RealtimeToolRerouteResponse,
     RealtimeToolSearchRoutePoiRequest,
     RealtimeToolSearchRoutePoiResponse,
 )
@@ -52,3 +55,26 @@ async def realtime_search_route_poi(
         preference=payload.preference,
     )
     return RealtimeToolSearchRoutePoiResponse(results=results)
+
+
+@router.post(
+    "/realtime/tools/reroute-through-poi",
+    response_model=RealtimeToolRerouteResponse,
+)
+async def realtime_reroute_through_poi(
+    payload: RealtimeToolRerouteRequest,
+    request: Request,
+) -> RealtimeToolRerouteResponse:
+    reroute = getattr(request.app.state.route_service, "reroute_through_poi", None)
+    if reroute is None:
+        raise APIError(
+            503,
+            "REROUTE_UNAVAILABLE",
+            "Rerouting through a selected place is not available yet.",
+        )
+
+    route = await reroute(
+        poi_id=payload.poi_id,
+        active_route_context=payload.active_route_context,
+    )
+    return RealtimeToolRerouteResponse(route=route)

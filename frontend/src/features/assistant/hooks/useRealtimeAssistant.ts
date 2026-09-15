@@ -6,7 +6,10 @@ import type {
 } from '../../../types/contracts'
 import {
   createRealtimeSession,
+  getRealtimeToolErrorMessage,
   planRouteWithTool,
+  RealtimeToolRequestError,
+  rerouteWithTool,
   searchRoutePoiWithTool,
 } from '../../../services/realtimeAssistantApi'
 
@@ -68,6 +71,17 @@ function compactRouteFacts(route: RouteResponse) {
   }
 }
 
+function compactPoiFacts(stop: StopPinpoint) {
+  return {
+    id: stop.id,
+    name: stop.name,
+    category: stop.category,
+    ...(stop.rating !== undefined ? { rating: stop.rating } : {}),
+    ...(stop.tag ? { tag: stop.tag } : {}),
+    detourMinutes: stop.detourMinutes,
+  }
+}
+
 function getRoutePriority(argumentsJson: string) {
   const argumentsValue = JSON.parse(argumentsJson) as {
     priority?: AssistantResponse['intent']['priority']
@@ -120,6 +134,7 @@ export function useRealtimeAssistant() {
     route: RouteResponse
     priority: AssistantResponse['intent']['priority']
   } | null>(null)
+  const activePriorityRef = useRef<AssistantResponse['intent']['priority']>('BALANCED')
   const assistantTranscriptRef = useRef('')
   const startingRef = useRef(false)
 
@@ -134,7 +149,6 @@ export function useRealtimeAssistant() {
     toolAbortRef.current?.abort()
     toolAbortRef.current = null
     pendingRouteRef.current = null
-    setPoiResults([])
     assistantTranscriptRef.current = ''
     channelRef.current?.close()
     channelRef.current = null
@@ -159,7 +173,11 @@ export function useRealtimeAssistant() {
     name: string
     arguments: string
   }) {
-    if (event.name !== 'plan_route' && event.name !== 'search_route_poi') {
+    if (
+      event.name !== 'plan_route' &&
+      event.name !== 'search_route_poi' &&
+      event.name !== 'reroute_through_poi'
+    ) {
       return
     }
 
@@ -185,14 +203,34 @@ export function useRealtimeAssistant() {
             call_id: event.call_id,
             output: JSON.stringify({
               status: 'success',
-              results: result.results.map((stop) => ({
-                name: stop.name,
-                category: stop.category,
-                rating: stop.rating,
-                detourMinutes: stop.detourMinutes,
-                tag: stop.tag,
-              })),
+              results: result.results.map(compactPoiFacts),
             }),
+          },
+        })
+        sendEvent({ type: 'response.create' })
+        return
+      }
+
+      if (event.name === 'reroute_through_poi') {
+        const result = await rerouteWithTool(
+          event.arguments,
+          toolController.signal,
+        )
+        if (!startingRef.current) {
+          return
+        }
+
+        setPoiResults([])
+        pendingRouteRef.current = {
+          route: result.route,
+          priority: activePriorityRef.current,
+        }
+        sendEvent({
+          type: 'conversation.item.create',
+          item: {
+            type: 'function_call_output',
+            call_id: event.call_id,
+            output: JSON.stringify(compactRouteFacts(result.route)),
           },
         })
         sendEvent({ type: 'response.create' })
@@ -204,9 +242,12 @@ export function useRealtimeAssistant() {
         return
       }
 
+      setPoiResults([])
+      const routePriority = getRoutePriority(event.arguments)
+      activePriorityRef.current = routePriority
       pendingRouteRef.current = {
         route: result.route,
-        priority: getRoutePriority(event.arguments),
+        priority: routePriority,
       }
       sendEvent({
         type: 'conversation.item.create',
@@ -228,10 +269,20 @@ export function useRealtimeAssistant() {
           type: 'function_call_output',
           call_id: event.call_id,
           output: JSON.stringify({
-            error:
-              toolError instanceof Error
-                ? toolError.message
-                : 'Route planning failed.',
+            error: (() => {
+              const code =
+                toolError instanceof RealtimeToolRequestError
+                  ? toolError.code
+                  : 'TOOL_FAILED'
+              const fallback =
+                toolError instanceof Error
+                  ? toolError.message
+                  : 'The requested assistant tool failed.'
+              return {
+                code,
+                message: getRealtimeToolErrorMessage(code, fallback),
+              }
+            })(),
           }),
         },
       })
