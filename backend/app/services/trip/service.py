@@ -68,6 +68,14 @@ class RouteService:
         self._active_stops: list[StopPinpoint] = []
         self._active_search_results: dict[str, StopPinpoint] = {}
 
+    @property
+    def active_route_id(self) -> str | None:
+        return self._active_route_id
+
+    @property
+    def active_search_id(self) -> str | None:
+        return self._active_search_id
+
     async def plan(self, intent: AssistantIntent) -> RouteResponse:
         try:
             origin = await self._provider.geocode(self._origin)

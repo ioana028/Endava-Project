@@ -70,6 +70,61 @@ tool schemas never cross this boundary.
 
 The browser uses the returned model when posting its SDP offer to OpenAI.
 
+## Realtime POI voice flow
+
+`search_route_poi` is read-only. Suzanne maps driver language to the
+provider-neutral categories `attraction`, `restaurant`, `hotel`, `charging`,
+`coffee`, `rest`, `toilets`, `fuel`, and `service`. A search returns suggestions
+only and must not change the active route.
+
+The browser forwards the full structured POI response to the map, but sends
+only compact facts to Realtime:
+
+```json
+{
+  "status": "success",
+  "results": [
+    {
+      "id": "place-123",
+      "name": "Example Cafe",
+      "category": "coffee",
+      "rating": 4.5,
+      "tag": "Cafe",
+      "detourMinutes": 6
+    }
+  ]
+}
+```
+
+Coordinates, geometry, raw provider fields, and map-only data are never sent
+to Realtime. Suzanne must describe only returned facts. A fuel result alone
+does not establish that coffee, toilets, or rest facilities are available.
+
+## `POST /api/assistant/realtime/tools/reroute-through-poi`
+
+Rerouting is a separate mutation from search and is called only after the
+driver explicitly accepts Suzanne's proposed route change. Selecting, naming,
+or tapping a POI is not confirmation.
+
+```json
+{
+  "poiId": "place-123",
+  "activeRouteContext": "opaque-context-from-search",
+  "confirmation": "confirmed"
+}
+```
+
+`activeRouteContext` is opaque to Realtime and must be preserved exactly from
+the backend search/route context. Suzanne must never invent or substitute it.
+The successful response contains a complete replacement `RouteResponse`; the
+browser returns only compact distance, duration, charging, and relevant route
+requirement facts to Realtime. Suzanne cannot claim that the route changed
+until this tool succeeds.
+
+Tool failures use the common error envelope. The browser preserves `code` and
+`message` when returning an error to Realtime, including `REROUTE_UNAVAILABLE`,
+`STALE_POI_SELECTION`, and `POI_UNAVAILABLE`.
+
 ## `POST /api/assistant/realtime/tools/plan-route`
 
 The browser forwards only the Realtime function arguments to the deterministic
@@ -245,6 +300,9 @@ Recommended statuses:
 | 413 | `PAYLOAD_TOO_LARGE` | Audio exceeds configured limit |
 | 422 | `VALIDATION_ERROR` | Pydantic validation failure |
 | 503 | `AI_UNAVAILABLE` | OpenAI or another required provider unavailable |
+| 503 | `REROUTE_UNAVAILABLE` | Confirmed POI rerouting is unavailable |
+| 409 | `STALE_POI_SELECTION` | The selected POI belongs to an old route/search context |
+| 503 | `POI_UNAVAILABLE` | POI search is unavailable |
 | 500 | `INTERNAL_ERROR` | Unexpected backend failure |
 
 Do not expose API keys, stack traces, prompts, or raw provider errors.

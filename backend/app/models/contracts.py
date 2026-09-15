@@ -114,17 +114,20 @@ class RealtimeToolSearchRoutePoiRequest(ContractModel):
 
 class RealtimeToolSearchRoutePoiResponse(ContractModel):
     results: list[StopPinpoint] = Field(default_factory=list)
+    route_id: str | None = None
+    search_id: str | None = None
 
 
-class RealtimeToolRerouteThroughPoiRequest(ContractModel):
+class RealtimeToolRerouteRequest(ContractModel):
     poi_id: str = Field(min_length=1, max_length=200)
     route_id: str = Field(min_length=1, max_length=200)
     search_id: str = Field(min_length=1, max_length=200)
     coords: tuple[float, float] | None = None
     priority: RoutePriority | None = None
+    confirmation: Literal["confirmed"]
 
 
-class RealtimeToolRerouteThroughPoiResponse(ContractModel):
+class RealtimeToolRerouteResponse(ContractModel):
     route: RouteResponse
 
 

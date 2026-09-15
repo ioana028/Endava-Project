@@ -93,6 +93,8 @@ export interface RouteResponse {
 
 export interface RoutePoiResponse {
   results: StopPinpoint[];
+  routeId?: string | null;
+  searchId?: string | null;
 }
 
 export interface AssistantIntent {

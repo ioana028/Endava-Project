@@ -51,6 +51,26 @@ The Realtime session is configured server-side with the deterministic
 `POST /api/assistant/realtime/tools/plan-route`, which delegates to the existing
 route service and returns the structured `RouteResponse`.
 
+The voice tool lifecycle for route-aware POIs is:
+
+1. Suzanne calls `search_route_poi`; search is read-only and returns factual
+  suggestions.
+2. Suzanne presents one or two returned suggestions without inventing ratings,
+  amenities, availability, or detour values.
+3. After the driver selects a suggestion, Suzanne states the proposed change
+  and asks for explicit voice confirmation.
+4. Only a clear acceptance invokes `reroute_through_poi` with the selected POI
+  ID, the exact opaque active-route context, and `confirmation: "confirmed"`.
+5. The route is considered changed only after a successful deterministic
+  response. Realtime receives compact speech facts, never geometry or raw
+  provider data.
+
+The frontend preserves structured tool error codes and messages for concise
+spoken error handling. Stopping voice closes the WebRTC session, aborts or
+ignores late tool work, and does not by itself erase the last valid route or
+POI suggestions. New route planning and successful rerouting explicitly
+replace stale suggestion state.
+
 ## Health and startup behavior
 
 `GET /health` must remain available even when external providers are down. A
