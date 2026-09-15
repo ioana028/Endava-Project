@@ -21,6 +21,13 @@ export type RealtimeAssistantState =
   | 'SPEAKING'
   | 'ERROR'
 
+export type PoiActionState =
+  | 'IDLE'
+  | 'CONFIRMATION_PENDING'
+  | 'REROUTING_IN_PROGRESS'
+  | 'REROUTE_SUCCESS'
+  | 'REROUTE_FAILED'
+
 function createRouteResponse(
   route: RouteResponse,
   priority: AssistantResponse['intent']['priority'],
@@ -127,6 +134,8 @@ export function useRealtimeAssistant() {
   const [transcript, setTranscript] = useState('')
   const [response, setResponse] = useState<AssistantResponse | null>(null)
   const [poiResults, setPoiResults] = useState<StopPinpoint[]>([])
+  const [selectedPoi, setSelectedPoi] = useState<StopPinpoint | null>(null)
+  const [poiActionState, setPoiActionState] = useState<PoiActionState>('IDLE')
   const [error, setError] = useState<string | null>(null)
   const connectionRef = useRef<RTCPeerConnection | null>(null)
   const channelRef = useRef<RTCDataChannel | null>(null)
@@ -142,6 +151,7 @@ export function useRealtimeAssistant() {
   const activePriorityRef = useRef<AssistantResponse['intent']['priority']>('BALANCED')
   const assistantTranscriptRef = useRef('')
   const startingRef = useRef(false)
+  const toolRequestIdRef = useRef(0)
 
   function sendEvent(event: Record<string, unknown>) {
     channelRef.current?.send(JSON.stringify(event))
@@ -153,6 +163,7 @@ export function useRealtimeAssistant() {
     connectionAbortRef.current = null
     toolAbortRef.current?.abort()
     toolAbortRef.current = null
+    toolRequestIdRef.current += 1
     pendingRouteRef.current = null
     assistantTranscriptRef.current = ''
     channelRef.current?.close()
@@ -187,6 +198,10 @@ export function useRealtimeAssistant() {
     }
 
     setState('PROCESSING')
+    const requestId = ++toolRequestIdRef.current
+    if (event.name === 'reroute_through_poi') {
+      setPoiActionState('REROUTING_IN_PROGRESS')
+    }
     const toolController = new AbortController()
     toolAbortRef.current = toolController
 
@@ -196,11 +211,18 @@ export function useRealtimeAssistant() {
           event.arguments,
           toolController.signal,
         )
-        if (!startingRef.current) {
+        if (!startingRef.current || requestId !== toolRequestIdRef.current) {
           return
         }
 
         setPoiResults(result.results)
+        setSelectedPoi(null)
+        setPoiActionState('IDLE')
+        setError(
+          result.results.length === 0
+            ? 'No suitable stops were found along this route.'
+            : null,
+        )
         sendEvent({
           type: 'conversation.item.create',
           item: {
@@ -223,11 +245,18 @@ export function useRealtimeAssistant() {
           event.arguments,
           toolController.signal,
         )
-        if (!startingRef.current) {
+        if (!startingRef.current || requestId !== toolRequestIdRef.current) {
           return
         }
 
+        setResponse((current) =>
+          current
+            ? { ...current, route: result.route }
+            : createRouteResponse(result.route, activePriorityRef.current),
+        )
         setPoiResults([])
+        setSelectedPoi(null)
+        setPoiActionState('REROUTE_SUCCESS')
         pendingRouteRef.current = {
           route: result.route,
           priority: activePriorityRef.current,
@@ -245,7 +274,7 @@ export function useRealtimeAssistant() {
       }
 
       const result = await planRouteWithTool(event.arguments, toolController.signal)
-      if (!startingRef.current) {
+      if (!startingRef.current || requestId !== toolRequestIdRef.current) {
         return
       }
 
@@ -256,6 +285,10 @@ export function useRealtimeAssistant() {
         route: result.route,
         priority: routePriority,
       }
+      setPoiResults([])
+      setSelectedPoi(null)
+      setPoiActionState('IDLE')
+      setError(null)
       sendEvent({
         type: 'conversation.item.create',
         item: {
@@ -266,7 +299,23 @@ export function useRealtimeAssistant() {
       })
       sendEvent({ type: 'response.create' })
     } catch (toolError) {
-      if (!startingRef.current || toolController.signal.aborted) {
+      if (
+        !startingRef.current ||
+        toolController.signal.aborted ||
+        requestId !== toolRequestIdRef.current
+      ) {
+        if (startingRef.current) {
+          setError(
+            event.name === 'reroute_through_poi'
+              ? 'The route could not be updated. Your previous route is unchanged.'
+              : event.name === 'search_route_poi'
+                ? 'Route suggestions are temporarily unavailable.'
+                : 'Route planning is temporarily unavailable.',
+          )
+        }
+        if (event.name === 'reroute_through_poi' && startingRef.current) {
+          setPoiActionState('REROUTE_FAILED')
+        }
         return
       }
 
@@ -463,12 +512,29 @@ export function useRealtimeAssistant() {
 
   useEffect(() => closeSession, [])
 
+  function selectPoi(poiId: string) {
+    const poi = poiResults.find((result) => result.id === poiId)
+    if (!poi) {
+      setSelectedPoi(null)
+      setPoiActionState('REROUTE_FAILED')
+      setError('That route suggestion is no longer available.')
+      return
+    }
+
+    setSelectedPoi(poi)
+    setPoiActionState('CONFIRMATION_PENDING')
+    setError(null)
+  }
+
   return {
     enabled,
     state,
     transcript,
     response,
     poiResults,
+    selectedPoi,
+    poiActionState,
+    selectPoi,
     error,
     enable,
     disable: closeSession,
