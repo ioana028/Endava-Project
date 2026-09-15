@@ -23,6 +23,9 @@ from .country_rules import derive_requirements, detect_border_crossings
 from .deterministic import (
     POI_COORDINATE_TOLERANCE,
     enrich_partner,
+    estimate_charging_duration_minutes,
+    route_progress_km,
+    route_progress_km,
     select_charger,
     select_route_stops,
 )
@@ -95,6 +98,7 @@ class RouteService:
         self._validate_route(provider_route)
         initial_distance_km = round(provider_route.distance_meters / 1000, 2)
         safe_distance_km = self._safe_distance_km()
+        reachable_distance_km = self._fixture_repository.fixtures.telemetry.estimated_range_km
         stops: list[StopPinpoint] = []
 
         if initial_distance_km > safe_distance_km:
@@ -103,7 +107,7 @@ class RouteService:
             )
             try:
                 candidates = await charging_provider.search_charging(
-                    provider_route, safe_distance_km
+                    provider_route, reachable_distance_km
                 )
             except (JourneyProviderError, OSError) as error:
                 raise APIError(
@@ -112,7 +116,19 @@ class RouteService:
                     "The charging service is unavailable.",
                 ) from error
 
-            candidate = select_charger(candidates, safe_distance_km)
+            enriched_candidates = tuple(
+                candidate.__class__(
+                    stop=enrich_partner(candidate.stop, self._fixture_repository.fixtures.partners),
+                    compatible=candidate.compatible,
+                    available=candidate.available,
+                    distance_from_route_km=candidate.distance_from_route_km,
+                    distance_from_origin_km=candidate.distance_from_origin_km,
+                    charging_power_kw=candidate.charging_power_kw,
+                    charging_duration_minutes=candidate.charging_duration_minutes,
+                )
+                for candidate in candidates
+            )
+            candidate = select_charger(enriched_candidates, reachable_distance_km)
             if candidate is None:
                 raise APIError(
                     422,
@@ -120,13 +136,19 @@ class RouteService:
                     "No suitable charging stop was found for this route.",
                 )
 
-            charging_stop = enrich_partner(
-                candidate.stop, self._fixture_repository.fixtures.partners
-            ).model_copy(update={"mandatory": True})
+            charger_progress_km = candidate.distance_from_origin_km or 0
+            charging_duration_minutes = estimate_charging_duration_minutes(
+                candidate,
+                provider_route.distance_meters / 1000,
+                charger_progress_km,
+                self._fixture_repository.fixtures.telemetry.estimated_range_km,
+                self._safety_buffer_km,
+                self._fixture_repository.fixtures.telemetry.consumption_rate_kwh,
+            )
+            charging_stop = candidate.stop.model_copy(update={"mandatory": True})
             charging_stop = charging_stop.model_copy(
                 update={
-                    "charging_duration_minutes": candidate.charging_duration_minutes
-                    or charging_stop.charging_duration_minutes
+                    "charging_duration_minutes": charging_duration_minutes
                 }
             )
             stops.append(charging_stop)
@@ -180,11 +202,17 @@ class RouteService:
                     "NO_ACTIVE_ROUTE",
                     "Plan a route before searching for places.",
                 )
+            search_kwargs = {
+                "route": self._active_provider_route,
+            }
+            if "near_coords" in inspect.signature(self._places_provider.search).parameters:
+                search_kwargs["near_coords"] = (
+                    self._active_stops[-1].coords
+                    if location == "stop" and self._active_stops
+                    else None
+                )
             results = await self._places_provider.search(
-                category,
-                location,
-                preference,
-                route=self._active_provider_route,
+                category, location, preference, **search_kwargs
             )
             results = select_route_stops(
                 results, tuple(self._active_provider_route.geometry), preference
@@ -235,9 +263,15 @@ class RouteService:
             raise APIError(503, "ROUTING_UNAVAILABLE", "The routing service cannot route through a place.")
 
         selected_priority = priority or self._active_priority
+        ordered_stops = sorted(
+            (*self._active_stops, stop),
+            key=lambda item: route_progress_km(
+                item.coords, tuple(self._active_provider_route.geometry)
+            ),
+        )
         waypoints = tuple(
             GeocodedPlace(item.name, Coordinates(lng=item.coords[0], lat=item.coords[1]))
-            for item in (*self._active_stops, stop)
+            for item in ordered_stops
         )
         try:
             provider_route = await self._provider.route(
@@ -256,11 +290,11 @@ class RouteService:
             provider_route,
             self._active_origin,
             self._active_destination,
-            [*self._active_stops, stop],
+            ordered_stops,
         )
         self._active_provider_route = provider_route
         self._active_priority = selected_priority
-        self._active_stops = [*self._active_stops, stop]
+        self._active_stops = ordered_stops
         self._active_route_id = uuid4().hex
         self._active_search_id = None
         self._active_search_results = {}

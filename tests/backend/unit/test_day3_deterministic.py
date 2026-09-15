@@ -102,11 +102,18 @@ def test_poi_search_ranks_without_mutating_route() -> None:
     assert route.geometry == ((17, 47), (18, 48))
 
 
-def repository() -> FixtureRepository:
+def repository(estimated_range_km: float = 95) -> FixtureRepository:
     fixture_repository = FixtureRepository(
         Path("data/vehicles/telemetry.json"), Path("data/partners/partners.json")
     )
-    fixture_repository.load()
+    fixtures = fixture_repository.load()
+    fixture_repository._fixtures = fixtures.model_copy(
+        update={
+            "telemetry": fixtures.telemetry.model_copy(
+                update={"estimated_range_km": estimated_range_km}
+            )
+        }
+    )
     return fixture_repository
 
 
@@ -151,7 +158,10 @@ class FakeChargingProvider:
                 stop("too-far"), distance_from_route_km=max_distance_km + 1
             ),
             ChargingCandidate(
-                stop("ionity-gyor"), distance_from_route_km=max_distance_km
+                stop("ionity-gyor", detour=0),
+                distance_from_route_km=max_distance_km,
+                distance_from_origin_km=max_distance_km,
+                charging_duration_minutes=1,
             ),
         )
 
@@ -178,7 +188,7 @@ def test_route_service_derives_route_facts_from_provider_metadata() -> None:
     provider = WaypointRoutingProvider()
     provider.route = provider.route_with_countries
     route = asyncio.run(
-        RouteService(provider, repository()).plan(
+        RouteService(provider, repository(estimated_range_km=200)).plan(
             AssistantIntent(destination="Budapest", priority=RoutePriority.FASTEST)
         )
     )
@@ -257,7 +267,7 @@ def test_google_places_provider_maps_and_filters_route_results() -> None:
         {
             "id": "places/far-away",
             "displayName": {"text": "Far Away"},
-            "location": {"longitude": 17.5, "latitude": 47.1},
+            "location": {"longitude": 17.5, "latitude": 47.5},
         },
         "attraction",
         route,

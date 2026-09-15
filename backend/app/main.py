@@ -26,20 +26,26 @@ def create_app(
     fixture_repository = FixtureRepository(
         settings.telemetry_path, settings.partners_path
     )
+    places_provider = (
+        GooglePlacesProvider(
+            settings.google_server_api_key,
+            timeout_seconds=settings.google_places_timeout_seconds,
+            search_radius_meters=settings.google_places_search_radius_meters,
+            sample_interval_km=settings.google_places_sample_interval_km,
+            max_search_points=settings.google_places_max_search_points,
+        )
+        if settings.places_provider == "google"
+        or (settings.google_server_api_key and settings.places_provider == "auto")
+        else OfflinePlacesProvider(fixture_repository, settings.places_path)
+    )
     route_service = route_service or RouteService(
         GoogleMapsRoutingProvider(settings.google_server_api_key),
         fixture_repository,
-        places_provider=(
-            GooglePlacesProvider(
-                settings.google_server_api_key,
-                timeout_seconds=settings.google_places_timeout_seconds,
-                search_radius_meters=settings.google_places_search_radius_meters,
-                sample_interval_km=settings.google_places_sample_interval_km,
-                max_search_points=settings.google_places_max_search_points,
-            )
-            if settings.places_provider == "google"
-            or (settings.google_server_api_key and settings.places_provider == "auto")
-            else OfflinePlacesProvider(fixture_repository, settings.places_path),
+        places_provider=places_provider,
+        charging_provider=(
+            places_provider
+            if isinstance(places_provider, GooglePlacesProvider)
+            else None
         ),
     )
 

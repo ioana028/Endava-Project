@@ -2,7 +2,7 @@ from collections.abc import Iterable
 
 from ...models.contracts import StopPinpoint
 from ...models.fixtures import Partner
-from .deterministic import POI_CORRIDOR_RADIUS_KM, distance_to_route_km
+from .deterministic import POI_CORRIDOR_RADIUS_KM, distance_to_route_km, route_progress_km
 from .ports import ChargingCandidate, POICandidate, ProviderRoute
 
 
@@ -28,12 +28,15 @@ class FixtureChargingProvider:
                 distance_from_route_km=distance_to_route_km(
                     partner.coords, tuple(route.geometry)
                 ),
+                distance_from_origin_km=route_progress_km(
+                    partner.coords, tuple(route.geometry)
+                ),
                 charging_duration_minutes=partner.charging_duration_minutes,
             )
             for partner in self._partners
             if (
                 partner.category == "charging"
-                and distance_to_route_km(partner.coords, tuple(route.geometry))
+                and route_progress_km(partner.coords, tuple(route.geometry))
                 <= max_distance_km
             )
         )

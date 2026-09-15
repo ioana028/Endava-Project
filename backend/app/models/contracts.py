@@ -45,6 +45,7 @@ class StopPinpoint(ContractModel):
     rating: float | None = None
     tag: str = ""
     amenities: tuple[str, ...] = ()
+    charging_power_kw: float | None = Field(default=None, ge=0)
     detour_minutes: float = Field(ge=0, default=0)
     charging_duration_minutes: float = Field(ge=0, default=0)
     mandatory: bool = False

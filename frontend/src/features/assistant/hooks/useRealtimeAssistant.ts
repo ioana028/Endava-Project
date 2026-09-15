@@ -54,15 +54,21 @@ function compactRouteFacts(route: RouteResponse) {
     distanceKm: route.stats.totalDistanceKm,
     drivingDurationMinutes: route.stats.drivingDurationMinutes,
     totalDurationMinutes: route.stats.totalDurationMinutes,
+    chargingRequired: Boolean(chargingStop),
+    chargingStop: chargingStop
+      ? {
+          name: chargingStop.name,
+          detourMinutes: chargingStop.detourMinutes,
+          chargingDurationMinutes: chargingStop.chargingDurationMinutes,
+          partnerLocation: Boolean(chargingStop.partner),
+          ...(partnerBenefit ? { partnerBenefit } : {}),
+        }
+      : null,
     ...(chargingStop
       ? {
-          chargingStop: {
-            name: chargingStop.name,
-            detourMinutes: chargingStop.detourMinutes,
-            chargingDurationMinutes: chargingStop.chargingDurationMinutes,
-            partnerLocation: Boolean(chargingStop.partner),
-            ...(partnerBenefit ? { partnerBenefit } : {}),
-          },
+          mandatoryStops: route.stops
+            .filter((stop) => stop.mandatory)
+            .map((stop) => stop.name),
         }
       : {}),
     ...(route.borderCrossings.length > 0
@@ -88,6 +94,7 @@ function compactPoiFacts(
     category: stop.category,
     ...(stop.rating !== undefined ? { rating: stop.rating } : {}),
     ...(stop.tag ? { tag: stop.tag } : {}),
+    ...(stop.amenities?.length ? { amenities: stop.amenities } : {}),
     detourMinutes: stop.detourMinutes,
     ...(context.routeId ? { routeId: context.routeId } : {}),
     ...(context.searchId ? { searchId: context.searchId } : {}),
@@ -524,6 +531,23 @@ export function useRealtimeAssistant() {
     setSelectedPoi(poi)
     setPoiActionState('CONFIRMATION_PENDING')
     setError(null)
+
+    if (startingRef.current) {
+      sendEvent({
+        type: 'conversation.item.create',
+        item: {
+          type: 'message',
+          role: 'user',
+          content: [
+            {
+              type: 'input_text',
+              text: `I selected the suggested stop "${poi.name}" (POI ID: ${poi.id}). Explain the proposed detour and ask for my confirmation. Do not reroute yet.`,
+            },
+          ],
+        },
+      })
+      sendEvent({ type: 'response.create' })
+    }
   }
 
   return {

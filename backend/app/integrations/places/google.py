@@ -7,7 +7,8 @@ from time import monotonic
 import httpx
 
 from ...models.contracts import StopPinpoint
-from ...services.trip.ports import JourneyProviderError, ProviderRoute
+from ...services.trip.deterministic import distance_to_route_km, route_progress_km
+from ...services.trip.ports import ChargingCandidate, JourneyProviderError, ProviderRoute
 
 
 PLACES_SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
@@ -48,6 +49,7 @@ class GooglePlacesProvider:
         location: str | None = None,
         preference: str | None = None,
         route: ProviderRoute | None = None,
+        near_coords: tuple[float, float] | None = None,
     ) -> list[StopPinpoint]:
         normalized = self._normalize_category(category)
         if not self._api_key:
@@ -59,8 +61,8 @@ class GooglePlacesProvider:
         if preference:
             query = f"{preference} {query}"
         radius = (
-            self._search_radius_meters
-            if location != "destination"
+            max(self._search_radius_meters, 35_000)
+            if location == "route"
             else self._search_radius_meters * 2
         )
         results: dict[str, StopPinpoint] = {}
@@ -69,7 +71,9 @@ class GooglePlacesProvider:
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-                for longitude, latitude in self._search_points(route, location):
+                for longitude, latitude in self._search_points(
+                    route, location, near_coords
+                ):
                     request_count += 1
                     response = await client.post(
                         PLACES_SEARCH_URL,
@@ -91,7 +95,8 @@ class GooglePlacesProvider:
                             "X-Goog-Api-Key": self._api_key,
                             "X-Goog-FieldMask": (
                                 "places.id,places.displayName,places.location,places.types,"
-                                "places.rating,places.editorialSummary,places.formattedAddress"
+                                "places.rating,places.editorialSummary,places.formattedAddress,"
+                                "places.evChargeOptions"
                             ),
                         },
                     )
@@ -119,10 +124,31 @@ class GooglePlacesProvider:
             round((monotonic() - started_at) * 1000),
         )
 
+        result_limit = 50 if normalized == "charging" else 10
         return sorted(
             results.values(),
             key=lambda stop: (stop.detour_minutes, -(stop.rating or 0), stop.name),
-        )[:10]
+        )[:result_limit]
+
+    async def search_charging(
+        self, route: ProviderRoute, max_distance_km: float
+    ) -> tuple[ChargingCandidate, ...]:
+        stops = await self.search("charging", location="route", route=route)
+        return tuple(
+            ChargingCandidate(
+                stop=stop,
+                distance_from_route_km=distance_to_route_km(
+                    stop.coords, tuple(route.geometry)
+                ),
+                distance_from_origin_km=route_progress_km(
+                    stop.coords, tuple(route.geometry)
+                ),
+                charging_power_kw=stop.charging_power_kw,
+                charging_duration_minutes=stop.charging_duration_minutes,
+            )
+            for stop in stops
+            if route_progress_km(stop.coords, tuple(route.geometry)) <= max_distance_km
+        )
 
     def _to_stop(
         self, place: dict[str, object], category: str, route: ProviderRoute
@@ -137,7 +163,8 @@ class GooglePlacesProvider:
             return None
 
         route_distance_km = self._route_distance_km(coords, route.geometry)
-        if route_distance_km > self._search_radius_meters / 1000:
+        corridor_radius_km = max(self._search_radius_meters / 1000, 35.0)
+        if route_distance_km > corridor_radius_km:
             return None
         rating = place.get("rating")
         summary = place.get("editorialSummary") or {}
@@ -146,6 +173,7 @@ class GooglePlacesProvider:
         if not self._supports_requested_category(category, types):
             return None
         factual_types = self._factual_types(types)
+        charging_power_kw = self._charging_power_kw(place)
         tag = str(summary.get("text") or address or "Google Maps place")
         if factual_types:
             tag = f"{tag} ({', '.join(factual_types)})"
@@ -156,12 +184,30 @@ class GooglePlacesProvider:
             coords=coords,
             rating=float(rating) if rating is not None else None,
             tag=tag,
+            amenities=factual_types,
+            charging_power_kw=charging_power_kw,
             detour_minutes=round(route_distance_km, 1),
         )
 
+    @staticmethod
+    def _charging_power_kw(place: dict[str, object]) -> float | None:
+        options = place.get("evChargeOptions") or {}
+        connectors = options.get("connectorAggregation", []) if isinstance(options, dict) else []
+        rates = [
+            float(item["maxChargeRateKw"])
+            for item in connectors
+            if isinstance(item, dict) and item.get("maxChargeRateKw") is not None
+        ]
+        return max(rates) if rates else None
+
     def _search_points(
-        self, route: ProviderRoute, location: str | None
+        self,
+        route: ProviderRoute,
+        location: str | None,
+        near_coords: tuple[float, float] | None = None,
     ) -> tuple[tuple[float, float], ...]:
+        if location == "stop" and near_coords is not None:
+            return (near_coords,)
         geometry = route.geometry
         if location == "destination":
             return (geometry[-1],)

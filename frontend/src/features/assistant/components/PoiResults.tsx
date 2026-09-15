@@ -44,6 +44,11 @@ export function PoiResults({
               </span>
               <strong>{result.name}</strong>
               <span className="poi-tag">{result.tag}</span>
+              {result.amenities && result.amenities.length > 0 && (
+                <span className="poi-amenities">
+                  {result.amenities.join(' · ')}
+                </span>
+              )}
               <span className="poi-detour">+{Math.round(result.detourMinutes)} min detour</span>
               {selected && <span className="poi-selected-label">Selected for voice confirmation</span>}
             </button>

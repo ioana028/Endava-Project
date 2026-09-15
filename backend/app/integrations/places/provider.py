@@ -24,6 +24,7 @@ class LocalPlacesProvider:
         location: str | None = None,
         preference: str | None = None,
         route: ProviderRoute | None = None,
+        near_coords: tuple[float, float] | None = None,
     ) -> list[StopPinpoint]:
         normalized = self._normalize_category(category)
 
@@ -48,6 +49,7 @@ class LocalPlacesProvider:
             candidate
             for candidate in candidates
             if self._matches_location(candidate, location_context, route)
+            and self._matches_search_center(candidate, near_coords)
         ]
         candidates.sort(
             key=lambda candidate: (
@@ -58,6 +60,16 @@ class LocalPlacesProvider:
             )
         )
         return candidates[:10]
+
+    @staticmethod
+    def _matches_search_center(
+        candidate: StopPinpoint, near_coords: tuple[float, float] | None
+    ) -> bool:
+        if near_coords is None:
+            return True
+        longitude_delta = (candidate.coords[0] - near_coords[0]) * 70
+        latitude_delta = (candidate.coords[1] - near_coords[1]) * 111
+        return (longitude_delta**2 + latitude_delta**2) ** 0.5 <= 5
 
     @staticmethod
     def _matches_location(

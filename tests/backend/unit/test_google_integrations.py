@@ -100,6 +100,28 @@ def test_places_samples_by_distance_and_deduplicates_provider_ids(monkeypatch: p
     assert FakePlacesClient.calls[0]["headers"]["X-Goog-FieldMask"].startswith("places.id")
 
 
+def test_places_stop_search_uses_stop_center_and_structured_amenities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakePlacesClient.calls = []
+    FakePlacesClient.responses = [FakeResponse({"places": [place()]})]
+    monkeypatch.setattr(
+        "backend.app.integrations.places.google.httpx.AsyncClient", FakePlacesClient
+    )
+
+    results = asyncio.run(
+        GooglePlacesProvider("test-key").search(
+            "coffee", location="stop", route=route(), near_coords=(16.05, 48.001)
+        )
+    )
+
+    assert len(FakePlacesClient.calls) == 1
+    request = FakePlacesClient.calls[0]["json"]
+    center = request["locationBias"]["circle"]["center"]
+    assert center == {"latitude": 48.001, "longitude": 16.05}
+    assert results[0].amenities == ("fuel station", "cafe", "convenience store")
+
+
 def test_places_timeout_is_translated_to_provider_error(monkeypatch: pytest.MonkeyPatch) -> None:
     class TimeoutClient(FakePlacesClient):
         async def post(self, url: str, **kwargs: object) -> FakeResponse:

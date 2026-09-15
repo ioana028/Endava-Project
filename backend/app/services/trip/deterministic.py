@@ -10,6 +10,8 @@ POI_MAX_RESULTS = 2
 POI_CORRIDOR_RADIUS_KM = 35.0
 POI_DIVERSITY_DISTANCE_KM = 15.0
 POI_COORDINATE_TOLERANCE = 0.01
+DEFAULT_CHARGING_POWER_KW = 50.0
+MIN_CHARGER_PROGRESS_KM = 20.0
 
 
 def distance_km(first: tuple[float, float], second: tuple[float, float]) -> float:
@@ -110,14 +112,21 @@ def select_charger(
             and candidate.available
             and candidate.stop.detour_minutes >= 0
             and (
+                candidate.distance_from_origin_km is None
+                or candidate.distance_from_origin_km >= MIN_CHARGER_PROGRESS_KM
+            )
+            and (
                 max_distance_km is None
-                or candidate.distance_from_route_km <= max_distance_km
+                or candidate.distance_from_origin_km is None
+                or candidate.distance_from_origin_km <= max_distance_km
             )
         )
     ]
     return min(
         suitable,
         key=lambda candidate: (
+            0 if candidate.stop.partner else 1,
+            -(candidate.distance_from_origin_km or 0),
             candidate.distance_from_route_km,
             candidate.stop.detour_minutes,
             -(candidate.stop.rating or 0),
@@ -125,6 +134,25 @@ def select_charger(
         ),
         default=None,
     )
+
+
+def estimate_charging_duration_minutes(
+    candidate: ChargingCandidate,
+    route_distance_km: float,
+    charger_progress_km: float,
+    current_range_km: float,
+    safety_buffer_km: float,
+    consumption_rate_kwh: float,
+) -> float:
+    if candidate.charging_duration_minutes > 0:
+        return candidate.charging_duration_minutes
+    remaining_distance_km = max(0.0, route_distance_km - charger_progress_km)
+    additional_range_km = max(
+        0.0, remaining_distance_km + safety_buffer_km - max(0.0, current_range_km - charger_progress_km)
+    )
+    power_kw = candidate.charging_power_kw or DEFAULT_CHARGING_POWER_KW
+    energy_kwh = additional_range_km * consumption_rate_kwh / 100
+    return round(energy_kwh / power_kw * 60, 1)
 
 
 def rank_pois(
@@ -167,3 +195,45 @@ def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpo
             )
         }
     )
+
+
+def route_progress_km(
+    point: tuple[float, float], geometry: tuple[tuple[float, float], ...]
+) -> float:
+    """Return the approximate distance from the route origin to a point."""
+    if not geometry:
+        return float("inf")
+    if len(geometry) == 1:
+        return 0.0
+
+    progress = 0.0
+    best_distance = float("inf")
+    best_progress = 0.0
+    for start, end in zip(geometry, geometry[1:]):
+        segment_length = distance_km(start, end)
+        if segment_length == 0:
+            continue
+        latitude = radians((start[1] + end[1] + point[1]) / 3)
+        longitude_scale = 111.32 * cos(latitude)
+        start_xy = (start[0] * longitude_scale, start[1] * 111.32)
+        end_xy = (end[0] * longitude_scale, end[1] * 111.32)
+        point_xy = (point[0] * longitude_scale, point[1] * 111.32)
+        segment_x = end_xy[0] - start_xy[0]
+        segment_y = end_xy[1] - start_xy[1]
+        projection = (
+            (point_xy[0] - start_xy[0]) * segment_x
+            + (point_xy[1] - start_xy[1]) * segment_y
+        ) / (segment_length * segment_length)
+        projection = max(0.0, min(1.0, projection))
+        closest = (
+            start_xy[0] + projection * segment_x,
+            start_xy[1] + projection * segment_y,
+        )
+        distance = sqrt(
+            (point_xy[0] - closest[0]) ** 2 + (point_xy[1] - closest[1]) ** 2
+        )
+        if distance < best_distance:
+            best_distance = distance
+            best_progress = progress + projection * segment_length
+        progress += segment_length
+    return best_progress

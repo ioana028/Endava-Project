@@ -99,7 +99,14 @@ def repository() -> FixtureRepository:
     fixture_repository = FixtureRepository(
         Path("data/vehicles/telemetry.json"), Path("data/partners/partners.json")
     )
-    fixture_repository.load()
+    fixtures = fixture_repository.load()
+    fixture_repository._fixtures = fixtures.model_copy(
+        update={
+            "telemetry": fixtures.telemetry.model_copy(
+                update={"estimated_range_km": 120}
+            )
+        }
+    )
     return fixture_repository
 
 
@@ -246,8 +253,8 @@ def test_reroute_through_poi_preserves_mandatory_charger() -> None:
 
     assert replacement.destination == route.destination
     assert [stop.id for stop in replacement.stops] == [
-        route.charging_stop.id,
         "route-coffee",
+        route.charging_stop.id,
     ]
     assert len(provider.geocoded) == 2
 

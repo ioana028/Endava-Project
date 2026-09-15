@@ -41,6 +41,7 @@ export interface StopPinpoint {
   coords: [number, number];        // [lng, lat]
   rating?: number;
   tag: string;                     // e.g., "Fast Charger · 250kW" or "Italian Dining"
+  amenities?: string[];
   detourMinutes: number;
   chargingDurationMinutes?: number;
   mandatory?: boolean;
