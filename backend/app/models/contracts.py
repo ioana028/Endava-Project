@@ -44,6 +44,7 @@ class StopPinpoint(ContractModel):
     coords: tuple[float, float]
     rating: float | None = None
     tag: str = ""
+    amenities: tuple[str, ...] = ()
     detour_minutes: float = Field(ge=0, default=0)
     charging_duration_minutes: float = Field(ge=0, default=0)
     mandatory: bool = False
@@ -113,6 +114,18 @@ class RealtimeToolSearchRoutePoiRequest(ContractModel):
 
 class RealtimeToolSearchRoutePoiResponse(ContractModel):
     results: list[StopPinpoint] = Field(default_factory=list)
+
+
+class RealtimeToolRerouteThroughPoiRequest(ContractModel):
+    poi_id: str = Field(min_length=1, max_length=200)
+    route_id: str = Field(min_length=1, max_length=200)
+    search_id: str = Field(min_length=1, max_length=200)
+    coords: tuple[float, float] | None = None
+    priority: RoutePriority | None = None
+
+
+class RealtimeToolRerouteThroughPoiResponse(ContractModel):
+    route: RouteResponse
 
 
 class RealtimeSessionResponse(ContractModel):

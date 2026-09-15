@@ -5,7 +5,12 @@ import pytest
 
 from backend.app.core.fixture_repository import FixtureRepository
 from backend.app.core.errors import APIError
-from backend.app.models.contracts import AssistantIntent, Coordinates, RoutePriority
+from backend.app.models.contracts import (
+    AssistantIntent,
+    Coordinates,
+    RoutePriority,
+    StopPinpoint,
+)
 from backend.app.services.trip.ports import (
     GeocodedPlace,
     InvalidDestinationError,
@@ -54,6 +59,19 @@ class FailingRoutingProvider(FakeRoutingProvider):
     ) -> ProviderRoute:
         del origin, destination, priority, waypoints
         raise RoutingProviderError
+
+
+class FakePlacesProvider:
+    async def search(self, category, location, preference, route):
+        del category, location, preference, route
+        return [
+            StopPinpoint(
+                id="route-coffee",
+                name="Route Coffee",
+                category="coffee",
+                coords=(17.5, 47.7),
+            )
+        ]
 
 
 class InvalidRoutingProvider(FakeRoutingProvider):
@@ -133,6 +151,7 @@ def test_route_beyond_vehicle_range_returns_range_warning_and_charging_stop() ->
 
 def test_search_route_poi_returns_generic_results_without_mutating_route() -> None:
     route_service = RouteService(FakeRoutingProvider(distance_meters=243_000), repository())
+    asyncio.run(route_service.plan(intent()))
 
     results = asyncio.run(
         route_service.search_route_poi(
@@ -147,6 +166,55 @@ def test_search_route_poi_returns_generic_results_without_mutating_route() -> No
     assert results[0].name == "Italia Ristorante"
 
 
+def test_search_route_poi_rejects_missing_active_route() -> None:
+    route_service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
+
+    with pytest.raises(APIError) as error:
+        asyncio.run(route_service.search_route_poi(category="coffee", location="route"))
+
+    assert error.value.code == "NO_ACTIVE_ROUTE"
+
+
+def test_search_route_poi_returns_at_most_two_diverse_results() -> None:
+    class ManyPlacesProvider:
+        async def search(self, category, location, preference, route):
+            del category, location, preference, route
+            return [
+                StopPinpoint(
+                    id="near-a",
+                    name="Near A",
+                    category="attraction",
+                    coords=(16.37, 48.20),
+                    rating=5,
+                ),
+                StopPinpoint(
+                    id="near-b",
+                    name="Near B",
+                    category="attraction",
+                    coords=(16.38, 48.20),
+                    rating=4.9,
+                ),
+                StopPinpoint(
+                    id="farther",
+                    name="Farther",
+                    category="attraction",
+                    coords=(18.0, 47.8),
+                    rating=4,
+                ),
+            ]
+
+    route_service = RouteService(
+        FakeRoutingProvider(distance_meters=95_000),
+        repository(),
+        places_provider=ManyPlacesProvider(),
+    )
+    asyncio.run(route_service.plan(intent("Bratislava")))
+
+    results = asyncio.run(route_service.search_route_poi("attraction", "route"))
+
+    assert [result.id for result in results] == ["near-a", "farther"]
+
+
 def test_route_poi_search_uses_active_route_context_for_charging() -> None:
     route_service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
     asyncio.run(route_service.plan(intent("Budapest")))
@@ -158,6 +226,51 @@ def test_route_poi_search_uses_active_route_context_for_charging() -> None:
     assert [result.name for result in results] == ["Ionity Győr"]
     assert results[0].coords == (17.5505239, 47.6768425)
     assert results[0].partner_benefit == "Ultra-Fast 350kW · 15% Partner Rate"
+
+
+def test_reroute_through_poi_preserves_mandatory_charger() -> None:
+    provider = FakeRoutingProvider(distance_meters=243_000)
+    route_service = RouteService(
+        provider, repository(), places_provider=FakePlacesProvider()
+    )
+    route = asyncio.run(route_service.plan(intent()))
+    results = asyncio.run(route_service.search_route_poi("coffee", "route"))
+
+    replacement = asyncio.run(
+        route_service.reroute_through_poi(
+            results[0].id,
+            route_service._active_route_id,
+            route_service._active_search_id,
+        )
+    )
+
+    assert replacement.destination == route.destination
+    assert [stop.id for stop in replacement.stops] == [
+        route.charging_stop.id,
+        "route-coffee",
+    ]
+    assert len(provider.geocoded) == 2
+
+
+def test_reroute_rejects_stale_poi_context() -> None:
+    route_service = RouteService(
+        FakeRoutingProvider(distance_meters=95_000),
+        repository(),
+        places_provider=FakePlacesProvider(),
+    )
+    asyncio.run(route_service.plan(intent("Bratislava")))
+    results = asyncio.run(route_service.search_route_poi("coffee", "route"))
+
+    with pytest.raises(APIError) as error:
+        asyncio.run(
+            route_service.reroute_through_poi(
+                results[0].id,
+                "old-route",
+                route_service._active_search_id,
+            )
+        )
+
+    assert error.value.code == "STALE_POI"
 
 
 def test_invalid_destination_returns_stable_api_error() -> None:

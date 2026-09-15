@@ -1,10 +1,13 @@
 from ...models.contracts import Coordinates, RoutePriority, StopPinpoint
-from ..trip.deterministic import rank_pois
+from ..trip.deterministic import select_route_pois
 from ..trip.ports import GeocodedPlace, POIProvider, ProviderRoute, RoutingProvider
 
 
 SUPPORTED_CATEGORIES = frozenset(
-    {"charging", "hotel", "restaurant", "attraction", "coffee", "rest", "service"}
+    {
+        "charging", "hotel", "restaurant", "attraction", "coffee", "rest",
+        "toilets", "fuel", "service",
+    }
 )
 
 
@@ -27,7 +30,7 @@ class POIService:
         candidates = await self._provider.search_pois(
             route, normalized_category, preference
         )
-        return [candidate.stop for candidate in rank_pois(candidates, preference)]
+        return [candidate.stop for candidate in select_route_pois(candidates, preference)]
 
     async def route_through(
         self,
