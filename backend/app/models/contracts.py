@@ -150,3 +150,13 @@ class ProviderHealthResponse(ContractModel):
     google_routes_configured: bool
     google_places_configured: bool
     places_provider: str
+
+
+class VehicleTelemetryResponse(ContractModel):
+    vehicle_id: str
+    propulsion: Literal["BEV"]
+    battery_percent: float = Field(ge=0, le=100)
+    estimated_range_km: float = Field(ge=0)
+    consumption_rate_kwh: float = Field(gt=0)
+    tyres: Literal["SUMMER", "WINTER", "ALL_SEASON"]
+    odometer_km: float = Field(ge=0)

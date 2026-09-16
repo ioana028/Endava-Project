@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
 import type { RouteResponse, StopPinpoint } from '../../../types/contracts'
+import attractionPin from '../../../assets/attractionpin.png'
+import chargingPin from '../../../assets/chargingpin.png'
+import destinationPin from '../../../assets/destinationpin.png'
+import foodPin from '../../../assets/foodpin.png'
+import hotelPin from '../../../assets/hotelpin.png'
+import servicePin from '../../../assets/servicepin.png'
 import { toGooglePath } from '../utils/routeGeometry'
 
 const browserKey = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY
+const mapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID
 
 function formatDuration(totalMinutes: number) {
   const roundedMinutes = Math.round(totalMinutes)
@@ -17,6 +24,41 @@ function formatDuration(totalMinutes: number) {
   return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`
 }
 
+function getCalloutPosition(
+  path: google.maps.LatLngLiteral[],
+  markers: StopPinpoint[],
+) {
+  if (path.length < 2 || markers.length === 0) {
+    return path[Math.floor(path.length / 2)]
+  }
+
+  const candidates = Array.from({ length: 11 }, (_, index) => {
+    const progress = 0.15 + index * 0.07
+    return path[Math.min(path.length - 1, Math.floor((path.length - 1) * progress))]
+  })
+
+  return candidates.reduce((best, candidate) => {
+    const candidateScore = markerClearanceScore(candidate, markers)
+    const bestScore = markerClearanceScore(best, markers)
+    return candidateScore > bestScore ? candidate : best
+  })
+}
+
+function markerClearanceScore(
+  point: google.maps.LatLngLiteral,
+  markers: StopPinpoint[],
+) {
+  const latitudeScale = Math.cos((point.lat * Math.PI) / 180)
+
+  return Math.min(
+    ...markers.map((marker) => {
+      const longitudeDistance = (point.lng - marker.coords[0]) * latitudeScale
+      const latitudeDistance = point.lat - marker.coords[1]
+      return longitudeDistance ** 2 + latitudeDistance ** 2
+    }),
+  )
+}
+
 if (browserKey) {
   setOptions({
     key: browserKey,
@@ -25,7 +67,7 @@ if (browserKey) {
 }
 
 interface RouteMapProps {
-  route: RouteResponse
+  route?: RouteResponse
   poiResults?: StopPinpoint[]
   selectedPoiId?: string | null
   onPoiSelect?: (poiId: string) => void
@@ -66,7 +108,7 @@ export function RouteMap({
         return
       }
 
-      if (!mapElementRef.current || route.geometry.length === 0) {
+      if (!mapElementRef.current) {
         return
       }
 
@@ -76,14 +118,20 @@ export function RouteMap({
         class DurationOverlay extends google.maps.OverlayView {
           private readonly position: google.maps.LatLngLiteral
           private readonly text: string
+          private readonly placement: 'above' | 'below'
           private container: HTMLDivElement | null = null
           private connector: HTMLDivElement | null = null
           private bubble: HTMLDivElement | null = null
 
-          constructor(position: google.maps.LatLngLiteral, text: string) {
+          constructor(
+            position: google.maps.LatLngLiteral,
+            text: string,
+            placement: 'above' | 'below',
+          ) {
             super()
             this.position = position
             this.text = text
+            this.placement = placement
           }
 
           onAdd() {
@@ -93,24 +141,48 @@ export function RouteMap({
 
             this.connector = document.createElement('div')
             this.connector.style.position = 'absolute'
-            this.connector.style.left = '0'
-            this.connector.style.top = '18px'
-            this.connector.style.width = '42px'
-            this.connector.style.borderTop = '2px solid #16324f'
+            this.connector.style.left = '50%'
+            this.connector.style.top = this.placement === 'above' ? '-24px' : '0'
+            this.connector.style.width = '3px'
+            this.connector.style.height = '24px'
+            this.connector.style.transform = 'translateX(-50%)'
+            this.connector.style.background = 'linear-gradient(#62e6dc, #1b8795)'
+            this.connector.style.borderRadius = '3px'
+            this.connector.style.boxShadow = '0 0 8px rgba(98, 230, 220, 0.75)'
 
             this.bubble = document.createElement('div')
-            this.bubble.textContent = this.text
             this.bubble.style.position = 'absolute'
-            this.bubble.style.left = '42px'
-            this.bubble.style.top = '0'
-            this.bubble.style.padding = '7px 11px'
-            this.bubble.style.borderRadius = '5px'
-            this.bubble.style.background = '#16324f'
-            this.bubble.style.border = '2px solid #ffffff'
-            this.bubble.style.boxShadow = '0 2px 5px rgba(0, 0, 0, 0.3)'
-            this.bubble.style.color = '#ffffff'
-            this.bubble.style.font = '700 13px/1.2 system-ui, sans-serif'
+            this.bubble.style.left = '50%'
+            this.bubble.style.top = this.placement === 'above' ? '-78px' : '25px'
+            this.bubble.style.transform = 'translateX(-50%)'
+            this.bubble.style.display = 'flex'
+            this.bubble.style.flexDirection = 'column'
+            this.bubble.style.gap = '2px'
+            this.bubble.style.minWidth = '112px'
+            this.bubble.style.padding = '8px 11px 9px'
+            this.bubble.style.borderRadius = '8px'
+            this.bubble.style.background = 'rgba(4, 17, 27, 0.94)'
+            this.bubble.style.border = '1px solid rgba(98, 230, 220, 0.7)'
+            this.bubble.style.boxShadow = '0 8px 24px rgba(0, 0, 0, 0.35), 0 0 14px rgba(82, 230, 232, 0.12)'
+            this.bubble.style.color = '#edf7ff'
             this.bubble.style.whiteSpace = 'nowrap'
+
+            const label = document.createElement('span')
+            label.textContent = 'TOTAL JOURNEY'
+            label.style.color = '#62e6dc'
+            label.style.font = '500 9px/1.1 "DM Mono", monospace'
+            label.style.letterSpacing = '0.08em'
+
+            const value = document.createElement('strong')
+            value.textContent = this.text
+            value.style.font = '700 16px/1.1 Manrope, sans-serif'
+
+            const note = document.createElement('span')
+            note.textContent = 'including stops'
+            note.style.color = '#91a9b4'
+            note.style.font = '500 9px/1.1 "DM Mono", monospace'
+
+            this.bubble.append(label, value, note)
 
             this.container.append(this.connector, this.bubble)
             this.getPanes()?.floatPane.appendChild(this.container)
@@ -125,7 +197,7 @@ export function RouteMap({
             }
 
             this.container.style.left = `${pixel.x}px`
-            this.container.style.top = `${pixel.y - 18}px`
+            this.container.style.top = `${pixel.y}px`
           }
 
           onRemove() {
@@ -140,15 +212,30 @@ export function RouteMap({
           return
         }
 
-        const path = toGooglePath(route.geometry)
+        const path = route && route.geometry.length > 0
+          ? toGooglePath(route.geometry)
+          : [{ lat: 48.2082, lng: 16.3738 }]
         const map = new Map(mapElementRef.current, {
           center: path[0],
-          zoom: 7,
+          zoom: route ? 7 : 17,
+          tilt: route ? 25 : 25,
+          heading: 0,
+          mapId: mapId || undefined,
           colorScheme: google.maps.ColorScheme.DARK,
+          zoomControl: true,
+          zoomControlOptions: {
+            position: google.maps.ControlPosition.RIGHT_BOTTOM,
+          },
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: false,
           styles: [
+  // Keep the navigation view flat and uncluttered.
+  {
+    featureType: 'building',
+    elementType: 'geometry',
+    stylers: [{ visibility: 'off' }],
+  },
   // Keep the land flat and quiet.
   {
     featureType: 'landscape',
@@ -258,20 +345,24 @@ export function RouteMap({
           bounds.extend(point)
         }
 
-        map.fitBounds(bounds, 48)
+        if (route) {
+          map.fitBounds(bounds, 48)
+        }
 
-        polylineRef.current = new google.maps.Polyline({
-          map,
-          path,
-          strokeColor: '#0b57d0',
-          strokeOpacity: 0.95,
-          strokeWeight: 6,
-        })
+        if (route) {
+          polylineRef.current = new google.maps.Polyline({
+            map,
+            path,
+            strokeColor: '#19a7ff',
+            strokeOpacity: 0.95,
+            strokeWeight: 6,
+          })
+        }
 
         const originMarker = new google.maps.Marker({
           map,
           position: path[0],
-          title: route.origin,
+          title: route?.origin ?? 'Current vehicle position',
           icon: {
             path: google.maps.SymbolPath.CIRCLE,
             scale: 8,
@@ -283,33 +374,38 @@ export function RouteMap({
           zIndex: 3,
         })
 
-        const destinationMarker = new google.maps.Marker({
+        const destinationMarker = route ? new google.maps.Marker({
           map,
           position: path[path.length - 1],
           title: route.destination,
+          icon: createMarkerIcon(destinationPin, 30, 46),
           zIndex: 3,
-        })
+        }) : null
 
-        const stopMarkers = route.stops.map(
+        const stopMarkers = route?.stops.map(
           (stop) =>
             new google.maps.Marker({
               map,
               position: { lat: stop.coords[1], lng: stop.coords[0] },
               title: stop.name,
-              label: stop.category === 'charging' ? 'C' : undefined,
+              icon: markerIconForCategory(stop.category),
               zIndex: 2,
             }),
-        )
+        ) ?? []
 
-        const durationOverlay = new DurationOverlay(
-          path[Math.floor(path.length / 2)],
+        const durationOverlay = route ? new DurationOverlay(
+          getCalloutPosition(path, [...route.stops, ...poiResults]),
           formatDuration(route.stats.totalDurationMinutes),
-        )
-        durationOverlay.setMap(map)
+          Math.abs(path[path.length - 1].lng - path[0].lng)
+            >= Math.abs(path[path.length - 1].lat - path[0].lat)
+            ? 'above'
+            : 'below',
+        ) : null
+        durationOverlay?.setMap(map)
 
         markersRef.current = [
           originMarker,
-          destinationMarker,
+          ...(destinationMarker ? [destinationMarker] : []),
           ...stopMarkers,
         ]
         durationOverlayRef.current = durationOverlay
@@ -375,9 +471,28 @@ export function RouteMap({
   if (error) {
     return <p role="alert">{error}</p>
   }
-  if (route.geometry.length === 0) {
-    return <p role="status">No route geometry is available.</p>
-  }
-
   return <div ref={mapElementRef} className="route-map" />
+}
+
+const markerAssetByCategory: Partial<Record<StopPinpoint['category'], string>> = {
+  charging: chargingPin,
+  attraction: attractionPin,
+  service: servicePin,
+  food: foodPin,
+  restaurant: foodPin,
+  coffee: foodPin,
+  hotel: hotelPin,
+}
+
+function markerIconForCategory(category: StopPinpoint['category']): google.maps.Icon | undefined {
+  const asset = markerAssetByCategory[category]
+  return asset ? createMarkerIcon(asset, 26, 46) : undefined
+}
+
+function createMarkerIcon(url: string, width: number, height: number): google.maps.Icon {
+  return {
+    url,
+    scaledSize: new google.maps.Size(width, height),
+    anchor: new google.maps.Point(width / 2, height),
+  }
 }

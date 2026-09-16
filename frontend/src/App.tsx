@@ -1,61 +1,110 @@
+import { useEffect, useState } from 'react'
 import { AssistantStatus } from './features/assistant/components/AssistantStatus'
-import { PoiResults } from './features/assistant/components/PoiResults'
 import { useRealtimeAssistant } from './features/assistant/hooks/useRealtimeAssistant'
 import { RouteMap } from './features/map/components/RouteMap'
 import { RouteSummary } from './features/trip/components/RouteSummary'
+import type { VehicleTelemetry } from './types/contracts'
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
 function App() {
   const assistant = useRealtimeAssistant()
+  const [telemetry, setTelemetry] = useState<VehicleTelemetry | null>(null)
 
   const route = assistant.response?.route
 
+  useEffect(() => {
+    let cancelled = false
+
+    fetch(`${API_BASE_URL}/api/vehicle/telemetry`)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error('Telemetry unavailable')
+        }
+        return response.json() as Promise<VehicleTelemetry>
+      })
+      .then((value) => {
+        if (!cancelled) {
+          setTelemetry(value)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTelemetry(null)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   return (
-    <main>
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">Mobility concierge</p>
-          <h1>Suzanne</h1>
-          <p className="header-subtitle">Your route, thoughtfully handled.</p>
-        </div>
+    <main className="cockpit-shell">
+      <header className="cockpit-topbar">
+        <div className="status-time">10:42</div>
+        <div className="status-weather">Partly cloudy <strong>18°C</strong></div>
+        <div className="status-device">4G <strong>82%</strong> <span aria-hidden="true">▰</span></div>
       </header>
 
-      <AssistantStatus
-        enabled={assistant.enabled}
-        state={assistant.state}
-        transcript={assistant.transcript}
-        error={assistant.error}
-        onEnable={() => void assistant.enable()}
-        onDisable={assistant.disable}
-      />
-
-      {assistant.response && (
-        <section aria-live="polite">
-          <h2>Final transcript</h2>
-          <p>{assistant.response.transcript}</p>
-          <h2>Suzanne</h2>
-          <p>{assistant.response.spokenResponse}</p>
-        </section>
-      )}
-
-      {route && (
-        <>
+      <section className="cockpit-grid">
+        <div className="map-stage">
           <RouteMap
             route={route}
             poiResults={assistant.poiResults}
             selectedPoiId={assistant.selectedPoi?.id}
             onPoiSelect={assistant.selectPoi}
           />
-          <RouteSummary route={route} />
-        </>
-      )}
+        </div>
 
-      <PoiResults
-        results={assistant.poiResults}
-        selectedPoiId={assistant.selectedPoi?.id}
-        actionState={assistant.poiActionState}
-        onSelect={assistant.selectPoi}
-      />
+        <aside className="cockpit-rail">
+          <section className="suzanne-orb-panel">
+            <div className={`suzanne-orb state-${assistant.state.toLowerCase()}`} aria-hidden="true" />
+            <p className="eyebrow">Suzanne</p>
+            <h1>{assistant.transcript || 'Your route, thoughtfully handled.'}</h1>
+            <AssistantStatus
+              enabled={assistant.enabled}
+              state={assistant.state}
+              transcript={assistant.transcript}
+              error={assistant.error}
+              onEnable={() => void assistant.enable()}
+              onDisable={assistant.disable}
+            />
+          </section>
 
+          <section className="cockpit-card vehicle-card">
+            <div className="card-heading"><span>Battery</span><span>Range</span></div>
+            <div className="vehicle-values"><strong>{telemetry ? `${Math.round(telemetry.batteryPercent)}%` : '--'}</strong><strong>{telemetry ? `${Math.round(telemetry.estimatedRangeKm)} km` : '--'}</strong></div>
+            <div className="battery-track" aria-label={`${Math.round(telemetry?.batteryPercent ?? 0)} percent battery`}><span style={{ width: `${telemetry?.batteryPercent ?? 0}%` }} /></div>
+            <div className="vehicle-footnote"><span>Current charge</span><span>{telemetry ? `${telemetry.consumptionRateKwh.toFixed(1)} kWh / 100 km` : 'Telemetry loading'}</span></div>
+          </section>
+
+          <div className={`utility-panel-stage${route ? ' has-route' : ''}`} aria-live="polite">
+            <section className="cockpit-card media-card utility-panel">
+              <div className="media-art" aria-hidden="true" />
+              <div><strong>Crystal Sky</strong><span>Luminous · Suzanne mix</span></div>
+              <div className="song-progress" aria-label="Song progress"><span /></div>
+              <div className="song-time"><span>1:24</span><span>3:47</span></div>
+              <div className="media-controls" aria-label="Media controls"><button type="button" aria-label="Previous track">|◀</button><button type="button" aria-label="Pause">Ⅱ</button><button type="button" aria-label="Next track">▶|</button></div>
+            </section>
+            {route && (
+              <section className="cockpit-card cost-panel utility-panel">
+                <RouteSummary route={route} />
+              </section>
+            )}
+          </div>
+        </aside>
+      </section>
+
+      {assistant.response && <section className="sr-only" aria-live="polite">{assistant.response.spokenResponse}</section>}
+
+      <nav className="cockpit-nav" aria-label="Main navigation">
+        <button className="active" type="button"><span aria-hidden="true">➤</span>Map</button>
+        <button type="button"><span aria-hidden="true">♫</span>Media</button>
+        <button type="button"><span aria-hidden="true">✣</span>Climate</button>
+        <button type="button"><span aria-hidden="true">▱</span>Vehicle</button>
+        <button type="button"><span aria-hidden="true">⊞</span>Apps</button>
+      </nav>
     </main>
   )
 }

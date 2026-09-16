@@ -112,3 +112,13 @@ export interface AssistantResponse {
   poiResults?: StopPinpoint[];
   toastMessage?: string;           // e.g. "ROUTE: BUDAPEST (FASTEST)"
 }
+
+export interface VehicleTelemetry {
+  vehicleId: string;
+  propulsion: 'BEV';
+  batteryPercent: number;
+  estimatedRangeKm: number;
+  consumptionRateKwh: number;
+  tyres: 'SUMMER' | 'WINTER' | 'ALL_SEASON';
+  odometerKm: number;
+}

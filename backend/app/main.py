@@ -14,7 +14,11 @@ from .integrations.openai.realtime import (
     OpenAIRealtimeProvider,
     RealtimeSessionProvider,
 )
-from .models.contracts import HealthResponse, ProviderHealthResponse
+from .models.contracts import (
+    HealthResponse,
+    ProviderHealthResponse,
+    VehicleTelemetryResponse,
+)
 from .services.trip.service import RouteService
 
 
@@ -98,6 +102,11 @@ def create_app(
             ),
             places_provider=resolved_places_provider,
         )
+
+    @application.get("/api/vehicle/telemetry", response_model=VehicleTelemetryResponse)
+    async def vehicle_telemetry() -> VehicleTelemetryResponse:
+        telemetry = fixture_repository.load().telemetry
+        return VehicleTelemetryResponse.model_validate(telemetry.model_dump())
 
     return application
 
