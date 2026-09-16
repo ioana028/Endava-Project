@@ -257,7 +257,7 @@ class RouteService:
         route_id: str,
         search_id: str | None = None,
         categories: tuple[str, ...] = (),
-    ) -> list[StopPinpoint]:
+    ) -> dict[str, object]:
         if self._active_provider_route is None or route_id != self._active_route_id:
             raise APIError(409, "STALE_ROUTE", "The selected route is no longer current.")
         if search_id is not None and search_id != self._active_search_id:
@@ -296,7 +296,13 @@ class RouteService:
             ) from error
 
         unique_results = {result.id: result for result in results}
-        return select_stop_amenities(unique_results.values(), stop.coords)
+        return {
+            "selected_stop_name": stop.name,
+            "results": select_stop_amenities(unique_results.values(), stop.coords),
+            "radius_meters": 500,
+            "route_id": route_id,
+            "search_id": search_id,
+        }
 
     async def reroute_through_poi(
         self,

@@ -52,9 +52,33 @@ function App() {
           <RouteMap
             route={route}
             poiResults={assistant.poiResults}
+            amenityResults={assistant.amenityResults}
             selectedPoiId={assistant.selectedPoi?.id}
             onPoiSelect={assistant.selectPoi}
           />
+          {assistant.amenitySearchState !== 'IDLE' && assistant.amenitySearchContext && (
+            <section className="amenity-results" aria-live="polite">
+              <div className="section-heading">
+                <div>
+                  <p className="panel-kicker">Nearby amenities</p>
+                  <h2>{assistant.amenitySearchContext.selectedStopName}</h2>
+                </div>
+                <span className="result-count">within {assistant.amenitySearchContext.radiusMeters} m</span>
+              </div>
+              {assistant.amenitySearchState === 'LOADING' && <p>Searching nearby places...</p>}
+              {assistant.amenitySearchState === 'EMPTY' && <p>No returned amenities in this radius.</p>}
+              {assistant.amenitySearchState === 'SUCCESS' && (
+                <ul>
+                  {assistant.amenityResults.map((amenity) => (
+                    <li key={amenity.id}>
+                      <strong>{amenity.name}</strong>
+                      <span>{amenity.category} {amenity.distanceMeters ? `· ${Math.round(amenity.distanceMeters)} m` : ''}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
         </div>
 
         <aside className="cockpit-rail">

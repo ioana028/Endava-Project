@@ -69,6 +69,7 @@ if (browserKey) {
 interface RouteMapProps {
   route?: RouteResponse
   poiResults?: StopPinpoint[]
+  amenityResults?: StopPinpoint[]
   selectedPoiId?: string | null
   onPoiSelect?: (poiId: string) => void
 }
@@ -76,6 +77,7 @@ interface RouteMapProps {
 export function RouteMap({
   route,
   poiResults = [],
+  amenityResults = [],
   selectedPoiId = null,
   onPoiSelect,
 }: RouteMapProps) {
@@ -84,6 +86,7 @@ export function RouteMap({
   const polylineRef = useRef<google.maps.Polyline | null>(null)
   const markersRef = useRef<google.maps.Marker[]>([])
   const poiMarkersRef = useRef<google.maps.Marker[]>([])
+  const amenityMarkersRef = useRef<google.maps.Marker[]>([])
   const durationOverlayRef = useRef<google.maps.OverlayView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [mapReady, setMapReady] = useState(false)
@@ -97,6 +100,8 @@ export function RouteMap({
     markersRef.current = []
     poiMarkersRef.current.forEach((marker) => marker.setMap(null))
     poiMarkersRef.current = []
+    amenityMarkersRef.current.forEach((marker) => marker.setMap(null))
+    amenityMarkersRef.current = []
     durationOverlayRef.current?.setMap(null)
     durationOverlayRef.current = null
     mapRef.current = null
@@ -427,12 +432,36 @@ export function RouteMap({
       markersRef.current = []
       poiMarkersRef.current.forEach((marker) => marker.setMap(null))
       poiMarkersRef.current = []
+      amenityMarkersRef.current.forEach((marker) => marker.setMap(null))
+      amenityMarkersRef.current = []
       durationOverlayRef.current?.setMap(null)
       durationOverlayRef.current = null
       mapRef.current = null
       setMapReady(false)
     }
   }, [route])
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current) {
+      return
+    }
+
+    amenityMarkersRef.current.forEach((marker) => marker.setMap(null))
+    amenityMarkersRef.current = amenityResults.map((amenity) => {
+      return new google.maps.Marker({
+        map: mapRef.current,
+        position: { lat: amenity.coords[1], lng: amenity.coords[0] },
+        title: `${amenity.name} - ${amenity.category}`,
+        icon: markerIconForCategory(amenity.category),
+        zIndex: 6,
+      })
+    })
+
+    return () => {
+      amenityMarkersRef.current.forEach((marker) => marker.setMap(null))
+      amenityMarkersRef.current = []
+    }
+  }, [amenityResults, mapReady])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) {
