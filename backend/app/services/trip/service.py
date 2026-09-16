@@ -223,15 +223,18 @@ class RouteService:
             results = await self._places_provider.search(
                 category, location_context, preference, **search_kwargs
             )
-            selection_location = location_context
-            if location_context == "route" and category.casefold() != "attraction":
-                selection_location = "legacy-route"
-            results = select_route_stops(
-                results,
-                tuple(self._active_provider_route.geometry),
-                preference,
-                selection_location,
-            )
+            if location_context == "stop":
+                results = select_stop_amenities(results, self._active_stops[-1].coords)
+            else:
+                selection_location = location_context
+                if location_context == "route" and category.casefold() != "attraction":
+                    selection_location = "legacy-route"
+                results = select_route_stops(
+                    results,
+                    tuple(self._active_provider_route.geometry),
+                    preference,
+                    selection_location,
+                )
             self._active_search_id = uuid4().hex
             self._active_search_results = {result.id: result for result in results}
             return results

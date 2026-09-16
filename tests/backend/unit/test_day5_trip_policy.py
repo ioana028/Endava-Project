@@ -47,6 +47,17 @@ def test_route_attractions_exclude_origin_and_destination() -> None:
     assert [item.id for item in results] == ["middle"]
 
 
+def test_destination_search_does_not_apply_route_endpoint_exclusions() -> None:
+    geometry = ((16.37, 48.20), (19.04, 47.50))
+    results = select_route_stops(
+        [stop("destination-attraction", (19.02, 47.51))],
+        geometry,
+        location="destination",
+    )
+
+    assert [item.id for item in results] == ["destination-attraction"]
+
+
 def test_stop_amenities_use_500_m_radius_and_four_result_limit() -> None:
     center = (17.0, 47.0)
     results = select_stop_amenities(
@@ -95,3 +106,36 @@ def test_stop_amenity_search_requires_a_selected_charging_stop() -> None:
         asyncio.run(service.search_stop_amenities("missing", service.active_route_id or ""))
 
     assert error.value.code == "STALE_STOP"
+
+
+def test_stop_amenity_search_rejects_stale_route_context() -> None:
+    provider = type(
+        "Provider",
+        (),
+        {
+            "geocode": lambda self, place: asyncio.sleep(
+                0,
+                result=type(
+                    "Place",
+                    (),
+                    {
+                        "display_name": place,
+                        "coordinates": Coordinates(lng=16.37, lat=48.20),
+                    },
+                )(),
+            ),
+            "route": lambda self, origin, destination, priority, waypoints=(): asyncio.sleep(
+                0,
+                result=ProviderRoute(95_000, 3_600, ((16.37, 48.20), (19.04, 47.50))),
+            ),
+        },
+    )()
+    service = RouteService(provider, repository())
+    asyncio.run(
+        service.plan(AssistantIntent(destination="Budapest", priority=RoutePriority.FASTEST))
+    )
+
+    with pytest.raises(APIError) as error:
+        asyncio.run(service.search_stop_amenities("missing", "stale-route"))
+
+    assert error.value.code == "STALE_ROUTE"
