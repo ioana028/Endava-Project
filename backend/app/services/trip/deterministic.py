@@ -7,7 +7,11 @@ from .ports import ChargingCandidate, POICandidate
 
 
 POI_MAX_RESULTS = 2
-POI_CORRIDOR_RADIUS_KM = 35.0
+POI_CORRIDOR_RADIUS_KM = 7.5
+POI_ORIGIN_EXCLUSION_KM = 10.0
+POI_DESTINATION_EXCLUSION_KM = 10.0
+STOP_AMENITY_RADIUS_KM = 0.5
+STOP_AMENITY_MAX_RESULTS = 4
 POI_DIVERSITY_DISTANCE_KM = 15.0
 POI_COORDINATE_TOLERANCE = 0.01
 DEFAULT_CHARGING_POWER_KW = 50.0
@@ -87,6 +91,7 @@ def select_route_stops(
     stops: Iterable[StopPinpoint],
     geometry: tuple[tuple[float, float], ...],
     preference: str | None = None,
+    location: str = "route",
 ) -> list[StopPinpoint]:
     candidates = [
         POICandidate(
@@ -95,9 +100,47 @@ def select_route_stops(
             quality=stop.rating or 0,
         )
         for stop in stops
-        if distance_to_route_km(stop.coords, geometry) <= POI_CORRIDOR_RADIUS_KM
+        if _matches_search_scope(stop.coords, geometry, location)
     ]
     return [candidate.stop for candidate in select_route_pois(candidates, preference)]
+
+
+def _matches_search_scope(
+    point: tuple[float, float],
+    geometry: tuple[tuple[float, float], ...],
+    location: str,
+) -> bool:
+    if location == "destination":
+        return True
+    if location == "legacy-route":
+        return distance_to_route_km(point, geometry) <= 35.0
+    if location == "stop":
+        return distance_km(point, geometry[-1]) <= STOP_AMENITY_RADIUS_KM if geometry else False
+    if distance_to_route_km(point, geometry) > POI_CORRIDOR_RADIUS_KM:
+        return False
+    route_length_km = sum(distance_km(start, end) for start, end in zip(geometry, geometry[1:]))
+    progress_km = route_progress_km(point, geometry)
+    return (
+        progress_km >= POI_ORIGIN_EXCLUSION_KM
+        and progress_km <= route_length_km - POI_DESTINATION_EXCLUSION_KM
+    )
+
+
+def select_stop_amenities(
+    stops: Iterable[StopPinpoint],
+    center: tuple[float, float],
+) -> list[StopPinpoint]:
+    nearby = [
+        stop for stop in stops if distance_km(stop.coords, center) <= STOP_AMENITY_RADIUS_KM
+    ]
+    return sorted(
+        nearby,
+        key=lambda stop: (
+            distance_km(stop.coords, center),
+            -(stop.rating or 0),
+            stop.id,
+        ),
+    )[:STOP_AMENITY_MAX_RESULTS]
 
 
 def select_charger(

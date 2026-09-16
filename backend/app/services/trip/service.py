@@ -25,7 +25,7 @@ from .deterministic import (
     enrich_partner,
     estimate_charging_duration_minutes,
     route_progress_km,
-    route_progress_km,
+    select_stop_amenities,
     select_charger,
     select_route_stops,
 )
@@ -202,20 +202,35 @@ class RouteService:
                     "NO_ACTIVE_ROUTE",
                     "Plan a route before searching for places.",
                 )
+            location_context = (location or "destination").strip().lower()
+            if location_context not in {"route", "stop", "destination"}:
+                location_context = "destination"
+            if location_context == "stop" and not self._active_stops:
+                raise APIError(
+                    409,
+                    "NO_SELECTED_STOP",
+                    "Select a charging stop before searching nearby amenities.",
+                )
             search_kwargs = {
                 "route": self._active_provider_route,
             }
             if "near_coords" in inspect.signature(self._places_provider.search).parameters:
                 search_kwargs["near_coords"] = (
                     self._active_stops[-1].coords
-                    if location == "stop" and self._active_stops
+                    if location_context == "stop"
                     else None
                 )
             results = await self._places_provider.search(
-                category, location, preference, **search_kwargs
+                category, location_context, preference, **search_kwargs
             )
+            selection_location = location_context
+            if location_context == "route" and category.casefold() != "attraction":
+                selection_location = "legacy-route"
             results = select_route_stops(
-                results, tuple(self._active_provider_route.geometry), preference
+                results,
+                tuple(self._active_provider_route.geometry),
+                preference,
+                selection_location,
             )
             self._active_search_id = uuid4().hex
             self._active_search_results = {result.id: result for result in results}
@@ -232,6 +247,53 @@ class RouteService:
                 "POI_UNAVAILABLE",
                 "The place search service is unavailable.",
             ) from error
+
+    async def search_stop_amenities(
+        self,
+        stop_id: str,
+        route_id: str,
+        search_id: str | None = None,
+        categories: tuple[str, ...] = (),
+    ) -> list[StopPinpoint]:
+        if self._active_provider_route is None or route_id != self._active_route_id:
+            raise APIError(409, "STALE_ROUTE", "The selected route is no longer current.")
+        if search_id is not None and search_id != self._active_search_id:
+            raise APIError(409, "STALE_SEARCH", "The selected search is no longer current.")
+
+        stop = next((item for item in self._active_stops if item.id == stop_id), None)
+        if stop is None:
+            stop = self._active_search_results.get(stop_id)
+        if stop is None or stop.category != "charging":
+            raise APIError(409, "STALE_STOP", "The selected charging stop is no longer current.")
+
+        requested_categories = categories or ("food", "coffee", "rest", "service")
+        results: list[StopPinpoint] = []
+        try:
+            for category in requested_categories:
+                results.extend(
+                    await self._places_provider.search(
+                        category,
+                        "stop",
+                        None,
+                        route=self._active_provider_route,
+                        near_coords=stop.coords,
+                    )
+                )
+        except ValueError as error:
+            raise APIError(
+                400,
+                "INVALID_POI_CATEGORY",
+                "The requested POI category is not supported.",
+            ) from error
+        except JourneyProviderError as error:
+            raise APIError(
+                503,
+                "POI_UNAVAILABLE",
+                "The place search service is unavailable.",
+            ) from error
+
+        unique_results = {result.id: result for result in results}
+        return select_stop_amenities(unique_results.values(), stop.coords)
 
     async def reroute_through_poi(
         self,
