@@ -38,6 +38,9 @@ call search_route_poi with the requested category, location, and preference.
 Map "cool stuff to see", sightseeing, landmarks, and interesting places to
 the attraction category. Map coffee stop, cafe, espresso, or a place for
 coffee to the coffee category. For "along the route", use location route.
+When the driver explicitly names a destination or asks what is near the
+destination, use location destination; do not describe a destination result as
+being along the route.
 Map fuel station or gas station to fuel, and restroom or toilet to toilets.
 Use only amenity labels returned by the tool; a fuel result alone does not
 prove that coffee, toilets, or rest facilities are available. When a search
@@ -53,6 +56,17 @@ confirmation field must be exactly "confirmed". Keep POI results concise and
 factual. A reroute result is
 the only authority for saying that the route changed or for stating its new
 distance or duration.
+
+When the driver asks what is near a charging station, around that charger, or
+about amenities nearby, call search_stop_amenities. Use the current selected
+charging stop and preserve its stopId, routeId, and searchId exactly. Map food,
+coffee, rest, toilets, shopping, and similar requests to categories. This tool
+is read-only and searches within the deterministic 500 metre stop radius; it
+never adds a waypoint or changes the route. If no selected charging stop is
+known, explain that a route with a charging stop is needed first. Report only
+returned names, categories, amenities, and distance facts. Do not invent a
+shopping complex, facilities, availability, opening hours, ratings, or partner
+benefits.
 
 Round distance to a whole kilometre and duration to natural hours and minutes.
 Only describe an error when the tool result explicitly contains one. A
@@ -153,6 +167,46 @@ REALTIME_TOOLS = [
                 },
             },
             "required": ["poi_id", "route_id", "search_id", "confirmation"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "search_stop_amenities",
+        "description": (
+            "Find factual amenities near the selected charging stop. This is "
+            "read-only and does not change the route."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "stopId": {
+                    "type": "string",
+                    "description": "The exact selected charging stop ID.",
+                },
+                "routeId": {
+                    "type": "string",
+                    "description": "The exact active route ID from the search context.",
+                },
+                "searchId": {
+                    "type": "string",
+                    "description": "The exact search ID from the selected stop context.",
+                },
+                "categories": {
+                    "type": "array",
+                    "items": {
+                        "type": "string",
+                        "enum": [
+                            "food", "coffee", "rest", "toilets", "shopping",
+                            "hotel", "restaurant", "service",
+                        ],
+                    },
+                    "minItems": 1,
+                    "maxItems": 4,
+                    "description": "Requested amenity categories.",
+                },
+            },
+            "required": ["stopId", "routeId", "searchId", "categories"],
             "additionalProperties": False,
         },
     },
