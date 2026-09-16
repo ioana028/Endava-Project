@@ -13,6 +13,9 @@ for coding AIs.
 4. Read the onboarding guide for the role you are implementing.
 5. Read [Day 1 Walking Skeleton](product/day1-walking-skeleton.md) before
    changing the bootstrap plan.
+6. Read [Delivery Roadmap](product/roadmap.md) for current and future work.
+7. Read [Day 5 Voice Flows](api/day5-voice-flows.md) when working on realtime
+  conversation, POI discovery, or charging-stop amenities.
 
 ## Documentation map
 
@@ -28,6 +31,8 @@ for coding AIs.
 
 - `README.md` is the repository-level product and technology summary.
 - `DAY1.md` is the current Day 1 delivery plan.
+- `docs/product/roadmap.md` is the canonical delivery roadmap. Historical
+  roadmap snapshots are not maintained as parallel authorities.
 - `frontend/src/types/contracts.ts` is the canonical frontend TypeScript
   contract until a deliberate shared-contract change is agreed.
 - `data/vehicles/telemetry.json` and `data/partners/partners.json` are the
