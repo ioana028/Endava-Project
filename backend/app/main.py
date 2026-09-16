@@ -30,7 +30,8 @@ def create_app(
         GooglePlacesProvider(
             settings.google_server_api_key,
             timeout_seconds=settings.google_places_timeout_seconds,
-            search_radius_meters=settings.google_places_search_radius_meters,
+            search_radius_meters=settings.google_places_route_search_radius_meters,
+            nearby_search_radius_meters=settings.google_places_nearby_search_radius_meters,
             sample_interval_km=settings.google_places_sample_interval_km,
             max_search_points=settings.google_places_max_search_points,
         )

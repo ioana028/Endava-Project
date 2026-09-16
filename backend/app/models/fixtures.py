@@ -18,14 +18,19 @@ class VehicleState(ContractModel):
 class Partner(ContractModel):
     id: str
     name: str
+    brand: str | None = None
     category: Literal[
         "charging", "hotel", "restaurant", "attraction", "coffee", "food",
         "rest", "toilets", "fuel", "toll", "vignette", "service"
     ]
+    categories: tuple[str, ...] = ()
     coords: tuple[float, float]
     rating: float | None = Field(default=None, ge=0, le=5)
     tag: str = ""
+    benefit: str | None = None
     amenities: tuple[str, ...] = ()
+    provider_brands: tuple[str, ...] = ()
+    enabled: bool = True
     detour_minutes: int = Field(ge=0)
     charging_duration_minutes: float = Field(ge=0, default=0)
 

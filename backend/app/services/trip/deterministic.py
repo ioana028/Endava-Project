@@ -1,3 +1,4 @@
+import re
 from collections.abc import Iterable
 from math import cos, radians, sqrt
 
@@ -171,23 +172,48 @@ def rank_pois(
     )
 
 
+def _normalize_partner_name(value: str | None) -> str:
+    if not value:
+        return ""
+    normalized = value.casefold().replace("&", " and ")
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    return " ".join(normalized.split())
+
+
+def _normalized_tokens(value: str | None) -> set[str]:
+    text = _normalize_partner_name(value)
+    return set(text.split())
+
+
 def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpoint:
     partner_list = tuple(partners)
+    stop_text = " ".join(part for part in (stop.name, stop.tag) if part)
+    stop_tokens = _normalized_tokens(stop_text)
+
     partner = next((item for item in partner_list if item.id == stop.id), None)
     if partner is None:
-        normalized_name = " ".join(stop.name.casefold().split())
         partner = next(
             (
                 item
                 for item in partner_list
                 if item.category == stop.category
-                and " ".join(item.name.casefold().split()) == normalized_name
+                and _normalize_partner_name(item.name) == _normalize_partner_name(stop.name)
             ),
             None,
         )
     if partner is None:
+        for item in partner_list:
+            item_tokens = set(_normalized_tokens(item.name))
+            for provider_brand in (item.brand, *tuple(item.provider_brands or ())):
+                if provider_brand:
+                    item_tokens.update(_normalized_tokens(provider_brand))
+            if item_tokens.intersection(stop_tokens):
+                partner = item
+                break
+    if partner is None:
         return stop
-    benefit = None if partner.category == "vignette" else partner.tag or None
+
+    benefit = None if partner.category == "vignette" else partner.benefit or partner.tag or None
     return stop.model_copy(
         update={
             "partner": PartnerEnrichment(

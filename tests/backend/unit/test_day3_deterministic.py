@@ -64,6 +64,27 @@ def test_partner_enrichment_does_not_create_vignette_benefit() -> None:
     assert enriched.partner.benefit is None
 
 
+def test_partner_enrichment_matches_provider_brand_names() -> None:
+    ionity = Partner(
+        id="partner-ionity",
+        name="Ionity",
+        brand="IONITY",
+        category="charging",
+        categories=("charging",),
+        provider_brands=("IONITY",),
+        coords=(17.55, 47.67),
+        tag="Ultra-Fast 350kW · 15% Partner Rate",
+        benefit="Ultra-fast charging partner rate",
+        detour_minutes=2,
+    )
+
+    enriched = enrich_partner(stop("ionity-charger", "charging"), [ionity])
+
+    assert enriched.partner is not None
+    assert enriched.partner.name == "Ionity"
+    assert enriched.partner.benefit == "Ultra-fast charging partner rate"
+
+
 def test_country_rules_detect_borders_and_requirements() -> None:
     crossings = detect_border_crossings(["AT", "HU"])
     requirements = derive_requirements(["AT", "HU"])

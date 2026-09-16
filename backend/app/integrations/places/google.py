@@ -33,13 +33,15 @@ class GooglePlacesProvider:
         self,
         api_key: str,
         timeout_seconds: float = 10.0,
-        search_radius_meters: float = 2500,
+        search_radius_meters: float = 7500,
+        nearby_search_radius_meters: float = 500,
         sample_interval_km: float = 50,
         max_search_points: int = 8,
     ) -> None:
         self._api_key = api_key
         self._timeout_seconds = timeout_seconds
-        self._search_radius_meters = search_radius_meters
+        self._search_radius_meters = float(search_radius_meters)
+        self._nearby_search_radius_meters = float(nearby_search_radius_meters)
         self._sample_interval_km = sample_interval_km
         self._max_search_points = max(2, max_search_points)
 
@@ -61,9 +63,11 @@ class GooglePlacesProvider:
         if preference:
             query = f"{preference} {query}"
         radius = (
-            max(self._search_radius_meters, 35_000)
+            self._search_radius_meters
             if location == "route"
-            else self._search_radius_meters * 2
+            else self._nearby_search_radius_meters
+            if location == "stop"
+            else max(self._search_radius_meters, 2_500)
         )
         results: dict[str, StopPinpoint] = {}
         request_count = 0
@@ -163,7 +167,7 @@ class GooglePlacesProvider:
             return None
 
         route_distance_km = self._route_distance_km(coords, route.geometry)
-        corridor_radius_km = max(self._search_radius_meters / 1000, 35.0)
+        corridor_radius_km = max(self._search_radius_meters / 1000, 7.5)
         if route_distance_km > corridor_radius_km:
             return None
         rating = place.get("rating")
