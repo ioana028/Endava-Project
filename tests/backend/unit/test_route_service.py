@@ -191,14 +191,14 @@ def test_search_route_poi_returns_at_most_two_diverse_results() -> None:
                     id="near-a",
                     name="Near A",
                     category="attraction",
-                    coords=(16.37, 48.20),
+                    coords=(17.0, 48.035),
                     rating=5,
                 ),
                 StopPinpoint(
                     id="near-b",
                     name="Near B",
                     category="attraction",
-                    coords=(16.38, 48.20),
+                    coords=(17.01, 48.035),
                     rating=4.9,
                 ),
                 StopPinpoint(
