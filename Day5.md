@@ -151,7 +151,8 @@ Google adapters, partner JSON, or trip policy.
 - tests for origin/destination exclusion and charging-stop proximity.
 
 **Must not edit:** Google HTTP parsing, partner fixture content, frontend files,
-Realtime instructions, API endpoint wiring, or public contract definitions.
+or trip/provider implementation files outside the owned realtime and API
+surface.
 
 ### Person C: Suzanne conversation and tool orchestration
 
@@ -165,12 +166,22 @@ Realtime instructions, API endpoint wiring, or public contract definitions.
 - `tests/backend/unit/test_openai_realtime.py`
 - `docs/api/day5-voice-flows.md`
 
+Person C also owns the Day 5 shared contract proposal in
+`backend/app/models/contracts.py` and `frontend/src/types/contracts.ts`.
+Those two files are the canonical Day 5 shapes for the realtime tool payloads.
+Person C must freeze the proposal before the other branches are merged. Any
+contract change after that point must be called out in the branch handoff and
+updated in `docs/api/contracts.md`.
+
 **Delivers:**
 
 - natural-language mapping for route attractions versus destination attractions;
 - recognition of `near the charging station`, `around that charger`, and
   `amenities nearby`;
-- a dedicated `search_stop_amenities` tool, separate from route POI search;
+- a dedicated `search_stop_amenities` tool, separate from route POI search.
+  It accepts the current charging-stop reference and returns amenities within
+  the deterministic 500 m stop radius. It searches only; it never adds a
+  waypoint or changes the route;
 - compact amenity results containing only names, categories, factual amenities,
   distance/radius facts, and the selected charging stop name;
 - explicit distinction between searching near a stop and adding a stop;
@@ -181,6 +192,17 @@ Realtime instructions, API endpoint wiring, or public contract definitions.
 - a visible connection-progress state that does not claim readiness too early;
 - no invented availability, opening hours, facilities, ratings, or partner
   benefits.
+
+The canonical reroute context is split into `routeId` and `searchId`, not one
+combined opaque value. A route POI search returns both values when
+the backend creates them. The frontend preserves them unchanged and sends
+both back for rerouting. Backend `route_id`/`search_id` map to frontend
+`routeId`/`searchId`; no other file may rename or combine them.
+
+Person C implements the realtime orchestration and backend integration tests.
+Person A owns browser and hook tests under `tests/frontend/**`; C must provide
+the expected loading, success, empty, stale, and failure events and review
+those tests without editing A-owned files.
 
 **Must not edit:** provider adapters, deterministic ranking, partner JSON,
 frontend visual components, map camera implementation, or public contract files.
@@ -257,6 +279,10 @@ frontend components, or contract models.
 | `.env.example` | Person D | A/B/C | No |
 
 No Day 5 task may assign the same file to two people.
+
+The shared contract files above are intentionally C-owned for Day 5. They are
+not "must not edit" public files for this workstream; they become public only
+after C's proposal is reviewed and the integration branch accepts it.
 
 ## Parallel delivery protocol without shared-file edits
 

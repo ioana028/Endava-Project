@@ -109,13 +109,21 @@ or tapping a POI is not confirmation.
 ```json
 {
   "poiId": "place-123",
-  "activeRouteContext": "opaque-context-from-search",
+  "routeId": "route-123",
+  "searchId": "search-456",
   "confirmation": "confirmed"
 }
 ```
 
-`activeRouteContext` is opaque to Realtime and must be preserved exactly from
-the backend search/route context. Suzanne must never invent or substitute it.
+`routeId` and `searchId` are separate opaque identifiers created by the backend
+POI search. The browser must preserve both values exactly and send both back
+for rerouting; Suzanne must never invent, rename, combine, or substitute
+either value. The backend uses `route_id` and `search_id`; the frontend uses
+`routeId` and `searchId`.
+
+`routeId` identifies the active route snapshot. `searchId` identifies the POI
+search that produced the selected result. A reroute is valid only when both
+identifiers still match the current route and search state.
 The successful response contains a complete replacement `RouteResponse`; the
 browser returns only compact distance, duration, charging, and relevant route
 requirement facts to Realtime. Suzanne cannot claim that the route changed
