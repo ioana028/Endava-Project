@@ -39,7 +39,7 @@ class StopPinpoint(ContractModel):
     name: str
     category: Literal[
         "charging", "hotel", "restaurant", "attraction", "coffee", "food",
-        "rest", "toilets", "fuel", "toll", "vignette", "service"
+        "rest", "toilets", "fuel", "toll", "vignette", "service", "shopping"
     ]
     coords: tuple[float, float]
     rating: float | None = None
@@ -47,6 +47,7 @@ class StopPinpoint(ContractModel):
     amenities: tuple[str, ...] = ()
     charging_power_kw: float | None = Field(default=None, ge=0)
     detour_minutes: float = Field(ge=0, default=0)
+    distance_meters: float | None = Field(default=None, ge=0)
     charging_duration_minutes: float = Field(ge=0, default=0)
     mandatory: bool = False
     partner: "PartnerEnrichment | None" = None
@@ -117,6 +118,21 @@ class RealtimeToolSearchRoutePoiResponse(ContractModel):
     results: list[StopPinpoint] = Field(default_factory=list)
     route_id: str | None = None
     search_id: str | None = None
+
+
+class RealtimeToolSearchStopAmenitiesRequest(ContractModel):
+    stop_id: str = Field(min_length=1, max_length=200)
+    route_id: str = Field(min_length=1, max_length=200)
+    search_id: str = Field(min_length=1, max_length=200)
+    categories: list[str] = Field(min_length=1, max_length=4)
+
+
+class RealtimeToolSearchStopAmenitiesResponse(ContractModel):
+    selected_stop_name: str = Field(min_length=1)
+    results: list[StopPinpoint] = Field(default_factory=list, max_length=4)
+    radius_meters: int = Field(default=500, ge=500, le=500)
+    route_id: str
+    search_id: str
 
 
 class RealtimeToolRerouteRequest(ContractModel):

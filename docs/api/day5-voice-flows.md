@@ -76,6 +76,38 @@ reference, requested categories, and the current route context. The backend
 searches a deterministic 500 m radius around that stop. The tool is read-only:
 it must not add a waypoint, replace the route, or select a result for rerouting.
 
+The canonical request keeps the context identifiers separate:
+
+```json
+{
+  "stopId": "place-chargepoint-parndorf",
+  "routeId": "active-route-id",
+  "searchId": "active-search-id",
+  "categories": ["food", "coffee", "rest", "shopping"]
+}
+```
+
+The compact tool result contains only the selected stop name, bounded result
+facts, and the fixed search radius. Coordinates, geometry, and raw provider
+payloads stay in frontend state and never enter Realtime messages:
+
+```json
+{
+  "status": "success",
+  "selectedStopName": "ChargePoint Parndorf",
+  "radiusMeters": 500,
+  "results": [
+    {
+      "id": "place-456",
+      "name": "Parndorf Shopping Complex",
+      "category": "shopping",
+      "amenities": ["food", "coffee"],
+      "distanceMeters": 350
+    }
+  ]
+}
+```
+
 Suzanne:
 
 > Yes. ChargePoint Parndorf is near a shopping complex with food and coffee.

@@ -77,6 +77,23 @@ provider-neutral categories `attraction`, `restaurant`, `hotel`, `charging`,
 `coffee`, `rest`, `toilets`, `fuel`, and `service`. A search returns suggestions
 only and must not change the active route.
 
+`search_stop_amenities` is a separate read-only operation for a selected
+charging stop. Its request preserves the current context identifiers separately:
+
+```json
+{
+  "stopId": "place-chargepoint-parndorf",
+  "routeId": "active-route-id",
+  "searchId": "active-search-id",
+  "categories": ["food", "coffee", "rest", "shopping"]
+}
+```
+
+The compact result includes the selected stop name, up to four provider-backed
+amenity results, factual distance fields when returned, and the fixed
+`radiusMeters: 500` fact. It contains no coordinates, geometry, or raw provider
+payload. The operation never adds a waypoint or changes the route.
+
 The browser forwards the full structured POI response to the map, but sends
 only compact facts to Realtime:
 
