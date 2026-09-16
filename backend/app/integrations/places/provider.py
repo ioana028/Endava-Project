@@ -49,7 +49,7 @@ class LocalPlacesProvider:
             candidate
             for candidate in candidates
             if self._matches_location(candidate, location_context, route)
-            and self._matches_search_center(candidate, near_coords)
+            and self._matches_search_center(candidate, near_coords, location_context)
         ]
         candidates.sort(
             key=lambda candidate: (
@@ -63,13 +63,16 @@ class LocalPlacesProvider:
 
     @staticmethod
     def _matches_search_center(
-        candidate: StopPinpoint, near_coords: tuple[float, float] | None
+        candidate: StopPinpoint,
+        near_coords: tuple[float, float] | None,
+        location: str | None = None,
     ) -> bool:
         if near_coords is None:
             return True
         longitude_delta = (candidate.coords[0] - near_coords[0]) * 70
         latitude_delta = (candidate.coords[1] - near_coords[1]) * 111
-        return (longitude_delta**2 + latitude_delta**2) ** 0.5 <= 5
+        limit_km = 0.5 if (location or "destination") == "stop" else 5.0
+        return (longitude_delta**2 + latitude_delta**2) ** 0.5 <= limit_km
 
     @staticmethod
     def _matches_location(
@@ -80,7 +83,11 @@ class LocalPlacesProvider:
         if route is None or not route.geometry:
             return True
         distance = LocalPlacesProvider._route_distance(candidate, location, route)
-        return distance <= 0.35 if location == "route" else distance <= 0.6
+        if location == "stop":
+            return distance <= 0.5
+        if location == "route":
+            return distance <= 7.5
+        return distance <= 10.0
 
     @staticmethod
     def _route_distance(

@@ -31,7 +31,10 @@ Copy `.env.example` to `.env` at the repository root. Current variables are:
 | `GOOGLE_SERVER_API_KEY` | Backend-only Google Routes, Geocoding, and later Places credential |
 | `PLACES_PROVIDER` | `auto`, `google`, or explicit `offline` provider selection |
 | `GOOGLE_PLACES_TIMEOUT_SECONDS` | Google Places request timeout |
-| `GOOGLE_PLACES_SEARCH_RADIUS_METERS` | Route-corridor search radius |
+| `GOOGLE_PLACES_ROUTE_SEARCH_RADIUS_KM` | Route-corridor radius in kilometers, default 7.5 |
+| `GOOGLE_PLACES_ROUTE_SEARCH_RADIUS_METERS` | Route-corridor radius in meters, default 7500 |
+| `GOOGLE_PLACES_NEARBY_SEARCH_RADIUS_METERS` | 500 m charging-stop search radius, default 500 |
+| `GOOGLE_PLACES_SEARCH_RADIUS_METERS` | Backward-compatible alias for the route corridor radius |
 | `GOOGLE_PLACES_SAMPLE_INTERVAL_KM` | Distance interval for route sampling |
 | `GOOGLE_PLACES_MAX_SEARCH_POINTS` | Upper bound on route-corridor Places calls |
 | `VITE_GOOGLE_MAPS_BROWSER_KEY` | Frontend Google Maps JavaScript key, restricted to local/frontend origins |

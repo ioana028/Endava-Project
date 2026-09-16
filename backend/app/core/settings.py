@@ -22,8 +22,26 @@ class Settings:
     google_places_timeout_seconds: float = float(
         os.getenv("GOOGLE_PLACES_TIMEOUT_SECONDS", "10")
     )
+    google_places_route_search_radius_km: float = float(
+        os.getenv(
+            "GOOGLE_PLACES_ROUTE_SEARCH_RADIUS_KM",
+            os.getenv("GOOGLE_PLACES_ROUTE_SEARCH_RADIUS_METERS", "7500"),
+        )
+    ) / 1000.0
+    google_places_route_search_radius_meters: float = float(
+        os.getenv(
+            "GOOGLE_PLACES_ROUTE_SEARCH_RADIUS_METERS",
+            os.getenv("GOOGLE_PLACES_SEARCH_RADIUS_METERS", "7500"),
+        )
+    )
+    google_places_nearby_search_radius_meters: float = float(
+        os.getenv(
+            "GOOGLE_PLACES_NEARBY_SEARCH_RADIUS_METERS",
+            os.getenv("GOOGLE_PLACES_STOP_SEARCH_RADIUS_METERS", "500"),
+        )
+    )
     google_places_search_radius_meters: float = float(
-        os.getenv("GOOGLE_PLACES_SEARCH_RADIUS_METERS", "2500")
+        os.getenv("GOOGLE_PLACES_SEARCH_RADIUS_METERS", "7500")
     )
     google_places_sample_interval_km: float = float(
         os.getenv("GOOGLE_PLACES_SAMPLE_INTERVAL_KM", "50")

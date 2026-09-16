@@ -153,6 +153,43 @@ def test_unconfigured_places_provider_is_rejected_before_network_call() -> None:
         asyncio.run(GooglePlacesProvider("").search("fuel", route=route()))
 
 
+def test_google_places_uses_configured_route_and_nearby_radii(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakePlacesClient.calls = []
+    FakePlacesClient.responses = [FakeResponse({"places": [place()]})]
+    monkeypatch.setattr(
+        "backend.app.integrations.places.google.httpx.AsyncClient", FakePlacesClient
+    )
+
+    provider = GooglePlacesProvider(
+        "test-key",
+        search_radius_meters=7_500,
+        nearby_search_radius_meters=500,
+        max_search_points=2,
+    )
+
+    asyncio.run(
+        provider.search(
+            "coffee",
+            location="stop",
+            route=route(),
+            near_coords=(16.05, 48.001),
+        )
+    )
+
+    request = FakePlacesClient.calls[0]["json"]
+    assert request["locationBias"]["circle"]["radius"] == 500
+
+    FakePlacesClient.calls = []
+    FakePlacesClient.responses = [
+        FakeResponse({"places": [place()]}),
+        FakeResponse({"places": [place()]}),
+    ]
+    asyncio.run(provider.search("attraction", location="route", route=route()))
+    assert FakePlacesClient.calls[0]["json"]["locationBias"]["circle"]["radius"] == 7500
+
+
 def test_routing_malformed_response_is_translated_to_provider_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
