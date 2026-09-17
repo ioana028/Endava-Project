@@ -105,7 +105,7 @@ export interface StopAmenitiesResponse {
   results: StopPinpoint[];
   radiusMeters: number;
   routeId: string;
-  searchId: string;
+  searchId?: string | null;
 }
 
 export interface AssistantIntent {

@@ -82,9 +82,9 @@ class LocalPlacesProvider:
     ) -> bool:
         if route is None or not route.geometry:
             return True
-        distance = LocalPlacesProvider._route_distance(candidate, location, route)
         if location == "stop":
-            return distance <= 0.5
+            return True
+        distance = LocalPlacesProvider._route_distance(candidate, location, route)
         if location == "route":
             return distance <= 7.5
         return distance <= 10.0
@@ -145,7 +145,9 @@ class LocalPlacesProvider:
         partners = self._fixture_repository.fixtures.partners
         results: list[StopPinpoint] = []
         for partner in partners:
-            if category == "food" and partner.category == "food":
+            if partner.kind != "location" or partner.coords is None:
+                continue
+            if category == "food" and partner.category in {"food", "restaurant"}:
                 results.append(self._partner_to_stop(partner))
                 continue
             if partner.category == category:
@@ -155,7 +157,10 @@ class LocalPlacesProvider:
     def _generic_matches(self, category: str) -> list[StopPinpoint]:
         results: list[StopPinpoint] = []
         for item in self._generic_pois:
-            if item["category"] != category:
+            accepted_categories = {category}
+            if category == "food":
+                accepted_categories.update({"food", "restaurant"})
+            if item["category"] not in accepted_categories:
                 continue
             results.append(
                 StopPinpoint(
@@ -213,6 +218,9 @@ class LocalPlacesProvider:
             "attractions": "attraction",
             "coffee": "coffee",
             "rest": "rest",
+            "toilet": "toilets",
+            "toilets": "toilets",
+            "shopping": "shopping",
             "service": "service",
             "charger": "charging",
             "charging": "charging",

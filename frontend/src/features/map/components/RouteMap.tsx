@@ -70,6 +70,7 @@ interface RouteMapProps {
   route?: RouteResponse
   poiResults?: StopPinpoint[]
   amenityResults?: StopPinpoint[]
+  amenityFocusName?: string | null
   selectedPoiId?: string | null
   onPoiSelect?: (poiId: string) => void
 }
@@ -78,6 +79,7 @@ export function RouteMap({
   route,
   poiResults = [],
   amenityResults = [],
+  amenityFocusName = null,
   selectedPoiId = null,
   onPoiSelect,
 }: RouteMapProps) {
@@ -87,9 +89,12 @@ export function RouteMap({
   const markersRef = useRef<google.maps.Marker[]>([])
   const poiMarkersRef = useRef<google.maps.Marker[]>([])
   const amenityMarkersRef = useRef<google.maps.Marker[]>([])
+  const poiResultsRef = useRef(poiResults)
   const durationOverlayRef = useRef<google.maps.OverlayView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [mapReady, setMapReady] = useState(false)
+
+  poiResultsRef.current = poiResults
 
   useEffect(() => {
     let cancelled = false
@@ -399,7 +404,7 @@ export function RouteMap({
         ) ?? []
 
         const durationOverlay = route ? new DurationOverlay(
-          getCalloutPosition(path, [...route.stops, ...poiResults]),
+          getCalloutPosition(path, [...route.stops, ...poiResultsRef.current]),
           formatDuration(route.stats.totalDurationMinutes),
           Math.abs(path[path.length - 1].lng - path[0].lng)
             >= Math.abs(path[path.length - 1].lat - path[0].lat)
@@ -440,6 +445,25 @@ export function RouteMap({
       setMapReady(false)
     }
   }, [route])
+
+  useEffect(() => {
+    if (!mapReady || !mapRef.current || !route || !amenityFocusName) {
+      return
+    }
+
+    const selectedStop = route.stops.find(
+      (stop) => stop.category === 'charging' && stop.name === amenityFocusName,
+    )
+    if (!selectedStop) {
+      return
+    }
+
+    mapRef.current.panTo({
+      lat: selectedStop.coords[1],
+      lng: selectedStop.coords[0],
+    })
+    mapRef.current.setZoom(16)
+  }, [amenityFocusName, mapReady, route])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) {
@@ -511,6 +535,10 @@ const markerAssetByCategory: Partial<Record<StopPinpoint['category'], string>> =
   restaurant: foodPin,
   coffee: foodPin,
   hotel: hotelPin,
+  rest: servicePin,
+  toilets: servicePin,
+  fuel: servicePin,
+  shopping: servicePin,
 }
 
 function markerIconForCategory(category: StopPinpoint['category']): google.maps.Icon | undefined {

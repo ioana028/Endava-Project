@@ -48,7 +48,11 @@ async def realtime_plan_route(
     route = await request.app.state.route_service.plan(
         AssistantIntent(destination=payload.destination, priority=payload.priority)
     )
-    return RealtimeToolRouteResponse(route=route)
+    return RealtimeToolRouteResponse(
+        route=route,
+        route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
+        search_id=_active_context_id(request.app.state.route_service, "active_search_id"),
+    )
 
 
 @router.post(

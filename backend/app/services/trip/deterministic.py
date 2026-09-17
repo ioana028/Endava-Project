@@ -256,7 +256,7 @@ def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpo
     if partner is None:
         return stop
 
-    benefit = None if partner.category == "vignette" else partner.benefit or partner.tag or None
+    benefit = partner.benefit or partner.tag or None
     return stop.model_copy(
         update={
             "partner": PartnerEnrichment(

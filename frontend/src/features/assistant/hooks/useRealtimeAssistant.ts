@@ -67,7 +67,10 @@ function createRouteResponse(
   }
 }
 
-function compactRouteFacts(route: RouteResponse) {
+function compactRouteFacts(
+  route: RouteResponse,
+  context: { routeId?: string | null; searchId?: string | null } = {},
+) {
   const chargingStop = route.chargingStop ?? route.stops.find((stop) => stop.mandatory)
   const partnerBenefit = chargingStop?.partner?.benefit ?? chargingStop?.partnerBenefit
 
@@ -80,6 +83,7 @@ function compactRouteFacts(route: RouteResponse) {
     chargingRequired: Boolean(chargingStop),
     chargingStop: chargingStop
       ? {
+          id: chargingStop.id,
           name: chargingStop.name,
           detourMinutes: chargingStop.detourMinutes,
           chargingDurationMinutes: chargingStop.chargingDurationMinutes,
@@ -104,6 +108,8 @@ function compactRouteFacts(route: RouteResponse) {
     ...(route.routeRequirements.length > 0
       ? { routeRequirements: route.routeRequirements.map((requirement) => requirement.name) }
       : {}),
+    ...(context.routeId ? { routeId: context.routeId } : {}),
+    ...(context.searchId ? { searchId: context.searchId } : {}),
   }
 }
 
@@ -210,7 +216,7 @@ export function useRealtimeAssistant() {
     selectedStopName: string
     radiusMeters: number
     routeId: string
-    searchId: string
+    searchId: string | null
   } | null>(null)
   const [telemetry, setTelemetry] = useState<RealtimeTelemetry>({})
   const [error, setError] = useState<string | null>(null)
@@ -343,8 +349,8 @@ export function useRealtimeAssistant() {
         setAmenitySearchContext({
           selectedStopName: result.selectedStopName,
           radiusMeters: result.radiusMeters,
-          routeId: result.routeId,
-          searchId: result.searchId,
+          routeId: result.routeId ?? '',
+          searchId: result.searchId ?? null,
         })
         setAmenitySearchState(result.results.length ? 'SUCCESS' : 'EMPTY')
         setError(
@@ -426,7 +432,12 @@ export function useRealtimeAssistant() {
         item: {
           type: 'function_call_output',
           call_id: event.call_id,
-          output: JSON.stringify(compactRouteFacts(result.route)),
+          output: JSON.stringify(
+            compactRouteFacts(result.route, {
+              routeId: result.routeId,
+              searchId: result.searchId,
+            }),
+          ),
         },
       })
       sendEvent({ type: 'response.create' })

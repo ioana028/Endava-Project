@@ -14,6 +14,8 @@ interface RealtimeSessionResponse {
 
 interface PlanRouteToolResponse {
   route: RouteResponse
+  routeId?: string | null
+  searchId?: string | null
 }
 
 interface RerouteToolResponse {

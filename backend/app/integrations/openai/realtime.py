@@ -59,7 +59,9 @@ distance or duration.
 
 When the driver asks what is near a charging station, around that charger, or
 about amenities nearby, call search_stop_amenities. Use the current selected
-charging stop and preserve its stopId, routeId, and searchId exactly. Map food,
+charging stop and preserve its stopId, routeId, and searchId exactly. If the
+driver asks generally about amenities without naming categories, omit
+categories so the tool searches food, coffee, rest, and service. Map food,
 coffee, rest, toilets, shopping, and similar requests to categories. This tool
 is read-only and searches within the deterministic 500 metre stop radius; it
 never adds a waypoint or changes the route. If no selected charging stop is
@@ -97,7 +99,7 @@ REALTIME_TOOLS = [
                     "description": "The driver's requested route priority.",
                 },
             },
-            "required": ["destination", "priority"],
+            "required": ["destination"],
             "additionalProperties": False,
         },
     },
@@ -189,8 +191,8 @@ REALTIME_TOOLS = [
                     "description": "The exact active route ID from the search context.",
                 },
                 "searchId": {
-                    "type": "string",
-                    "description": "The exact search ID from the selected stop context.",
+                    "type": ["string", "null"],
+                    "description": "The exact search ID from the selected stop context, or null immediately after route planning.",
                 },
                 "categories": {
                     "type": "array",
@@ -201,12 +203,11 @@ REALTIME_TOOLS = [
                             "hotel", "restaurant", "service",
                         ],
                     },
-                    "minItems": 1,
                     "maxItems": 4,
-                    "description": "Requested amenity categories.",
+                    "description": "Optional amenity categories. Omit this field to search food, coffee, rest, and service nearby.",
                 },
             },
-            "required": ["stopId", "routeId", "searchId", "categories"],
+            "required": ["stopId", "routeId", "searchId"],
             "additionalProperties": False,
         },
     },

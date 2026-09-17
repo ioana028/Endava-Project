@@ -272,7 +272,12 @@ class RouteService:
         requested_categories = categories or ("food", "coffee", "rest", "service")
         results: list[StopPinpoint] = []
         try:
-            for category in requested_categories:
+            expanded_categories = tuple(
+                expanded
+                for category in requested_categories
+                for expanded in (("food", "restaurant") if category == "food" else (category,))
+            )
+            for category in dict.fromkeys(expanded_categories):
                 results.extend(
                     await self._places_provider.search(
                         category,

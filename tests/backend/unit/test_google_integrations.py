@@ -122,6 +122,29 @@ def test_places_stop_search_uses_stop_center_and_structured_amenities(
     assert results[0].amenities == ("fuel station", "cafe", "convenience store")
 
 
+def test_places_stop_search_keeps_nearby_result_off_the_route_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakePlacesClient.calls = []
+    nearby_place = place("places/nearby-restaurant")
+    nearby_place["location"] = {"longitude": 18.0, "latitude": 47.5}
+    FakePlacesClient.responses = [FakeResponse({"places": [nearby_place]})]
+    monkeypatch.setattr(
+        "backend.app.integrations.places.google.httpx.AsyncClient", FakePlacesClient
+    )
+
+    results = asyncio.run(
+        GooglePlacesProvider("test-key", nearby_search_radius_meters=500).search(
+            "restaurant",
+            location="stop",
+            route=route(),
+            near_coords=(18.0, 47.5),
+        )
+    )
+
+    assert [result.id for result in results] == ["places/nearby-restaurant"]
+
+
 def test_places_timeout_is_translated_to_provider_error(monkeypatch: pytest.MonkeyPatch) -> None:
     class TimeoutClient(FakePlacesClient):
         async def post(self, url: str, **kwargs: object) -> FakeResponse:

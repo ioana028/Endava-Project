@@ -48,7 +48,7 @@ def test_charger_selection_filters_unsafe_candidates_before_ranking() -> None:
     assert selected.stop.id == "near"
 
 
-def test_partner_enrichment_does_not_create_vignette_benefit() -> None:
+def test_partner_enrichment_exposes_vignette_offer_text() -> None:
     vignette = Partner(
         id="vignette",
         name="Hungarian vignette",
@@ -61,7 +61,7 @@ def test_partner_enrichment_does_not_create_vignette_benefit() -> None:
     enriched = enrich_partner(stop("vignette", "vignette"), [vignette])
 
     assert enriched.partner is not None
-    assert enriched.partner.benefit is None
+    assert enriched.partner.benefit == "Automated Toll Clearing"
 
 
 def test_partner_enrichment_matches_provider_brand_names() -> None:

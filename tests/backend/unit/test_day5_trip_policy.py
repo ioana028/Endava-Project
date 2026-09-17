@@ -6,7 +6,9 @@ import pytest
 from backend.app.core.errors import APIError
 from backend.app.core.fixture_repository import FixtureRepository
 from backend.app.models.contracts import AssistantIntent, Coordinates, RoutePriority, StopPinpoint
+from backend.app.models.fixtures import Partner
 from backend.app.services.trip.deterministic import (
+    enrich_partner,
     select_route_stops,
     select_stop_amenities,
 )
@@ -56,6 +58,29 @@ def test_destination_search_does_not_apply_route_endpoint_exclusions() -> None:
     )
 
     assert [item.id for item in results] == ["destination-attraction"]
+
+
+def test_brand_network_enriches_a_provider_result_without_creating_a_location() -> None:
+    provider_result = stop("place-chargepoint", (17.2, 47.6), "charging")
+    network = Partner(
+        id="network-chargepoint",
+        kind="network",
+        name="ChargePoint partner network",
+        brand="ChargePoint",
+        category="charging",
+        provider_brands=("ChargePoint",),
+        coords=None,
+        benefit="ChargePoint partner access",
+    )
+
+    enriched = enrich_partner(
+        provider_result.model_copy(update={"name": "ChargePoint Parndorf"}),
+        [network],
+    )
+
+    assert enriched.coords == provider_result.coords
+    assert enriched.partner is not None
+    assert enriched.partner.id == "network-chargepoint"
 
 
 def test_stop_amenities_use_500_m_radius_and_four_result_limit() -> None:

@@ -53,6 +53,7 @@ function App() {
             route={route}
             poiResults={assistant.poiResults}
             amenityResults={assistant.amenityResults}
+            amenityFocusName={assistant.amenitySearchContext?.selectedStopName}
             selectedPoiId={assistant.selectedPoi?.id}
             onPoiSelect={assistant.selectPoi}
           />

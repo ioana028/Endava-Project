@@ -99,7 +99,6 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "stopId",
         "routeId",
         "searchId",
-        "categories",
     ]
     assert amenities_tool["parameters"]["properties"]["categories"]["items"]["enum"] == [
         "food",

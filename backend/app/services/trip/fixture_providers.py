@@ -35,7 +35,9 @@ class FixtureChargingProvider:
             )
             for partner in self._partners
             if (
-                partner.category == "charging"
+                partner.kind == "location"
+                and partner.coords is not None
+                and partner.category == "charging"
                 and route_progress_km(partner.coords, tuple(route.geometry))
                 <= max_distance_km
             )
@@ -59,6 +61,8 @@ class FixturePOIProvider:
         preference_lower = (preference or "").casefold()
         candidates: list[POICandidate] = []
         for partner in self._partners:
+            if partner.kind != "location" or partner.coords is None:
+                continue
             if partner.category not in accepted_categories:
                 continue
             amenities = tuple(amenity.casefold() for amenity in partner.amenities)

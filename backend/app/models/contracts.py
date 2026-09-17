@@ -101,11 +101,13 @@ class RouteResponse(ContractModel):
 
 class RealtimeToolRouteRequest(ContractModel):
     destination: str = Field(min_length=1, max_length=200)
-    priority: RoutePriority
+    priority: RoutePriority = RoutePriority.BALANCED
 
 
 class RealtimeToolRouteResponse(ContractModel):
     route: RouteResponse
+    route_id: str | None = None
+    search_id: str | None = None
 
 
 class RealtimeToolSearchRoutePoiRequest(ContractModel):
@@ -123,8 +125,8 @@ class RealtimeToolSearchRoutePoiResponse(ContractModel):
 class RealtimeToolSearchStopAmenitiesRequest(ContractModel):
     stop_id: str = Field(min_length=1, max_length=200)
     route_id: str = Field(min_length=1, max_length=200)
-    search_id: str = Field(min_length=1, max_length=200)
-    categories: list[str] = Field(min_length=1, max_length=4)
+    search_id: str | None = Field(default=None, max_length=200)
+    categories: list[str] = Field(default_factory=list, max_length=4)
 
 
 class RealtimeToolSearchStopAmenitiesResponse(ContractModel):
@@ -132,7 +134,7 @@ class RealtimeToolSearchStopAmenitiesResponse(ContractModel):
     results: list[StopPinpoint] = Field(default_factory=list, max_length=4)
     radius_meters: int = Field(default=500, ge=500, le=500)
     route_id: str
-    search_id: str
+    search_id: str | None = None
 
 
 class RealtimeToolRerouteRequest(ContractModel):

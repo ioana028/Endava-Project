@@ -99,6 +99,22 @@ def test_realtime_plan_route_returns_structured_route() -> None:
     assert response.json()["route"]["stats"]["totalDurationMinutes"] == 165
 
 
+def test_realtime_plan_route_defaults_to_balanced_priority() -> None:
+    app = create_app(
+        route_service=FakeRouteService(),
+        realtime_provider=FakeRealtimeProvider(),
+    )
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/assistant/realtime/tools/plan-route",
+            json={"destination": "Budapest"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["route"]["destination"] == "Budapest"
+
+
 def test_realtime_plan_route_rejects_unknown_priority() -> None:
     app = create_app(
         route_service=FakeRouteService(),
@@ -174,7 +190,7 @@ def test_realtime_search_stop_amenities_returns_compact_contract() -> None:
     }
 
 
-def test_realtime_search_stop_amenities_requires_context() -> None:
+def test_realtime_search_stop_amenities_allows_initial_route_context() -> None:
     app = create_app(
         route_service=FakeRouteService(),
         realtime_provider=FakeRealtimeProvider(),
@@ -186,12 +202,12 @@ def test_realtime_search_stop_amenities_requires_context() -> None:
             json={
                 "stopId": "charging-1",
                 "routeId": "route-1",
-                "categories": ["coffee"],
             },
         )
 
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+    assert response.status_code == 200
+    assert response.json()["selectedStopName"] == "ChargePoint Parndorf"
+    assert response.json()["searchId"] is None
 
 
 def test_realtime_search_stop_amenities_preserves_stale_error() -> None:
