@@ -70,6 +70,29 @@ returned names, categories, amenities, and distance facts. Do not invent a
 shopping complex, facilities, availability, opening hours, ratings, or partner
 benefits.
 
+For a returned vignette requirement, call purchase_vignette only after the
+driver clearly asks to purchase it and says yes or confirms. The exact
+confirmation value is "confirmed". Say that the purchase is simulated through
+the in-car wallet and that confirmation was prepared for the phone app; never
+claim a real payment, government purchase, or phone notification.
+
+Hotel and restaurant searches are suggestions only. Selecting, naming, or
+praising a result never books it. Preserve the exact routeId, searchId, and
+resultId from the selected result. Call book_hotel_room or
+book_restaurant_table only after an explicit booking request and confirmation.
+Use bookingType hotel_room or restaurant_table exactly. Ask for missing date,
+time, or guest details unless a documented demo default is available. Say that
+the booking is simulated through the in-car wallet and confirmation was
+prepared for the phone app; never claim a real booking or notification.
+
+When the driver says "Let's get going" or "Start driving", call start_driving
+with the current routeId and confirmation "confirmed". Driving mode is a
+presentation change over the current route, not a replanned route. Report only
+the returned progress, ETA, next stop, and charging facts. When the driver asks
+to get back to the main route or show the full route, call
+return_to_main_route with the current routeId. Do not replan or create a new
+route ID.
+
 Round distance to a whole kilometre and duration to natural hours and minutes.
 Only describe an error when the tool result explicitly contains one. A
 successful result is never a snag or failed request.
@@ -208,6 +231,85 @@ REALTIME_TOOLS = [
                 },
             },
             "required": ["stopId", "routeId", "searchId"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "purchase_vignette",
+        "description": "Complete a simulated vignette purchase after explicit driver confirmation.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "routeId": {"type": "string"},
+                "requirementId": {"type": "string"},
+                "confirmation": {"type": "string", "enum": ["confirmed"]},
+            },
+            "required": ["routeId", "requirementId", "confirmation"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "book_hotel_room",
+        "description": "Complete a simulated hotel room booking after explicit driver confirmation.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "routeId": {"type": "string"},
+                "searchId": {"type": "string"},
+                "resultId": {"type": "string"},
+                "bookingType": {"type": "string", "enum": ["hotel_room"]},
+                "guests": {"type": "integer", "minimum": 1, "maximum": 20},
+                "date": {"type": "string"},
+                "confirmation": {"type": "string", "enum": ["confirmed"]},
+            },
+            "required": ["routeId", "searchId", "resultId", "bookingType", "guests", "date", "confirmation"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "book_restaurant_table",
+        "description": "Complete a simulated restaurant table booking after explicit driver confirmation.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "routeId": {"type": "string"},
+                "searchId": {"type": "string"},
+                "resultId": {"type": "string"},
+                "bookingType": {"type": "string", "enum": ["restaurant_table"]},
+                "guests": {"type": "integer", "minimum": 1, "maximum": 20},
+                "date": {"type": "string"},
+                "time": {"type": "string"},
+                "confirmation": {"type": "string", "enum": ["confirmed"]},
+            },
+            "required": ["routeId", "searchId", "resultId", "bookingType", "guests", "date", "time", "confirmation"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "start_driving",
+        "description": "Activate presentation-only driving mode after explicit driver confirmation.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "routeId": {"type": "string"},
+                "confirmation": {"type": "string", "enum": ["confirmed"]},
+            },
+            "required": ["routeId", "confirmation"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "type": "function",
+        "name": "return_to_main_route",
+        "description": "Restore the full-route presentation without replanning.",
+        "parameters": {
+            "type": "object",
+            "properties": {"routeId": {"type": "string"}},
+            "required": ["routeId"],
             "additionalProperties": False,
         },
     },
