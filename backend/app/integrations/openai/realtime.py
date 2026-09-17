@@ -1,7 +1,11 @@
+import logging
+from time import monotonic
 from typing import Protocol
 
 from ...core.errors import APIError
 
+
+LOGGER = logging.getLogger(__name__)
 
 REALTIME_INSTRUCTIONS = """
 You are Suzanne, the driver's friendly in-car companion.
@@ -237,6 +241,7 @@ class OpenAIRealtimeProvider:
                 "Realtime voice is not configured.",
             )
 
+        started_at = monotonic()
         try:
             from openai import AsyncOpenAI
 
@@ -260,6 +265,11 @@ class OpenAIRealtimeProvider:
         except APIError:
             raise
         except Exception as error:
+            LOGGER.warning(
+                "session_secret_request_ms=%d error=%s",
+                round((monotonic() - started_at) * 1000),
+                type(error).__name__,
+            )
             raise APIError(
                 503,
                 "REALTIME_UNAVAILABLE",
@@ -272,4 +282,8 @@ class OpenAIRealtimeProvider:
                 "REALTIME_UNAVAILABLE",
                 "The Realtime voice service returned an invalid session.",
             )
+        LOGGER.info(
+            "session_secret_request_ms=%d",
+            round((monotonic() - started_at) * 1000),
+        )
         return response.value
