@@ -41,6 +41,7 @@ export interface StopPinpoint {
   category: StopCategory;
   coords: [number, number];        // [lng, lat]
   rating?: number;
+  userReviewCount?: number;
   tag: string;                     // e.g., "Fast Charger · 250kW" or "Italian Dining"
   amenities?: string[];
   distanceMeters?: number;

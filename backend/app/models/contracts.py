@@ -43,6 +43,7 @@ class StopPinpoint(ContractModel):
     ]
     coords: tuple[float, float]
     rating: float | None = None
+    user_review_count: int | None = Field(default=None, ge=0)
     tag: str = ""
     amenities: tuple[str, ...] = ()
     charging_power_kw: float | None = Field(default=None, ge=0)

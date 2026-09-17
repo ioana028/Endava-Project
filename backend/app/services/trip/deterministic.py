@@ -8,6 +8,7 @@ from .ports import ChargingCandidate, POICandidate
 
 
 POI_MAX_RESULTS = 2
+ATTRACTION_MAX_RESULTS = 5
 POI_CORRIDOR_RADIUS_KM = 7.5
 POI_ORIGIN_EXCLUSION_KM = 10.0
 POI_DESTINATION_EXCLUSION_KM = 10.0
@@ -103,7 +104,30 @@ def select_route_stops(
         for stop in stops
         if _matches_search_scope(stop.coords, geometry, location)
     ]
-    return [candidate.stop for candidate in select_route_pois(candidates, preference)]
+    selected = select_route_pois(candidates, preference)
+    if location == "route" and any(
+        candidate.stop.category == "attraction" for candidate in candidates
+    ):
+        selected = _select_route_attractions(candidates, preference)
+    return [candidate.stop for candidate in selected]
+
+
+def _select_route_attractions(
+    candidates: Iterable[POICandidate], preference: str | None = None
+) -> list[POICandidate]:
+    ranked = rank_pois(candidates, preference)
+    selected: list[POICandidate] = []
+    for candidate in ranked:
+        if any(
+            distance_km(candidate.stop.coords, chosen.stop.coords)
+            < POI_DIVERSITY_DISTANCE_KM
+            for chosen in selected
+        ):
+            continue
+        selected.append(candidate)
+        if len(selected) == ATTRACTION_MAX_RESULTS:
+            break
+    return selected
 
 
 def _matches_search_scope(

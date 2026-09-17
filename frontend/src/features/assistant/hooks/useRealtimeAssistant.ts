@@ -132,7 +132,14 @@ function compactRouteFacts(
         }
       : {}),
     ...(route.routeRequirements.length > 0
-      ? { routeRequirements: route.routeRequirements.map((requirement) => requirement.name) }
+      ? {
+          routeRequirements: route.routeRequirements.map((requirement) => ({
+            id: requirement.id,
+            name: requirement.name,
+            kind: requirement.kind,
+            country: requirement.country,
+          })),
+        }
       : {}),
     ...(context.routeId ? { routeId: context.routeId } : {}),
     ...(context.searchId ? { searchId: context.searchId } : {}),
@@ -148,6 +155,9 @@ function compactPoiFacts(
     name: stop.name,
     category: stop.category,
     ...(stop.rating !== undefined ? { rating: stop.rating } : {}),
+    ...(stop.userReviewCount !== undefined
+      ? { userReviewCount: stop.userReviewCount }
+      : {}),
     ...(stop.tag ? { tag: stop.tag } : {}),
     ...(stop.amenities?.length ? { amenities: stop.amenities } : {}),
     ...(stop.distanceMeters !== undefined ? { distanceMeters: stop.distanceMeters } : {}),

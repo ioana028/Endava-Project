@@ -27,6 +27,26 @@ class RouteContext:
     }
 
 
+def test_route_requirement_catalog_supports_live_requirement_id() -> None:
+    context = RouteContext()
+    context.active_route_requirements = (
+        RouteRequirement(
+            id="hungarian-motorway-vignette",
+            name="Hungarian motorway vignette",
+            country="HU",
+            kind="vignette",
+        ),
+    )
+
+    result = asyncio.run(
+        CommerceService(context, WalletService()).purchase_vignette(
+            "route-1", "hungarian-motorway-vignette", "confirmed"
+        )
+    )
+
+    assert result.amount_eur == 16.5
+
+
 def service() -> CommerceService:
     return CommerceService(RouteContext(), WalletService())
 

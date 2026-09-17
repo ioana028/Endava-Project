@@ -100,7 +100,7 @@ class GooglePlacesProvider:
                             "X-Goog-Api-Key": self._api_key,
                             "X-Goog-FieldMask": (
                                 "places.id,places.displayName,places.location,places.types,"
-                                "places.rating,places.editorialSummary,places.formattedAddress,"
+                                "places.rating,places.userRatingCount,places.editorialSummary,places.formattedAddress,"
                                 "places.evChargeOptions"
                             ),
                         },
@@ -198,6 +198,10 @@ class GooglePlacesProvider:
             if route_distance_km > corridor_radius_km:
                 return None
         rating = place.get("rating")
+        user_review_count = place.get("userRatingCount")
+        if category == "attraction":
+            if not isinstance(user_review_count, int) or user_review_count < 10:
+                return None
         summary = place.get("editorialSummary") or {}
         address = place.get("formattedAddress")
         types = tuple(str(item).casefold() for item in (place.get("types") or ()))
@@ -214,6 +218,7 @@ class GooglePlacesProvider:
             category=category,
             coords=coords,
             rating=float(rating) if rating is not None else None,
+            user_review_count=user_review_count,
             tag=tag,
             amenities=factual_types,
             charging_power_kw=charging_power_kw,
