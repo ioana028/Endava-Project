@@ -93,17 +93,28 @@ function App() {
 
         <aside className="cockpit-rail">
           <section className="suzanne-orb-panel">
-            <div className={`suzanne-orb state-${assistant.state.toLowerCase()}`} aria-hidden="true" />
-            <p className="eyebrow">Suzanne</p>
-            <h1>{assistant.transcript || 'Your route, thoughtfully handled.'}</h1>
-            <AssistantStatus
-              enabled={assistant.enabled}
-              state={assistant.state}
-              transcript={assistant.transcript}
-              error={assistant.error}
-              onEnable={() => void assistant.enable()}
-              onDisable={assistant.disable}
-            />
+            {assistant.booking ? (
+              <div className="booking-confirmation" role="status" aria-live="assertive">
+                <p className="eyebrow">Booking confirmed</p>
+                <h1>{assistant.booking.bookingType === 'hotel_room' ? 'Hotel room booked' : 'Restaurant table booked'}</h1>
+                <strong>{assistant.booking.phoneConfirmationStatus === 'sent' ? 'Phone confirmation sent' : 'Confirmation pending'}</strong>
+                <span>Reference: {assistant.booking.bookingId}</span>
+              </div>
+            ) : (
+              <>
+                <div className={`suzanne-orb state-${assistant.state.toLowerCase()}`} aria-hidden="true" />
+                <p className="eyebrow">Suzanne</p>
+                <h1>{assistant.transcript || 'Your route, thoughtfully handled.'}</h1>
+                <AssistantStatus
+                  enabled={assistant.enabled}
+                  state={assistant.state}
+                  transcript={assistant.transcript}
+                  error={assistant.error}
+                  onEnable={() => void assistant.enable()}
+                  onDisable={assistant.disable}
+                />
+              </>
+            )}
           </section>
 
           <section className="cockpit-card vehicle-card">

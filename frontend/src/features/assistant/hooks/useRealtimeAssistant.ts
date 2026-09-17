@@ -277,6 +277,7 @@ export function useRealtimeAssistant() {
   const startingRef = useRef(false)
   const toolRequestIdRef = useRef(0)
   const successFeedbackTimerRef = useRef<number | null>(null)
+  const bookingPanelTimerRef = useRef<number | null>(null)
 
   function recordTelemetry(name: keyof RealtimeTelemetry) {
     setTelemetry((current) => ({ ...current, [name]: performance.now() }))
@@ -289,6 +290,10 @@ export function useRealtimeAssistant() {
   function showSuccessFeedback(feedback: SuccessFeedback) {
     if (successFeedbackTimerRef.current !== null) {
       window.clearTimeout(successFeedbackTimerRef.current)
+    }
+    if (bookingPanelTimerRef.current !== null) {
+      window.clearTimeout(bookingPanelTimerRef.current)
+      bookingPanelTimerRef.current = null
     }
     setSuccessFeedback(feedback)
     successFeedbackTimerRef.current = window.setTimeout(() => {
@@ -391,7 +396,13 @@ export function useRealtimeAssistant() {
             }),
           },
         })
-        sendEvent({ type: 'response.create' })
+        sendEvent({
+          type: 'response.create',
+          response: {
+            instructions:
+              'Acknowledge that the place search completed, then give the returned results briefly. Never leave the driver without a spoken response.',
+          },
+        })
         return
       }
 
@@ -428,6 +439,13 @@ export function useRealtimeAssistant() {
         } else if (event.name === 'book_hotel_room' || event.name === 'book_restaurant_table') {
           const bookingResult = result as BookingResponse
           setBooking({ ...bookingResult, status: bookingResult.status })
+          if (bookingPanelTimerRef.current !== null) {
+            window.clearTimeout(bookingPanelTimerRef.current)
+          }
+          bookingPanelTimerRef.current = window.setTimeout(() => {
+            setBooking(null)
+            bookingPanelTimerRef.current = null
+          }, 5000)
           showSuccessFeedback({
             action: 'booking',
             label: `${bookingResult.bookingType === 'hotel_room' ? 'Hotel room' : 'Restaurant table'} confirmed`,
@@ -455,14 +473,12 @@ export function useRealtimeAssistant() {
         })
         sendEvent({
           type: 'response.create',
-          ...(event.name === 'return_to_main_route'
-            ? {
-                response: {
-                  instructions:
-                    'Confirm that the full route view has been restored. Keep it to one short sentence and do not claim that a new route was planned.',
-                },
-              }
-            : {}),
+          response: {
+            instructions:
+              event.name === 'return_to_main_route'
+                ? 'Confirm that the full route view has been restored. Keep it to one short sentence and do not claim that a new route was planned.'
+                : 'Acknowledge the successful action clearly and briefly, then state its result. Never leave the driver without a spoken response.',
+          },
         })
         return
       }
@@ -545,7 +561,13 @@ export function useRealtimeAssistant() {
             output: JSON.stringify(compactRouteFacts(result.route)),
           },
         })
-        sendEvent({ type: 'response.create' })
+        sendEvent({
+          type: 'response.create',
+          response: {
+            instructions:
+              'Acknowledge that the route change completed, then briefly state the returned route facts. Never leave the driver without a spoken response.',
+          },
+        })
         return
       }
 
@@ -585,7 +607,13 @@ export function useRealtimeAssistant() {
           ),
         },
       })
-      sendEvent({ type: 'response.create' })
+      sendEvent({
+        type: 'response.create',
+        response: {
+          instructions:
+            'Acknowledge that route planning completed, then give the returned route facts briefly. Never leave the driver without a spoken response.',
+        },
+      })
     } catch (toolError) {
       if (
         !startingRef.current ||

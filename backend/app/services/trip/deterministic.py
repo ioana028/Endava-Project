@@ -244,7 +244,15 @@ def select_chargers_iteratively(
             <= previous_progress_km + safe_leg_km
         ]
         if not reachable:
-            return None
+            if not selected:
+                reachable = [
+                    candidate
+                    for candidate in ordered
+                    if previous_progress_km < (candidate.distance_from_origin_km or 0)
+                    <= previous_progress_km + max(0.0, vehicle_range_km)
+                ]
+            if not reachable:
+                return None
         candidate = max(
             reachable,
             key=lambda item: (

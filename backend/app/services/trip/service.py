@@ -397,7 +397,9 @@ class RouteService:
         if stop is None or stop.category != "charging":
             raise APIError(409, "STALE_STOP", "The selected charging stop is no longer current.")
 
-        requested_categories = categories or ("food", "coffee", "rest", "service")
+        requested_categories = categories or (
+            "food", "coffee", "rest", "service", "shopping"
+        )
         results: list[StopPinpoint] = []
         try:
             expanded_categories = tuple(
@@ -431,7 +433,10 @@ class RouteService:
         unique_results = {result.id: result for result in results}
         return {
             "selected_stop_name": stop.name,
-            "results": select_stop_amenities(unique_results.values(), stop.coords),
+            "results": sorted(
+                select_stop_amenities(unique_results.values(), stop.coords),
+                key=lambda result: (-(result.rating or 0), result.name),
+            ),
             "radius_meters": 500,
             "route_id": route_id,
             "search_id": search_id,
