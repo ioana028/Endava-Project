@@ -38,6 +38,9 @@ including every mandatory stop required by initial and post-charge range.
 a partner record by stable ID, provider brand, or normalized location name.
 - Budapest route results can surface relevant partner charging, hotel, and
 restaurant options with concrete benefits.
+- `data/partners/partners.json` contains a meaningfully expanded catalog of
+location partners across the Vienna-Budapest and Vienna-Berlin corridors, not
+just network records or one-off examples.
 - Partner benefits are never narrated for a non-partner result, a vignette
 requirement without an explicit benefit, or an unverified provider result.
 - `SCENIC` produces a distinct route preference using provider-supported scenic
@@ -143,9 +146,25 @@ Realtime instructions, or `data/partners/partners.json`.
 - Implement `RouteService.start_driving(route_id)` using current route facts.
 - Add tests for HTTP/service success, stale route rejection, and no provider call.
 - Expand `partners.json` with concrete charging, hotel, and restaurant
-locations across Vienna-Budapest and Vienna-Berlin.
+locations across Vienna-Budapest and Vienna-Berlin. The catalog must include
+many more locations than Day 6: multiple charging stations, hotels, and
+restaurants near relevant route segments and destinations.
 - Give every location a stable ID, category, coordinates, provider brands,
 benefit, rating, detour, and relevant amenities.
+- Give every enabled location partner one clear, driver-facing benefit. Benefits
+must be concrete and category-appropriate, for example:
+  - hotels: free breakfast, free lunch, complimentary drinks, free parking,
+    or a percentage discount on the room;
+  - restaurants: 10% off the entire bill, a complimentary drink, or a
+    documented meal offer;
+  - charging stations: free coffee, a free soft drink, a charging discount,
+    or a documented charging-time benefit.
+- Do not use vague values such as `partner access`, `special offer`, or
+  `preferred location` as the only benefit. Every benefit must be directly
+  understandable in one spoken sentence.
+- Include enough distribution for the demo: at least four charging locations,
+  four hotels, and four restaurants across the two corridors, with at least
+  two distinct benefit types per category.
 - Add partner matching by stable ID first, provider brand/location name second,
 with no fuzzy match that can create a false commercial claim.
 - Ensure partner ranking is secondary to route relevance, safety, explicit
@@ -261,6 +280,26 @@ Every location partner must contain:
 A partner record without a concrete benefit may enrich identity but must not be
 narrated as a promotion. Network records without coordinates are not direct
 stop recommendations.
+
+### Minimum Day 7 partner catalog
+
+Person B must expand `data/partners/partners.json` so the demo can discover
+partners in more than one place. The minimum target is:
+
+- 4+ charging location partners, including free coffee or soft-drink offers
+  and charging discounts;
+- 4+ hotel partners, including free breakfast, free lunch, complimentary
+  drinks, free parking, or room discounts;
+- 4+ restaurant partners, including 10% whole-bill discounts, complimentary
+  drinks, or meal offers;
+- corridor coverage on both Vienna-Budapest and Vienna-Berlin, without
+  pretending that a partner is present where its coordinates do not place it;
+- unique stable IDs and no duplicate coordinates/name records unless they
+  represent genuinely different locations.
+
+Person B owns this catalog and its policy tests. Person C may consume and
+narrate the returned benefits. Person A may render them in the infotainment
+screen. Neither Person A nor Person C may edit `data/partners/partners.json`.
 
 ## Voice direction
 
