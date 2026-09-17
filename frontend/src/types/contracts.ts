@@ -17,7 +17,8 @@ export type StopCategory =
   | 'attraction'
   | 'coffee'
   | 'toilets'
-  | 'fuel';
+  | 'fuel'
+  | 'shopping';
 
 export interface VehicleState {
   vehicleId: string;
@@ -42,6 +43,7 @@ export interface StopPinpoint {
   rating?: number;
   tag: string;                     // e.g., "Fast Charger · 250kW" or "Italian Dining"
   amenities?: string[];
+  distanceMeters?: number;
   detourMinutes: number;
   chargingDurationMinutes?: number;
   mandatory?: boolean;
@@ -98,6 +100,14 @@ export interface RoutePoiResponse {
   searchId?: string | null;
 }
 
+export interface StopAmenitiesResponse {
+  selectedStopName: string;
+  results: StopPinpoint[];
+  radiusMeters: number;
+  routeId: string;
+  searchId?: string | null;
+}
+
 export interface AssistantIntent {
   destination: string;
   priority: RoutePriority;
@@ -111,4 +121,14 @@ export interface AssistantResponse {
   route?: RouteResponse;           // Populated on Day 2; null on Day 1
   poiResults?: StopPinpoint[];
   toastMessage?: string;           // e.g. "ROUTE: BUDAPEST (FASTEST)"
+}
+
+export interface VehicleTelemetry {
+  vehicleId: string;
+  propulsion: 'BEV';
+  batteryPercent: number;
+  estimatedRangeKm: number;
+  consumptionRateKwh: number;
+  tyres: 'SUMMER' | 'WINTER' | 'ALL_SEASON';
+  odometerKm: number;
 }

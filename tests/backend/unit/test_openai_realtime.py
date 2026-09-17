@@ -53,6 +53,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "plan_route",
         "search_route_poi",
         "reroute_through_poi",
+        "search_stop_amenities",
     ]
     instructions = kwargs["session"]["instructions"]
     assert "Never ask permission before a mandatory charging stop is added" in instructions
@@ -60,6 +61,8 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
     assert "vehicleAlerts" not in instructions
     assert "Should I add a charging stop" not in instructions
     assert "Searching returns suggestions only and does not change the route" in instructions
+    assert "search_stop_amenities" in instructions
+    assert "500 metre stop radius" in instructions
 
     poi_tool = tools[1]
     assert poi_tool["parameters"]["required"] == ["category", "location"]
@@ -89,6 +92,23 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
     ]
     assert reroute_tool["parameters"]["properties"]["confirmation"]["enum"] == [
         "confirmed"
+    ]
+
+    amenities_tool = tools[3]
+    assert amenities_tool["parameters"]["required"] == [
+        "stopId",
+        "routeId",
+        "searchId",
+    ]
+    assert amenities_tool["parameters"]["properties"]["categories"]["items"]["enum"] == [
+        "food",
+        "coffee",
+        "rest",
+        "toilets",
+        "shopping",
+        "hotel",
+        "restaurant",
+        "service",
     ]
 
 

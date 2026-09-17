@@ -26,6 +26,7 @@ class GooglePlacesProvider:
         "rest": "rest areas and service areas",
         "toilets": "public toilets and restrooms",
         "fuel": "fuel stations and petrol stations",
+        "shopping": "shopping centers and shops",
         "service": "vehicle service and repair shops",
     }
 
@@ -33,13 +34,15 @@ class GooglePlacesProvider:
         self,
         api_key: str,
         timeout_seconds: float = 10.0,
-        search_radius_meters: float = 2500,
+        search_radius_meters: float = 7500,
+        nearby_search_radius_meters: float = 500,
         sample_interval_km: float = 50,
         max_search_points: int = 8,
     ) -> None:
         self._api_key = api_key
         self._timeout_seconds = timeout_seconds
-        self._search_radius_meters = search_radius_meters
+        self._search_radius_meters = float(search_radius_meters)
+        self._nearby_search_radius_meters = float(nearby_search_radius_meters)
         self._sample_interval_km = sample_interval_km
         self._max_search_points = max(2, max_search_points)
 
@@ -61,9 +64,11 @@ class GooglePlacesProvider:
         if preference:
             query = f"{preference} {query}"
         radius = (
-            max(self._search_radius_meters, 35_000)
+            self._search_radius_meters
             if location == "route"
-            else self._search_radius_meters * 2
+            else self._nearby_search_radius_meters
+            if location == "stop"
+            else max(self._search_radius_meters, 2_500)
         )
         results: dict[str, StopPinpoint] = {}
         request_count = 0
@@ -102,7 +107,13 @@ class GooglePlacesProvider:
                     )
                     response.raise_for_status()
                     for place in response.json().get("places", []):
-                        stop = self._to_stop(place, normalized, route)
+                        stop = self._to_stop(
+                            place,
+                            normalized,
+                            route,
+                            location,
+                            near_coords,
+                        )
                         if stop is not None:
                             results[stop.id] = stop
         except (httpx.HTTPError, AttributeError, ValueError, TypeError) as error:
@@ -151,21 +162,33 @@ class GooglePlacesProvider:
         )
 
     def _to_stop(
-        self, place: dict[str, object], category: str, route: ProviderRoute
+        self,
+        place: dict[str, object],
+        category: str,
+        route: ProviderRoute,
+        location: str | None = None,
+        near_coords: tuple[float, float] | None = None,
     ) -> StopPinpoint | None:
         try:
             place_id = str(place["id"])
             display_name = place["displayName"]
             name = str(display_name["text"])
-            location = place["location"]
-            coords = (float(location["longitude"]), float(location["latitude"]))
+            place_location = place["location"]
+            coords = (
+                float(place_location["longitude"]),
+                float(place_location["latitude"]),
+            )
         except (KeyError, TypeError, ValueError):
             return None
 
         route_distance_km = self._route_distance_km(coords, route.geometry)
-        corridor_radius_km = max(self._search_radius_meters / 1000, 35.0)
-        if route_distance_km > corridor_radius_km:
-            return None
+        if location == "stop" and near_coords is not None:
+            if self._distance_to_point_km(coords, near_coords) > self._nearby_search_radius_meters / 1000:
+                return None
+        else:
+            corridor_radius_km = max(self._search_radius_meters / 1000, 7.5)
+            if route_distance_km > corridor_radius_km:
+                return None
         rating = place.get("rating")
         summary = place.get("editorialSummary") or {}
         address = place.get("formattedAddress")
@@ -326,6 +349,16 @@ class GooglePlacesProvider:
             cls._distance_to_segment_km(point, start, end)
             for start, end in zip(geometry, geometry[1:])
         )
+
+    @staticmethod
+    def _distance_to_point_km(
+        first: tuple[float, float], second: tuple[float, float]
+    ) -> float:
+        longitude_km = (first[0] - second[0]) * 111.32 * math.cos(
+            math.radians((first[1] + second[1]) / 2)
+        )
+        latitude_km = (first[1] - second[1]) * 111.32
+        return math.sqrt(longitude_km**2 + latitude_km**2)
 
     @staticmethod
     def _distance_to_segment_km(

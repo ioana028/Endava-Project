@@ -5,70 +5,52 @@ interface RouteSummaryProps {
 }
 
 function formatDuration(totalMinutes: number) {
-  const hours = Math.floor(totalMinutes / 60)
-  const minutes = totalMinutes % 60
+  const roundedMinutes = Math.round(totalMinutes)
+  const hours = Math.floor(roundedMinutes / 60)
+  const minutes = roundedMinutes % 60
 
   return hours === 0 ? `${minutes} min` : `${hours} h ${minutes} min`
 }
 
 export function RouteSummary({ route }: RouteSummaryProps) {
+  const stopCount = route.stops.length
+  const requirementCount = route.routeRequirements.length
+
   return (
     <section className="route-summary" aria-live="polite">
-      <p className="eyebrow">Active journey</p>
-      <h2>Route</h2>
+      <div className="trip-details-heading">
+        <div>
+          <p className="eyebrow">Trip details</p>
+          <h2>{route.destination}</h2>
+        </div>
+        <span className="trip-status">ROUTE ACTIVE</span>
+      </div>
       <p className="route-endpoints">
         {route.origin} to {route.destination}
       </p>
-      <div className="route-metrics">
-        <div><strong>{Math.round(route.stats.totalDistanceKm)}</strong><span>km</span></div>
-        <div><strong>{formatDuration(route.stats.drivingDurationMinutes)}</strong><span>driving</span></div>
-        <div><strong>{formatDuration(route.stats.totalDurationMinutes)}</strong><span>total journey</span></div>
+      <div className="trip-metrics">
+        <div className="trip-metric">
+          <span>Driving time</span>
+          <strong>{formatDuration(route.stats.drivingDurationMinutes)}</strong>
+        </div>
+        <div className="trip-metric">
+          <span>Distance</span>
+          <strong>{Math.round(route.stats.totalDistanceKm)} km</strong>
+        </div>
+        <div className="trip-metric">
+          <span>Stops</span>
+          <strong>{stopCount}</strong>
+        </div>
+        <div className="trip-metric trip-cost-metric">
+          <span>Total cost</span>
+          <strong>{route.stats.totalPriceEur.toFixed(2)} EUR</strong>
+        </div>
       </div>
 
-      {route.chargingStop && (
-        <section className="fact-block">
-          <h3>Automatic charging stop</h3>
-          <p>{route.chargingStop.name}</p>
-          <p>
-            {route.chargingStop.partner ? 'Partner location' : 'Non-partner location'}
-          </p>
-          <p>{route.chargingStop.detourMinutes} min detour</p>
-          {(route.chargingStop.chargingDurationMinutes ?? 0) > 0 && (
-            <p>{route.chargingStop.chargingDurationMinutes} min charging</p>
-          )}
-          {(route.chargingStop.partner?.benefit ?? route.chargingStop.partnerBenefit) && (
-            <p>
-              {route.chargingStop.partner?.benefit ?? route.chargingStop.partnerBenefit}
-            </p>
-          )}
-        </section>
-      )}
-
-      {route.borderCrossings.length > 0 && (
-        <section className="fact-block">
-          <h3>Border crossings</h3>
-          {route.borderCrossings.map((crossing) => (
-            <p key={`${crossing.fromCountry}-${crossing.toCountry}`}>
-              {crossing.fromCountry} to {crossing.toCountry}
-            </p>
-          ))}
-        </section>
-      )}
-
-      {route.routeRequirements.length > 0 && (
-        <section className="fact-block">
-          <h3>Route requirements</h3>
-          {route.routeRequirements.map((requirement) => (
-            <p key={requirement.id}>{requirement.name}</p>
-          ))}
-        </section>
-      )}
-
-      {route.alerts.map((alert) => (
-        <p key={`${alert.type}-${alert.message}`} role="alert">
-          {alert.message}
-        </p>
-      ))}
+      <div className="trip-detail-line">
+        <span>{route.chargingStop ? `Charging: ${route.chargingStop.name}` : 'No charging stop required'}</span>
+        <span>{requirementCount > 0 ? `${requirementCount} route requirement${requirementCount === 1 ? '' : 's'}` : 'No route requirements'}</span>
+      </div>
     </section>
   )
 }

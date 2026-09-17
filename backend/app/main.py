@@ -14,7 +14,11 @@ from .integrations.openai.realtime import (
     OpenAIRealtimeProvider,
     RealtimeSessionProvider,
 )
-from .models.contracts import HealthResponse, ProviderHealthResponse
+from .models.contracts import (
+    HealthResponse,
+    ProviderHealthResponse,
+    VehicleTelemetryResponse,
+)
 from .services.trip.service import RouteService
 
 
@@ -30,7 +34,8 @@ def create_app(
         GooglePlacesProvider(
             settings.google_server_api_key,
             timeout_seconds=settings.google_places_timeout_seconds,
-            search_radius_meters=settings.google_places_search_radius_meters,
+            search_radius_meters=settings.google_places_route_search_radius_meters,
+            nearby_search_radius_meters=settings.google_places_nearby_search_radius_meters,
             sample_interval_km=settings.google_places_sample_interval_km,
             max_search_points=settings.google_places_max_search_points,
         )
@@ -98,6 +103,11 @@ def create_app(
             ),
             places_provider=resolved_places_provider,
         )
+
+    @application.get("/api/vehicle/telemetry", response_model=VehicleTelemetryResponse)
+    async def vehicle_telemetry() -> VehicleTelemetryResponse:
+        telemetry = fixture_repository.load().telemetry
+        return VehicleTelemetryResponse.model_validate(telemetry.model_dump())
 
     return application
 

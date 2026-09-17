@@ -11,6 +11,7 @@ import {
   RealtimeToolRequestError,
   rerouteWithTool,
   searchRoutePoiWithTool,
+  searchStopAmenitiesWithTool,
 } from '../../../services/realtimeAssistantApi'
 
 export type RealtimeAssistantState =
@@ -28,6 +29,28 @@ export type PoiActionState =
   | 'REROUTE_SUCCESS'
   | 'REROUTE_FAILED'
 
+export type AmenitySearchState =
+  | 'IDLE'
+  | 'LOADING'
+  | 'SUCCESS'
+  | 'EMPTY'
+  | 'STALE'
+  | 'FAILURE'
+
+export interface RealtimeTelemetry {
+  startPressed?: number
+  microphoneRequested?: number
+  microphoneGranted?: number
+  sessionRequestStarted?: number
+  sessionRequestCompleted?: number
+  peerConnectionCreated?: number
+  dataChannelOpened?: number
+  remoteDescriptionApplied?: number
+  assistantReady?: number
+  toolCallStarted?: number
+  toolCallCompleted?: number
+}
+
 function createRouteResponse(
   route: RouteResponse,
   priority: AssistantResponse['intent']['priority'],
@@ -44,7 +67,10 @@ function createRouteResponse(
   }
 }
 
-function compactRouteFacts(route: RouteResponse) {
+function compactRouteFacts(
+  route: RouteResponse,
+  context: { routeId?: string | null; searchId?: string | null } = {},
+) {
   const chargingStop = route.chargingStop ?? route.stops.find((stop) => stop.mandatory)
   const partnerBenefit = chargingStop?.partner?.benefit ?? chargingStop?.partnerBenefit
 
@@ -57,6 +83,7 @@ function compactRouteFacts(route: RouteResponse) {
     chargingRequired: Boolean(chargingStop),
     chargingStop: chargingStop
       ? {
+          id: chargingStop.id,
           name: chargingStop.name,
           detourMinutes: chargingStop.detourMinutes,
           chargingDurationMinutes: chargingStop.chargingDurationMinutes,
@@ -81,6 +108,8 @@ function compactRouteFacts(route: RouteResponse) {
     ...(route.routeRequirements.length > 0
       ? { routeRequirements: route.routeRequirements.map((requirement) => requirement.name) }
       : {}),
+    ...(context.routeId ? { routeId: context.routeId } : {}),
+    ...(context.searchId ? { searchId: context.searchId } : {}),
   }
 }
 
@@ -95,9 +124,26 @@ function compactPoiFacts(
     ...(stop.rating !== undefined ? { rating: stop.rating } : {}),
     ...(stop.tag ? { tag: stop.tag } : {}),
     ...(stop.amenities?.length ? { amenities: stop.amenities } : {}),
+    ...(stop.distanceMeters !== undefined ? { distanceMeters: stop.distanceMeters } : {}),
     detourMinutes: stop.detourMinutes,
     ...(context.routeId ? { routeId: context.routeId } : {}),
     ...(context.searchId ? { searchId: context.searchId } : {}),
+  }
+}
+
+function compactAmenityFacts(stop: StopPinpoint) {
+  const partnerBenefit = stop.partner?.benefit ?? stop.partnerBenefit
+
+  return {
+    id: stop.id,
+    name: stop.name,
+    category: stop.category,
+    ...(stop.amenities?.length ? { amenities: stop.amenities } : {}),
+    ...(stop.distanceMeters !== undefined
+      ? { distanceMeters: stop.distanceMeters }
+      : {}),
+    ...(stop.partner?.name ? { providerBrand: stop.partner.name } : {}),
+    ...(partnerBenefit ? { partnerBenefit } : {}),
   }
 }
 
@@ -135,6 +181,27 @@ async function waitForIceGathering(peerConnection: RTCPeerConnection) {
   })
 }
 
+async function waitForDataChannelOpen(channel: RTCDataChannel) {
+  if (channel.readyState === 'open') {
+    return
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      channel.removeEventListener('open', onOpen)
+      reject(new Error('Timed out while opening the voice data channel.'))
+    }, 15_000)
+
+    function onOpen() {
+      window.clearTimeout(timeout)
+      channel.removeEventListener('open', onOpen)
+      resolve()
+    }
+
+    channel.addEventListener('open', onOpen)
+  })
+}
+
 export function useRealtimeAssistant() {
   const [enabled, setEnabled] = useState(false)
   const [state, setState] = useState<RealtimeAssistantState>('IDLE')
@@ -143,6 +210,15 @@ export function useRealtimeAssistant() {
   const [poiResults, setPoiResults] = useState<StopPinpoint[]>([])
   const [selectedPoi, setSelectedPoi] = useState<StopPinpoint | null>(null)
   const [poiActionState, setPoiActionState] = useState<PoiActionState>('IDLE')
+  const [amenityResults, setAmenityResults] = useState<StopPinpoint[]>([])
+  const [amenitySearchState, setAmenitySearchState] = useState<AmenitySearchState>('IDLE')
+  const [amenitySearchContext, setAmenitySearchContext] = useState<{
+    selectedStopName: string
+    radiusMeters: number
+    routeId: string
+    searchId: string | null
+  } | null>(null)
+  const [telemetry, setTelemetry] = useState<RealtimeTelemetry>({})
   const [error, setError] = useState<string | null>(null)
   const connectionRef = useRef<RTCPeerConnection | null>(null)
   const channelRef = useRef<RTCDataChannel | null>(null)
@@ -159,6 +235,10 @@ export function useRealtimeAssistant() {
   const assistantTranscriptRef = useRef('')
   const startingRef = useRef(false)
   const toolRequestIdRef = useRef(0)
+
+  function recordTelemetry(name: keyof RealtimeTelemetry) {
+    setTelemetry((current) => ({ ...current, [name]: performance.now() }))
+  }
 
   function sendEvent(event: Record<string, unknown>) {
     channelRef.current?.send(JSON.stringify(event))
@@ -199,12 +279,14 @@ export function useRealtimeAssistant() {
     if (
       event.name !== 'plan_route' &&
       event.name !== 'search_route_poi' &&
+      event.name !== 'search_stop_amenities' &&
       event.name !== 'reroute_through_poi'
     ) {
       return
     }
 
     setState('PROCESSING')
+    recordTelemetry('toolCallStarted')
     const requestId = ++toolRequestIdRef.current
     if (event.name === 'reroute_through_poi') {
       setPoiActionState('REROUTING_IN_PROGRESS')
@@ -223,6 +305,9 @@ export function useRealtimeAssistant() {
         }
 
         setPoiResults(result.results)
+        setAmenityResults([])
+        setAmenitySearchContext(null)
+        setAmenitySearchState('IDLE')
         setSelectedPoi(null)
         setPoiActionState('IDLE')
         setError(
@@ -240,6 +325,49 @@ export function useRealtimeAssistant() {
               results: result.results.map((stop) =>
                 compactPoiFacts(stop, result),
               ),
+            }),
+          },
+        })
+        sendEvent({ type: 'response.create' })
+        return
+      }
+
+      if (event.name === 'search_stop_amenities') {
+        setAmenitySearchState('LOADING')
+        const result = await searchStopAmenitiesWithTool(
+          event.arguments,
+          toolController.signal,
+        )
+        if (!startingRef.current || requestId !== toolRequestIdRef.current) {
+          return
+        }
+
+        setAmenityResults(result.results)
+        setPoiResults([])
+        setSelectedPoi(null)
+        setPoiActionState('IDLE')
+        setAmenitySearchContext({
+          selectedStopName: result.selectedStopName,
+          radiusMeters: result.radiusMeters,
+          routeId: result.routeId ?? '',
+          searchId: result.searchId ?? null,
+        })
+        setAmenitySearchState(result.results.length ? 'SUCCESS' : 'EMPTY')
+        setError(
+          result.results.length === 0
+            ? `No amenities were found within ${result.radiusMeters} metres of ${result.selectedStopName}.`
+            : null,
+        )
+        sendEvent({
+          type: 'conversation.item.create',
+          item: {
+            type: 'function_call_output',
+            call_id: event.call_id,
+            output: JSON.stringify({
+              status: result.results.length ? 'success' : 'empty',
+              selectedStopName: result.selectedStopName,
+              radiusMeters: result.radiusMeters,
+              results: result.results.map(compactAmenityFacts),
             }),
           },
         })
@@ -286,6 +414,9 @@ export function useRealtimeAssistant() {
       }
 
       setPoiResults([])
+      setAmenityResults([])
+      setAmenitySearchContext(null)
+      setAmenitySearchState('IDLE')
       const routePriority = getRoutePriority(event.arguments)
       activePriorityRef.current = routePriority
       pendingRouteRef.current = {
@@ -301,7 +432,12 @@ export function useRealtimeAssistant() {
         item: {
           type: 'function_call_output',
           call_id: event.call_id,
-          output: JSON.stringify(compactRouteFacts(result.route)),
+          output: JSON.stringify(
+            compactRouteFacts(result.route, {
+              routeId: result.routeId,
+              searchId: result.searchId,
+            }),
+          ),
         },
       })
       sendEvent({ type: 'response.create' })
@@ -323,7 +459,20 @@ export function useRealtimeAssistant() {
         if (event.name === 'reroute_through_poi' && startingRef.current) {
           setPoiActionState('REROUTE_FAILED')
         }
+        if (event.name === 'search_stop_amenities' && startingRef.current) {
+          setAmenitySearchState('STALE')
+        }
         return
+      }
+
+      if (event.name === 'search_stop_amenities') {
+        const code =
+          toolError instanceof RealtimeToolRequestError
+            ? toolError.code
+            : 'TOOL_FAILED'
+        setAmenitySearchState(
+          code.startsWith('STALE_') ? 'STALE' : 'FAILURE',
+        )
       }
 
       sendEvent({
@@ -351,6 +500,7 @@ export function useRealtimeAssistant() {
       })
       sendEvent({ type: 'response.create' })
     } finally {
+      recordTelemetry('toolCallCompleted')
       if (toolAbortRef.current === toolController) {
         toolAbortRef.current = null
       }
@@ -363,6 +513,7 @@ export function useRealtimeAssistant() {
     }
 
     startingRef.current = true
+    recordTelemetry('startPressed')
     setError(null)
     setState('CONNECTING')
 
@@ -371,12 +522,40 @@ export function useRealtimeAssistant() {
     void feedbackAudio.play().catch(() => undefined)
 
     try {
-      const session = await createRealtimeSession()
+      recordTelemetry('sessionRequestStarted')
+      recordTelemetry('microphoneRequested')
+      const sessionPromise = createRealtimeSession().then((session) => {
+        recordTelemetry('sessionRequestCompleted')
+        return session
+      })
+      const microphonePromise = navigator.mediaDevices
+        .getUserMedia({ audio: true })
+        .then((stream) => {
+          recordTelemetry('microphoneGranted')
+          return stream
+        })
+      const [sessionResult, microphoneResult] = await Promise.allSettled([
+        sessionPromise,
+        microphonePromise,
+      ])
+      if (microphoneResult.status === 'fulfilled' && sessionResult.status === 'rejected') {
+        microphoneResult.value.getTracks().forEach((track) => track.stop())
+      }
+      if (sessionResult.status === 'rejected') {
+        throw sessionResult.reason
+      }
+      if (microphoneResult.status === 'rejected') {
+        throw microphoneResult.reason
+      }
       if (!startingRef.current) {
+        microphoneResult.value.getTracks().forEach((track) => track.stop())
         return
       }
 
+      const session = sessionResult.value
+      const stream = microphoneResult.value
       const peerConnection = new RTCPeerConnection()
+      recordTelemetry('peerConnectionCreated')
       const audio = new Audio()
       audio.autoplay = true
       connectionRef.current = peerConnection
@@ -386,13 +565,6 @@ export function useRealtimeAssistant() {
         void audio.play().catch(() => undefined)
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      if (!startingRef.current) {
-        stream.getTracks().forEach((track) => track.stop())
-        peerConnection.close()
-        return
-      }
-
       for (const track of stream.getTracks()) {
         peerConnection.addTrack(track, stream)
       }
@@ -400,6 +572,7 @@ export function useRealtimeAssistant() {
       streamRef.current = stream
 
       const channel = peerConnection.createDataChannel('oai-events')
+      channel.onopen = () => recordTelemetry('dataChannelOpened')
       channel.onmessage = (message) => {
         const event = JSON.parse(message.data) as Record<string, unknown>
 
@@ -482,6 +655,8 @@ export function useRealtimeAssistant() {
           type: 'answer',
           sdp: await answerResponse.text(),
         })
+        recordTelemetry('remoteDescriptionApplied')
+        await waitForDataChannelOpen(channel)
       } finally {
         window.clearTimeout(timeout)
         connectionAbortRef.current = null
@@ -489,6 +664,7 @@ export function useRealtimeAssistant() {
 
       channelRef.current = channel
       setEnabled(true)
+      recordTelemetry('assistantReady')
       setState('LISTENING')
     } catch (connectionError) {
       const stoppedByUser = !startingRef.current
@@ -558,6 +734,10 @@ export function useRealtimeAssistant() {
     poiResults,
     selectedPoi,
     poiActionState,
+    amenityResults,
+    amenitySearchState,
+    amenitySearchContext,
+    telemetry,
     selectPoi,
     error,
     enable,

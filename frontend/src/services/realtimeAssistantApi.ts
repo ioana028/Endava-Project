@@ -1,4 +1,8 @@
-import type { RoutePoiResponse, RouteResponse } from '../types/contracts'
+import type {
+  RoutePoiResponse,
+  RouteResponse,
+  StopAmenitiesResponse,
+} from '../types/contracts'
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
@@ -10,6 +14,8 @@ interface RealtimeSessionResponse {
 
 interface PlanRouteToolResponse {
   route: RouteResponse
+  routeId?: string | null
+  searchId?: string | null
 }
 
 interface RerouteToolResponse {
@@ -46,6 +52,14 @@ export function getRealtimeToolErrorMessage(code: string, fallback: string): str
   const messages: Record<string, string> = {
     INVALID_POI_CATEGORY: 'That place category is not available for this route.',
     POI_UNAVAILABLE: 'I cannot search places along the route right now.',
+    AMENITIES_UNAVAILABLE: 'I cannot search nearby amenities right now.',
+    NO_SELECTED_STOP: 'I need a selected charging stop before searching nearby.',
+    STALE_STOP_CONTEXT: 'That charging stop is no longer part of the active route.',
+    STALE_STOP: 'That charging stop is no longer part of the active route.',
+    STALE_ROUTE_CONTEXT: 'That route context is no longer current.',
+    STALE_ROUTE: 'That route context is no longer current.',
+    STALE_SEARCH_CONTEXT: 'That place search is no longer current.',
+    STALE_SEARCH: 'That place search is no longer current.',
     STALE_POI_SELECTION: 'That suggestion is no longer available for this route.',
     REROUTE_UNAVAILABLE: 'I cannot change the route through that stop right now.',
     VALIDATION_ERROR: 'I could not validate that assistant request.',
@@ -116,6 +130,27 @@ export async function searchRoutePoiWithTool(
   }
 
   return (await response.json()) as RoutePoiResponse
+}
+
+export async function searchStopAmenitiesWithTool(
+  argumentsJson: string,
+  signal?: AbortSignal,
+): Promise<StopAmenitiesResponse> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/assistant/realtime/tools/search-stop-amenities`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: argumentsJson,
+      signal,
+    },
+  )
+
+  if (!response.ok) {
+    return throwToolError(response, 'The nearby amenity search could not be completed.')
+  }
+
+  return (await response.json()) as StopAmenitiesResponse
 }
 
 export async function rerouteWithTool(

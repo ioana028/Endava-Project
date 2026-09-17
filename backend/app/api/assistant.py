@@ -10,10 +10,20 @@ from ..models.contracts import (
     RealtimeToolRerouteResponse,
     RealtimeToolSearchRoutePoiRequest,
     RealtimeToolSearchRoutePoiResponse,
+    RealtimeToolSearchStopAmenitiesRequest,
+    RealtimeToolSearchStopAmenitiesResponse,
 )
 
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
+
+
+def _active_context_id(route_service: object, name: str) -> str | None:
+    public_value = getattr(route_service, name, None)
+    if public_value is not None:
+        return public_value
+    return getattr(route_service, f"_{name}", None)
+
 
 @router.post(
     "/realtime/session",
@@ -38,7 +48,11 @@ async def realtime_plan_route(
     route = await request.app.state.route_service.plan(
         AssistantIntent(destination=payload.destination, priority=payload.priority)
     )
-    return RealtimeToolRouteResponse(route=route)
+    return RealtimeToolRouteResponse(
+        route=route,
+        route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
+        search_id=_active_context_id(request.app.state.route_service, "active_search_id"),
+    )
 
 
 @router.post(
@@ -56,8 +70,39 @@ async def realtime_search_route_poi(
     )
     return RealtimeToolSearchRoutePoiResponse(
         results=results,
-        route_id=getattr(request.app.state.route_service, "active_route_id", None),
-        search_id=getattr(request.app.state.route_service, "active_search_id", None),
+        route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
+        search_id=_active_context_id(request.app.state.route_service, "active_search_id"),
+    )
+
+
+@router.post(
+    "/realtime/tools/search-stop-amenities",
+    response_model=RealtimeToolSearchStopAmenitiesResponse,
+)
+async def realtime_search_stop_amenities(
+    payload: RealtimeToolSearchStopAmenitiesRequest,
+    request: Request,
+) -> RealtimeToolSearchStopAmenitiesResponse:
+    search = getattr(request.app.state.route_service, "search_stop_amenities", None)
+    if search is None:
+        raise APIError(
+            503,
+            "AMENITIES_UNAVAILABLE",
+            "Nearby amenity search is not available yet.",
+        )
+
+    result = await search(
+        stop_id=payload.stop_id,
+        route_id=payload.route_id,
+        search_id=payload.search_id,
+        categories=payload.categories,
+    )
+    return RealtimeToolSearchStopAmenitiesResponse(
+        selected_stop_name=result["selected_stop_name"],
+        results=result.get("results", []),
+        radius_meters=result.get("radius_meters", 500),
+        route_id=payload.route_id,
+        search_id=payload.search_id,
     )
 
 
