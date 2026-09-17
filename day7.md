@@ -2,14 +2,29 @@
 
 ## Purpose
 
-Day 7 is the final feature and hardening pass before the PR. The goal is to
-make Suzanne feel informed and natural while keeping every route, charger,
-partner, and commerce fact deterministic and testable.
+Day 7 is the final product pass for a three-minute live demo. The product is a
+simulated in-car infotainment screen, not a vehicle-management dashboard. The
+goal is a compact, convincing flow from route request to partner discovery,
+scenic routing, charging, commerce, and driving mode.
 
 Day 7 does not add real payments, real bookings, a database, session storage,
 a wake word, or new microservices. Partner recommendations remain advisory:
 Suzanne may surface a returned benefit, but never forces a partner or invents a
 commercial claim.
+
+## Scope boundary
+
+The demo must stay focused. The following are explicitly out of scope for
+Days 7-9:
+
+- driver personalization or persistent driver profiles;
+- fuel/refueling workflows;
+- service intervals, maintenance scheduling, or vehicle-health dashboards;
+- dashboard, fleet, back-office, or analytics screens;
+- real payments, real bookings, or production OEM account integration.
+
+The only planned post-Day 7 feature is an optional Day 9 OEM loyalty/rewards
+demonstration if it can be shown without disrupting the three-minute flow.
 
 ## Product outcomes
 
@@ -34,6 +49,8 @@ acknowledgements after a tool has already acknowledged the request.
 clear actionable explanation instead of silence.
 - The final browser flow is demoable from route planning through partner
 discovery, scenic routing, driving mode, commerce, and refresh behavior.
+- The complete golden flow fits into three minutes without leaving the
+infotainment experience.
 
 ## Known Day 7 defects to fix first
 
@@ -329,6 +346,36 @@ context;
 claim to be direct stops;
 - all tests and handoff notes identify one owner per implementation file.
 
+## Day 8 and Day 9 boundary
+
+### Day 8: demo stabilization only
+
+Day 8 is not a new feature phase. It is reserved for fixing anything found in
+the live rehearsal:
+
+- provider or stale-context failures;
+- timing and startup regressions;
+- browser/E2E flakiness;
+- responsive infotainment layout issues;
+- voice wording, silence, or duplicate-response defects;
+- final test, documentation, and PR cleanup.
+
+No personalization, fuel, service-interval, dashboard, or unrelated feature
+work is accepted into Day 8.
+
+### Day 9: optional OEM loyalty demonstration
+
+Day 9 may add one narrow OEM loyalty/rewards flow, only if Day 7 is stable. It
+must be simulated, deterministic, and visible in the infotainment UI:
+
+- show a returned partner reward or points estimate;
+- explain the driver benefit without inventing a real account balance;
+- keep the flow voice-first and under the three-minute demo budget;
+- add no dashboard, loyalty administration, or backend account system.
+
+If the loyalty flow threatens demo reliability, Day 9 is a release-polish day
+instead.
+
 ## Definition of done
 
 Day 7 is complete when the start-driving 503 is fixed and tested, the partner
@@ -337,7 +384,9 @@ without false claims, scenic routing has a real deterministic/provider-backed
 meaning, Suzanne speaks naturally without filler repetition, successful and
 failed tools are never silent, long-route charging remains safe, local startup
 and provider failures are stable, the complete validation gate passes, and the
-final golden scenarios are accepted on `integration/day7`.
+final golden scenarios are accepted on `integration/day7`. The complete golden
+flow must fit into three minutes and remain inside the infotainment experience.
+Days 8 and 9 must not expand the product beyond the scope boundary above.
 
 ## Branch protocol
 
