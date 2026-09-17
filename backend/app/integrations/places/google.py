@@ -19,7 +19,7 @@ class GooglePlacesProvider:
     _CATEGORY_QUERIES = {
         "hotel": "hotels",
         "restaurant": "restaurants",
-        "food": "restaurants and places to eat",
+        "food": "restaurants, fast food, McDonald's, KFC, and places to eat",
         "attraction": "tourist attractions and interesting places to see",
         "charging": "electric vehicle charging stations",
         "coffee": "coffee shops and cafes",
@@ -85,7 +85,7 @@ class GooglePlacesProvider:
                         json={
                             "textQuery": query,
                             "languageCode": "en",
-                            "maxResultCount": 10,
+                            "maxResultCount": 20 if location == "stop" else 10,
                             "locationBias": {
                                 "circle": {
                                     "center": {

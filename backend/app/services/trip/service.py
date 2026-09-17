@@ -506,6 +506,14 @@ class RouteService:
         )
         return route_response
 
+    async def return_to_main_route(self, route_id: str) -> dict[str, str]:
+        if self._active_provider_route is None or route_id != self._active_route_id:
+            raise APIError(409, "STALE_ROUTE", "That route context is no longer current.")
+
+        self._active_search_id = None
+        self._active_search_results = {}
+        return {"status": "success", "route_id": route_id}
+
     @staticmethod
     def _invalid_coordinates(coords: tuple[float, float]) -> bool:
         return (

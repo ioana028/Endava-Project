@@ -443,7 +443,17 @@ export function useRealtimeAssistant() {
             output: JSON.stringify(result),
           },
         })
-        sendEvent({ type: 'response.create' })
+        sendEvent({
+          type: 'response.create',
+          ...(event.name === 'return_to_main_route'
+            ? {
+                response: {
+                  instructions:
+                    'Confirm that the full route view has been restored. Keep it to one short sentence and do not claim that a new route was planned.',
+                },
+              }
+            : {}),
+        })
         return
       }
 
@@ -486,7 +496,13 @@ export function useRealtimeAssistant() {
             }),
           },
         })
-        sendEvent({ type: 'response.create' })
+        sendEvent({
+          type: 'response.create',
+          response: {
+            instructions:
+              'Acknowledge the amenity search and briefly name the returned nearby places, including their categories and distances when available. If there are no results, say so clearly.',
+          },
+        })
         return
       }
 

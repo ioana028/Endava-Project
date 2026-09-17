@@ -286,6 +286,19 @@ def test_reroute_rejects_stale_poi_context() -> None:
     assert error.value.code == "STALE_POI"
 
 
+def test_return_to_main_route_preserves_route_and_clears_search_context() -> None:
+    route_service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
+    asyncio.run(route_service.plan(intent("Bratislava")))
+    route_id = route_service.active_route_id
+    assert route_id is not None
+
+    result = asyncio.run(route_service.return_to_main_route(route_id))
+
+    assert result == {"status": "success", "route_id": route_id}
+    assert route_service.active_route_id == route_id
+    assert route_service.active_search_id is None
+
+
 def test_invalid_destination_returns_stable_api_error() -> None:
     with pytest.raises(APIError) as error:
         asyncio.run(
