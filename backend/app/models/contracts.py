@@ -43,6 +43,7 @@ class StopPinpoint(ContractModel):
     ]
     coords: tuple[float, float]
     rating: float | None = None
+    user_review_count: int | None = Field(default=None, ge=0)
     tag: str = ""
     amenities: tuple[str, ...] = ()
     charging_power_kw: float | None = Field(default=None, ge=0)
@@ -150,6 +151,80 @@ class RealtimeToolRerouteResponse(ContractModel):
     route: RouteResponse
 
 
+class RealtimeToolPurchaseVignetteRequest(ContractModel):
+    route_id: str = Field(min_length=1, max_length=200)
+    requirement_id: str = Field(min_length=1, max_length=200)
+    confirmation: Literal["confirmed"]
+
+
+class RealtimeToolPurchaseVignetteResponse(ContractModel):
+    status: Literal["completed", "duplicate"]
+    transaction_id: str = Field(min_length=1)
+    route_id: str
+    requirement_id: str
+    wallet_status: Literal["ready", "processing", "completed", "declined", "duplicate"]
+    phone_confirmation_status: Literal["pending", "sent", "failed"]
+    amount_eur: float = Field(ge=0)
+    currency: Literal["EUR"]
+
+
+class RealtimeToolBookingRequest(ContractModel):
+    route_id: str = Field(min_length=1, max_length=200)
+    search_id: str = Field(min_length=1, max_length=200)
+    result_id: str = Field(min_length=1, max_length=200)
+    booking_type: Literal["hotel_room", "restaurant_table"]
+    guests: int = Field(ge=1, le=20)
+    date: str = Field(min_length=1, max_length=30)
+    time: str | None = Field(default=None, max_length=10)
+    confirmation: Literal["confirmed"]
+
+
+class RealtimeToolBookingResponse(ContractModel):
+    status: Literal["completed", "duplicate"]
+    booking_id: str = Field(min_length=1)
+    result_id: str
+    route_id: str
+    booking_type: Literal["hotel_room", "restaurant_table"]
+    guests: int = Field(ge=1, le=20)
+    date: str
+    time: str | None = None
+    wallet_status: Literal["ready", "processing", "completed", "declined", "duplicate"]
+    phone_confirmation_status: Literal["pending", "sent", "failed"]
+
+
+class RealtimeToolStartDrivingRequest(ContractModel):
+    route_id: str = Field(min_length=1, max_length=200)
+    confirmation: Literal["confirmed"]
+
+
+class DrivingNextStop(ContractModel):
+    id: str
+    name: str
+    category: Literal[
+        "charging", "hotel", "restaurant", "attraction", "coffee", "food",
+        "rest", "toilets", "fuel", "toll", "vignette", "service", "shopping"
+    ]
+
+
+class RealtimeToolStartDrivingResponse(ContractModel):
+    status: Literal["active"]
+    route_id: str
+    remaining_distance_km: float = Field(ge=0)
+    remaining_duration_minutes: float = Field(ge=0)
+    eta: str = Field(min_length=1)
+    next_stop: DrivingNextStop | None = None
+    charging_required: bool
+
+
+class RealtimeToolReturnToMainRouteRequest(ContractModel):
+    route_id: str = Field(min_length=1, max_length=200)
+
+
+class RealtimeToolReturnToMainRouteResponse(ContractModel):
+    status: Literal["success"]
+    route_id: str
+
+
 class RealtimeSessionResponse(ContractModel):
     client_secret: str = Field(min_length=1)
     model: str = Field(min_length=1)
@@ -175,6 +250,7 @@ class VehicleTelemetryResponse(ContractModel):
     propulsion: Literal["BEV"]
     battery_percent: float = Field(ge=0, le=100)
     estimated_range_km: float = Field(ge=0)
+    max_charged_range_km: float = Field(ge=0)
     consumption_rate_kwh: float = Field(gt=0)
     tyres: Literal["SUMMER", "WINTER", "ALL_SEASON"]
     odometer_km: float = Field(ge=0)

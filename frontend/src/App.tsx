@@ -54,9 +54,18 @@ function App() {
             poiResults={assistant.poiResults}
             amenityResults={assistant.amenityResults}
             amenityFocusName={assistant.amenitySearchContext?.selectedStopName}
+            drivingActive={assistant.driving?.active ?? false}
             selectedPoiId={assistant.selectedPoi?.id}
             onPoiSelect={assistant.selectPoi}
           />
+          {assistant.driving?.active && (
+            <section className="driving-status" aria-live="polite">
+              <p className="panel-kicker">Driving mode</p>
+              <strong>{Math.round(assistant.driving.remainingDistanceKm)} km remaining</strong>
+              <span>{Math.round(assistant.driving.remainingDurationMinutes)} min · ETA {assistant.driving.eta}</span>
+              <span>{assistant.driving.nextStop ? `Next stop: ${assistant.driving.nextStop.name}` : 'No mandatory stop ahead'}</span>
+            </section>
+          )}
           {assistant.amenitySearchState !== 'IDLE' && assistant.amenitySearchContext && (
             <section className="amenity-results" aria-live="polite">
               <div className="section-heading">
@@ -84,17 +93,29 @@ function App() {
 
         <aside className="cockpit-rail">
           <section className="suzanne-orb-panel">
-            <div className={`suzanne-orb state-${assistant.state.toLowerCase()}`} aria-hidden="true" />
-            <p className="eyebrow">Suzanne</p>
-            <h1>{assistant.transcript || 'Your route, thoughtfully handled.'}</h1>
-            <AssistantStatus
-              enabled={assistant.enabled}
-              state={assistant.state}
-              transcript={assistant.transcript}
-              error={assistant.error}
-              onEnable={() => void assistant.enable()}
-              onDisable={assistant.disable}
-            />
+            {assistant.successFeedback && (assistant.successFeedback.action === 'booking' || assistant.successFeedback.action === 'purchase') ? (
+              <div className="action-confirmation" role="status" aria-live="assertive">
+                <span className="confirmation-check" aria-hidden="true">✓</span>
+                <p className="eyebrow">Complete</p>
+                <h1>{assistant.successFeedback.label}</h1>
+                <strong>Confirmation ready</strong>
+                <span>Reference: {assistant.successFeedback.reference}</span>
+              </div>
+            ) : (
+              <>
+                <div className={`suzanne-orb state-${assistant.state.toLowerCase()}`} aria-hidden="true" />
+                <p className="eyebrow">Suzanne</p>
+                <h1>{assistant.transcript || 'Your route, thoughtfully handled.'}</h1>
+                <AssistantStatus
+                  enabled={assistant.enabled}
+                  state={assistant.state}
+                  transcript={assistant.transcript}
+                  error={assistant.error}
+                  onEnable={() => void assistant.enable()}
+                  onDisable={assistant.disable}
+                />
+              </>
+            )}
           </section>
 
           <section className="cockpit-card vehicle-card">
@@ -104,7 +125,7 @@ function App() {
             <div className="vehicle-footnote"><span>Current charge</span><span>{telemetry ? `${telemetry.consumptionRateKwh.toFixed(1)} kWh / 100 km` : 'Telemetry loading'}</span></div>
           </section>
 
-          <div className={`utility-panel-stage${route ? ' has-route' : ''}`} aria-live="polite">
+          <div className={`utility-panel-stage${route && !assistant.driving?.active ? ' has-route' : ''}`} aria-live="polite">
             <section className="cockpit-card media-card utility-panel">
               <div className="media-art" aria-hidden="true" />
               <div><strong>Crystal Sky</strong><span>Luminous · Suzanne mix</span></div>

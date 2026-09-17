@@ -41,6 +41,7 @@ export interface StopPinpoint {
   category: StopCategory;
   coords: [number, number];        // [lng, lat]
   rating?: number;
+  userReviewCount?: number;
   tag: string;                     // e.g., "Fast Charger · 250kW" or "Italian Dining"
   amenities?: string[];
   distanceMeters?: number;
@@ -108,6 +109,64 @@ export interface StopAmenitiesResponse {
   searchId?: string | null;
 }
 
+export interface PurchaseVignetteRequest {
+  routeId: string;
+  requirementId: string;
+  confirmation: 'confirmed';
+}
+
+export interface PurchaseVignetteResponse {
+  status: 'completed' | 'duplicate';
+  transactionId: string;
+  routeId: string;
+  requirementId: string;
+  walletStatus: 'ready' | 'processing' | 'completed' | 'declined' | 'duplicate';
+  phoneConfirmationStatus: 'pending' | 'sent' | 'failed';
+  amountEur: number;
+  currency: 'EUR';
+}
+
+export type BookingType = 'hotel_room' | 'restaurant_table';
+
+export interface BookingRequest {
+  routeId: string;
+  searchId: string;
+  resultId: string;
+  bookingType: BookingType;
+  guests: number;
+  date: string;
+  time?: string | null;
+  confirmation: 'confirmed';
+}
+
+export interface BookingResponse {
+  status: 'completed' | 'duplicate';
+  bookingId: string;
+  resultId: string;
+  routeId: string;
+  bookingType: BookingType;
+  guests: number;
+  date: string;
+  time?: string | null;
+  walletStatus: 'ready' | 'processing' | 'completed' | 'declined' | 'duplicate';
+  phoneConfirmationStatus: 'pending' | 'sent' | 'failed';
+}
+
+export interface StartDrivingResponse {
+  status: 'active';
+  routeId: string;
+  remainingDistanceKm: number;
+  remainingDurationMinutes: number;
+  eta: string;
+  nextStop?: Pick<StopPinpoint, 'id' | 'name' | 'category'> | null;
+  chargingRequired: boolean;
+}
+
+export interface ReturnToMainRouteResponse {
+  status: 'success';
+  routeId: string;
+}
+
 export interface AssistantIntent {
   destination: string;
   priority: RoutePriority;
@@ -128,6 +187,7 @@ export interface VehicleTelemetry {
   propulsion: 'BEV';
   batteryPercent: number;
   estimatedRangeKm: number;
+  maxChargedRangeKm: number;
   consumptionRateKwh: number;
   tyres: 'SUMMER' | 'WINTER' | 'ALL_SEASON';
   odometerKm: number;

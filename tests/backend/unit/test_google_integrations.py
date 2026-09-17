@@ -145,6 +145,33 @@ def test_places_stop_search_keeps_nearby_result_off_the_route_line(
     assert [result.id for result in results] == ["places/nearby-restaurant"]
 
 
+def test_charging_search_keeps_google_chargers_for_later_route_legs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakePlacesClient.calls = []
+    later_charger = place("places/later-charger")
+    later_charger["displayName"] = {"text": "Later Google Charger"}
+    later_charger["location"] = {"longitude": 19.0, "latitude": 47.5}
+    later_charger["types"] = ["electric_vehicle_charging_station"]
+    FakePlacesClient.responses = [
+        FakeResponse({"places": [later_charger]}),
+        FakeResponse({"places": [later_charger]}),
+    ]
+    monkeypatch.setattr(
+        "backend.app.integrations.places.google.httpx.AsyncClient", FakePlacesClient
+    )
+
+    candidates = asyncio.run(
+        GooglePlacesProvider("test-key", max_search_points=2).search_charging(
+            route(), max_distance_km=10
+        )
+    )
+
+    assert [candidate.stop.id for candidate in candidates] == ["places/later-charger"]
+    assert candidates[0].distance_from_origin_km is not None
+    assert candidates[0].distance_from_origin_km > 10
+
+
 def test_places_timeout_is_translated_to_provider_error(monkeypatch: pytest.MonkeyPatch) -> None:
     class TimeoutClient(FakePlacesClient):
         async def post(self, url: str, **kwargs: object) -> FakeResponse:

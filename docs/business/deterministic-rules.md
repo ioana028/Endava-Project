@@ -10,7 +10,9 @@ is required. Those decisions belong to deterministic code and provider data.
 
 The demo corridor is Vienna, Austria to Budapest, Hungary, approximately
 243 km via the M1 motorway. The fixture vehicle begins with an estimated range
-of 95 km. Therefore a charging stop is required for the demonstration.
+of 95 km and has a maximum charged range of 250 km. Therefore the first
+charging stop must be reachable within the initial 95 km, while later legs use
+the 250 km post-charge range.
 
 The initial fixture identifies Ionity Győr as the expected charging candidate.
 The route planner must automatically validate and select it only when route

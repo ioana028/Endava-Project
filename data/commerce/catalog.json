@@ -1,0 +1,16 @@
+{
+  "vignettes": {
+    "hu-vignette-10d": {
+      "amountEur": 16.5,
+      "currency": "EUR"
+    },
+    "hu-motorway-vignette": {
+      "amountEur": 16.5,
+      "currency": "EUR"
+    },
+    "hungarian-motorway-vignette": {
+      "amountEur": 16.5,
+      "currency": "EUR"
+    }
+  }
+}

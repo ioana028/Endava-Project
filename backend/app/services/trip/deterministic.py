@@ -8,6 +8,7 @@ from .ports import ChargingCandidate, POICandidate
 
 
 POI_MAX_RESULTS = 2
+ATTRACTION_MAX_RESULTS = 5
 POI_CORRIDOR_RADIUS_KM = 7.5
 POI_ORIGIN_EXCLUSION_KM = 10.0
 POI_DESTINATION_EXCLUSION_KM = 10.0
@@ -103,7 +104,30 @@ def select_route_stops(
         for stop in stops
         if _matches_search_scope(stop.coords, geometry, location)
     ]
-    return [candidate.stop for candidate in select_route_pois(candidates, preference)]
+    selected = select_route_pois(candidates, preference)
+    if location == "route" and any(
+        candidate.stop.category == "attraction" for candidate in candidates
+    ):
+        selected = _select_route_attractions(candidates, preference)
+    return [candidate.stop for candidate in selected]
+
+
+def _select_route_attractions(
+    candidates: Iterable[POICandidate], preference: str | None = None
+) -> list[POICandidate]:
+    ranked = rank_pois(candidates, preference)
+    selected: list[POICandidate] = []
+    for candidate in ranked:
+        if any(
+            distance_km(candidate.stop.coords, chosen.stop.coords)
+            < POI_DIVERSITY_DISTANCE_KM
+            for chosen in selected
+        ):
+            continue
+        selected.append(candidate)
+        if len(selected) == ATTRACTION_MAX_RESULTS:
+            break
+    return selected
 
 
 def _matches_search_scope(
@@ -178,6 +202,87 @@ def select_charger(
         ),
         default=None,
     )
+
+
+def select_chargers_iteratively(
+    candidates: Iterable[ChargingCandidate],
+    route_distance_km: float,
+    vehicle_range_km: float,
+    safety_buffer_km: float,
+    max_charged_range_km: float | None = None,
+) -> list[ChargingCandidate] | None:
+    """Select chargers using initial range first, then post-charge range."""
+    ordered = sorted(
+        (
+            candidate
+            for candidate in candidates
+            if candidate.compatible
+            and candidate.available
+            and candidate.stop.detour_minutes >= 0
+            and candidate.distance_from_origin_km is not None
+            and candidate.distance_from_origin_km >= MIN_CHARGER_PROGRESS_KM
+        ),
+        key=lambda candidate: (
+            candidate.distance_from_origin_km or 0,
+            candidate.distance_from_route_km,
+            candidate.stop.id,
+        ),
+    )
+    charged_range_km = max_charged_range_km or vehicle_range_km
+    initial_safe_leg_km = max(0.0, vehicle_range_km - safety_buffer_km)
+    charged_safe_leg_km = max(0.0, charged_range_km - safety_buffer_km)
+    selected: list[ChargingCandidate] = []
+    previous_progress_km = 0.0
+    while route_distance_km - previous_progress_km > (
+        initial_safe_leg_km if not selected else charged_safe_leg_km
+    ):
+        safe_leg_km = initial_safe_leg_km if not selected else charged_safe_leg_km
+        reachable = [
+            candidate
+            for candidate in ordered
+            if previous_progress_km < (candidate.distance_from_origin_km or 0)
+            <= previous_progress_km + safe_leg_km
+        ]
+        if not reachable:
+            if not selected:
+                reachable = [
+                    candidate
+                    for candidate in ordered
+                    if previous_progress_km < (candidate.distance_from_origin_km or 0)
+                    <= previous_progress_km + max(0.0, vehicle_range_km)
+                ]
+            if not reachable:
+                return None
+        candidate = max(
+            reachable,
+            key=lambda item: (
+                item.distance_from_origin_km or 0,
+                0 if item.stop.partner else 1,
+                item.distance_from_route_km,
+                item.stop.id,
+            ),
+        )
+        selected.append(candidate)
+        previous_progress_km = candidate.distance_from_origin_km or previous_progress_km
+        ordered = [
+            item for item in ordered
+            if (item.distance_from_origin_km or 0) > previous_progress_km
+        ]
+    return selected
+
+
+def route_remaining_distance_km(
+    route_distance_km: float, progress_km: float
+) -> float:
+    return round(max(0.0, route_distance_km - progress_km), 2)
+
+
+def estimate_eta_minutes(
+    remaining_distance_km: float, average_speed_kmh: float
+) -> float:
+    if average_speed_kmh <= 0:
+        raise ValueError("Average speed must be positive")
+    return round(remaining_distance_km / average_speed_kmh * 60, 1)
 
 
 def estimate_charging_duration_minutes(

@@ -1,4 +1,7 @@
 import inspect
+from datetime import datetime, timedelta
+import logging
+from time import monotonic
 from uuid import uuid4
 
 from ...core.errors import APIError
@@ -21,12 +24,15 @@ from ...models.contracts import (
 )
 from .country_rules import derive_requirements, detect_border_crossings
 from .deterministic import (
+    MIN_CHARGER_PROGRESS_KM,
     POI_COORDINATE_TOLERANCE,
     enrich_partner,
     estimate_charging_duration_minutes,
+    estimate_eta_minutes,
     route_progress_km,
+    route_remaining_distance_km,
+    select_chargers_iteratively,
     select_stop_amenities,
-    select_charger,
     select_route_stops,
 )
 from .fixture_providers import FixtureChargingProvider
@@ -37,11 +43,11 @@ from .ports import (
     JourneyProviderError,
     RoutingProvider,
     RoutingProviderError,
-    JourneyProviderError,
 )
 
 
 DEFAULT_ORIGIN = "Vienna, Austria"
+LOGGER = logging.getLogger(__name__)
 
 
 class RouteService:
@@ -79,7 +85,73 @@ class RouteService:
     def active_search_id(self) -> str | None:
         return self._active_search_id
 
+    @property
+    def active_search_results(self) -> dict[str, StopPinpoint]:
+        return dict(self._active_search_results)
+
+    @property
+    def active_route_requirements(self) -> tuple[RouteRequirement, ...]:
+        if self._active_provider_route is None or self._active_origin is None or self._active_destination is None:
+            return ()
+        _, requirements = self._route_facts(
+            self._active_provider_route,
+            self._active_origin.display_name,
+            self._active_destination.display_name,
+        )
+        return tuple(requirements)
+
+    def route_state_facts(self, progress_km: float = 0.0) -> dict[str, object]:
+        if self._active_provider_route is None or self._active_route_id is None:
+            raise APIError(409, "NO_ACTIVE_ROUTE", "Plan a route before requesting route facts.")
+        route_distance_km = self._active_provider_route.distance_meters / 1000
+        progress_km = min(max(progress_km, 0.0), route_distance_km)
+        remaining_distance_km = route_remaining_distance_km(route_distance_km, progress_km)
+        average_speed_kmh = (
+            route_distance_km / (self._active_provider_route.duration_seconds / 3600)
+            if self._active_provider_route.duration_seconds > 0
+            else 0
+        )
+        remaining_duration_minutes = estimate_eta_minutes(
+            remaining_distance_km, average_speed_kmh
+        ) if average_speed_kmh > 0 else 0.0
+        next_stop = self.next_mandatory_stop(progress_km)
+        eta = datetime.now() + timedelta(minutes=remaining_duration_minutes)
+        return {
+            "status": "active",
+            "route_id": self._active_route_id,
+            "remaining_distance_km": remaining_distance_km,
+            "remaining_duration_minutes": remaining_duration_minutes,
+            "eta": eta.strftime("%H:%M"),
+            "next_stop": (
+                {
+                    "id": next_stop.id,
+                    "name": next_stop.name,
+                    "category": next_stop.category,
+                }
+                if next_stop is not None else None
+            ),
+            "charging_required": next_stop is not None and next_stop.category == "charging",
+        }
+
+    def next_mandatory_stop(self, progress_km: float = 0.0) -> StopPinpoint | None:
+        if self._active_provider_route is None:
+            return None
+        candidates = (
+            stop for stop in self._active_stops
+            if stop.mandatory
+            and route_progress_km(stop.coords, tuple(self._active_provider_route.geometry))
+            > progress_km
+        )
+        return min(
+            candidates,
+            key=lambda stop: route_progress_km(
+                stop.coords, tuple(self._active_provider_route.geometry)
+            ),
+            default=None,
+        )
+
     async def plan(self, intent: AssistantIntent) -> RouteResponse:
+        started_at = monotonic()
         try:
             origin = await self._provider.geocode(self._origin)
             destination = await self._provider.geocode(intent.destination)
@@ -99,6 +171,10 @@ class RouteService:
         initial_distance_km = round(provider_route.distance_meters / 1000, 2)
         safe_distance_km = self._safe_distance_km()
         reachable_distance_km = self._fixture_repository.fixtures.telemetry.estimated_range_km
+        max_charged_range_km = (
+            self._fixture_repository.fixtures.telemetry.max_charged_range_km
+            or reachable_distance_km
+        )
         stops: list[StopPinpoint] = []
 
         if initial_distance_km > safe_distance_km:
@@ -128,30 +204,66 @@ class RouteService:
                 )
                 for candidate in candidates
             )
-            candidate = select_charger(enriched_candidates, reachable_distance_km)
-            if candidate is None:
-                raise APIError(
-                    422,
-                    "NO_SUITABLE_CHARGER",
-                    "No suitable charging stop was found for this route.",
-                )
-
-            charger_progress_km = candidate.distance_from_origin_km or 0
-            charging_duration_minutes = estimate_charging_duration_minutes(
-                candidate,
-                provider_route.distance_meters / 1000,
-                charger_progress_km,
-                self._fixture_repository.fixtures.telemetry.estimated_range_km,
+            selected_candidates = select_chargers_iteratively(
+                enriched_candidates,
+                initial_distance_km,
+                reachable_distance_km,
                 self._safety_buffer_km,
-                self._fixture_repository.fixtures.telemetry.consumption_rate_kwh,
+                max_charged_range_km,
             )
-            charging_stop = candidate.stop.model_copy(update={"mandatory": True})
-            charging_stop = charging_stop.model_copy(
-                update={
-                    "charging_duration_minutes": charging_duration_minutes
-                }
-            )
-            stops.append(charging_stop)
+            if selected_candidates is None:
+                if not enriched_candidates:
+                    raise APIError(
+                        422,
+                        "NO_SUITABLE_CHARGER",
+                        "No suitable charging stop was found for this route.",
+                    )
+                legacy_candidate = next(
+                    iter(
+                        sorted(
+                            (
+                                candidate
+                                for candidate in enriched_candidates
+                                if candidate.compatible
+                                and candidate.available
+                                and candidate.distance_from_origin_km is not None
+                                and MIN_CHARGER_PROGRESS_KM
+                                <= candidate.distance_from_origin_km
+                                <= reachable_distance_km
+                            ),
+                            key=lambda candidate: candidate.distance_from_origin_km or 0,
+                            reverse=True,
+                        )
+                    ),
+                    None,
+                )
+                if legacy_candidate is not None:
+                    selected_candidates = [legacy_candidate]
+                else:
+                    raise APIError(
+                        422,
+                        "NO_SAFE_CHARGING_PLAN",
+                        "No safe sequence of compatible charging stops was found for this route.",
+                    )
+
+            for candidate in selected_candidates:
+                charger_progress_km = candidate.distance_from_origin_km or 0
+                charging_duration_minutes = estimate_charging_duration_minutes(
+                    candidate,
+                    provider_route.distance_meters / 1000,
+                    charger_progress_km,
+                    self._fixture_repository.fixtures.telemetry.estimated_range_km,
+                    self._safety_buffer_km,
+                    self._fixture_repository.fixtures.telemetry.consumption_rate_kwh,
+                )
+                stops.append(
+                    candidate.stop.model_copy(
+                        update={
+                            "mandatory": True,
+                            "charging_duration_minutes": charging_duration_minutes,
+                        }
+                    )
+                )
 
             if not self._supports_waypoints():
                 raise APIError(
@@ -160,15 +272,16 @@ class RouteService:
                     "The routing service cannot route through a charging stop.",
                 )
 
-            waypoint = GeocodedPlace(
-                charging_stop.name,
-                Coordinates(
-                    lng=charging_stop.coords[0], lat=charging_stop.coords[1]
-                ),
+            waypoints = tuple(
+                GeocodedPlace(
+                    stop.name,
+                    Coordinates(lng=stop.coords[0], lat=stop.coords[1]),
+                )
+                for stop in stops
             )
             try:
                 provider_route = await self._provider.route(
-                    origin, destination, intent.priority, (waypoint,)
+                    origin, destination, intent.priority, waypoints
                 )
             except (RoutingProviderError, OSError) as error:
                 raise APIError(
@@ -187,6 +300,12 @@ class RouteService:
         self._active_priority = intent.priority
         self._active_stops = list(stops)
         self._active_search_results = {}
+        LOGGER.info(
+            "total_route_plan_ms=%d destination=%s charging_stop=%s",
+            round((monotonic() - started_at) * 1000),
+            intent.destination,
+            route_response.charging_stop.name if route_response.charging_stop else "none",
+        )
         return route_response
 
     async def search_route_poi(
@@ -195,6 +314,7 @@ class RouteService:
         location: str | None = None,
         preference: str | None = None,
     ) -> list[StopPinpoint]:
+        started_at = monotonic()
         try:
             if self._active_provider_route is None:
                 raise APIError(
@@ -237,6 +357,14 @@ class RouteService:
                 )
             self._active_search_id = uuid4().hex
             self._active_search_results = {result.id: result for result in results}
+            LOGGER.info(
+                "tool_call_ms=%d tool=%s category=%s location=%s result_count=%d",
+                round((monotonic() - started_at) * 1000),
+                "search_route_poi",
+                category,
+                location or "route",
+                len(results),
+            )
             return results
         except ValueError as error:
             raise APIError(
@@ -269,7 +397,9 @@ class RouteService:
         if stop is None or stop.category != "charging":
             raise APIError(409, "STALE_STOP", "The selected charging stop is no longer current.")
 
-        requested_categories = categories or ("food", "coffee", "rest", "service")
+        requested_categories = categories or (
+            "food", "coffee", "rest", "service", "shopping"
+        )
         results: list[StopPinpoint] = []
         try:
             expanded_categories = tuple(
@@ -303,7 +433,10 @@ class RouteService:
         unique_results = {result.id: result for result in results}
         return {
             "selected_stop_name": stop.name,
-            "results": select_stop_amenities(unique_results.values(), stop.coords),
+            "results": sorted(
+                select_stop_amenities(unique_results.values(), stop.coords),
+                key=lambda result: (-(result.rating or 0), result.name),
+            ),
             "radius_meters": 500,
             "route_id": route_id,
             "search_id": search_id,
@@ -317,6 +450,7 @@ class RouteService:
         coords: tuple[float, float] | None = None,
         priority=None,
     ) -> RouteResponse:
+        started_at = monotonic()
         if (
             self._active_provider_route is None
             or self._active_origin is None
@@ -374,7 +508,22 @@ class RouteService:
         self._active_route_id = uuid4().hex
         self._active_search_id = None
         self._active_search_results = {}
+        LOGGER.info(
+            "tool_call_ms=%d tool=%s route_id=%s result_count=%d",
+            round((monotonic() - started_at) * 1000),
+            "reroute_through_poi",
+            self._active_route_id,
+            len(route_response.stops),
+        )
         return route_response
+
+    async def return_to_main_route(self, route_id: str) -> dict[str, str]:
+        if self._active_provider_route is None or route_id != self._active_route_id:
+            raise APIError(409, "STALE_ROUTE", "That route context is no longer current.")
+
+        self._active_search_id = None
+        self._active_search_results = {}
+        return {"status": "success", "route_id": route_id}
 
     @staticmethod
     def _invalid_coordinates(coords: tuple[float, float]) -> bool:

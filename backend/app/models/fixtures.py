@@ -10,6 +10,7 @@ class VehicleState(ContractModel):
     propulsion: Literal["BEV"]
     battery_percent: float = Field(ge=0, le=100)
     estimated_range_km: float = Field(ge=0)
+    max_charged_range_km: float = Field(default=0, ge=0)
     consumption_rate_kwh: float = Field(gt=0)
     tyres: Literal["SUMMER", "WINTER", "ALL_SEASON"]
     odometer_km: float = Field(ge=0)

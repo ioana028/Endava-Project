@@ -12,10 +12,16 @@ from backend.app.models.contracts import (
     StopPinpoint,
 )
 from backend.app.services.trip.ports import (
+    ChargingCandidate,
     GeocodedPlace,
     InvalidDestinationError,
     ProviderRoute,
     RoutingProviderError,
+)
+from backend.app.services.trip.deterministic import (
+    estimate_eta_minutes,
+    route_remaining_distance_km,
+    select_chargers_iteratively,
 )
 from backend.app.services.trip.service import RouteService
 
@@ -280,6 +286,19 @@ def test_reroute_rejects_stale_poi_context() -> None:
     assert error.value.code == "STALE_POI"
 
 
+def test_return_to_main_route_preserves_route_and_clears_search_context() -> None:
+    route_service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
+    asyncio.run(route_service.plan(intent("Bratislava")))
+    route_id = route_service.active_route_id
+    assert route_id is not None
+
+    result = asyncio.run(route_service.return_to_main_route(route_id))
+
+    assert result == {"status": "success", "route_id": route_id}
+    assert route_service.active_route_id == route_id
+    assert route_service.active_search_id is None
+
+
 def test_invalid_destination_returns_stable_api_error() -> None:
     with pytest.raises(APIError) as error:
         asyncio.run(
@@ -322,4 +341,71 @@ def test_invalid_provider_route_returns_stable_api_error(
 
     assert error.value.status_code == 503
     assert error.value.code == "INVALID_ROUTE"
+
+
+def test_long_route_selects_multiple_chargers_in_route_order() -> None:
+    candidates = tuple(
+        ChargingCandidate(
+            stop=StopPinpoint(
+                id=f"charger-{progress}",
+                name=f"Charger {progress}",
+                category="charging",
+                coords=(16.37 + progress / 100, 48.20),
+            ),
+            distance_from_origin_km=progress,
+        )
+        for progress in (80, 160, 230)
+    )
+
+    selected = select_chargers_iteratively(
+        candidates, route_distance_km=300, vehicle_range_km=100, safety_buffer_km=10
+    )
+
+    assert selected is not None
+    assert [item.stop.id for item in selected] == ["charger-80", "charger-160", "charger-230"]
+
+
+def test_charged_range_prevents_unnecessary_second_stop() -> None:
+    candidates = tuple(
+        ChargingCandidate(
+            stop=StopPinpoint(
+                id=f"charger-{progress}",
+                name=f"Charger {progress}",
+                category="charging",
+                coords=(16.37 + progress / 100, 48.20),
+            ),
+            distance_from_origin_km=progress,
+        )
+        for progress in (80, 160)
+    )
+
+    selected = select_chargers_iteratively(
+        candidates,
+        route_distance_km=244,
+        vehicle_range_km=95,
+        safety_buffer_km=10,
+        max_charged_range_km=250,
+    )
+
+    assert selected is not None
+    assert [item.stop.id for item in selected] == ["charger-80"]
+
+
+def test_route_progress_helpers_report_remaining_distance_and_eta() -> None:
+    assert route_remaining_distance_km(300, 160) == 140
+    assert estimate_eta_minutes(140, 70) == 120
+
+
+def test_route_exposes_driving_facts_and_next_mandatory_stop() -> None:
+    route_service = RouteService(FakeRoutingProvider(distance_meters=243_000), repository())
+    asyncio.run(route_service.plan(intent()))
+
+    facts = route_service.route_state_facts()
+
+    assert facts["status"] == "active"
+    assert facts["route_id"] == route_service.active_route_id
+    assert facts["remaining_distance_km"] == 243
+    assert facts["remaining_duration_minutes"] == 165
+    assert facts["next_stop"]["category"] == "charging"
+    assert facts["charging_required"] is True
 

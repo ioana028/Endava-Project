@@ -14,7 +14,6 @@ function formatDuration(totalMinutes: number) {
 
 export function RouteSummary({ route }: RouteSummaryProps) {
   const stopCount = route.stops.length
-  const requirementCount = route.routeRequirements.length
 
   return (
     <section className="route-summary" aria-live="polite">
@@ -45,11 +44,6 @@ export function RouteSummary({ route }: RouteSummaryProps) {
           <span>Total cost</span>
           <strong>{route.stats.totalPriceEur.toFixed(2)} EUR</strong>
         </div>
-      </div>
-
-      <div className="trip-detail-line">
-        <span>{route.chargingStop ? `Charging: ${route.chargingStop.name}` : 'No charging stop required'}</span>
-        <span>{requirementCount > 0 ? `${requirementCount} route requirement${requirementCount === 1 ? '' : 's'}` : 'No route requirements'}</span>
       </div>
     </section>
   )

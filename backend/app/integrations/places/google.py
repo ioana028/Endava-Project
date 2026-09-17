@@ -19,7 +19,7 @@ class GooglePlacesProvider:
     _CATEGORY_QUERIES = {
         "hotel": "hotels",
         "restaurant": "restaurants",
-        "food": "restaurants and places to eat",
+        "food": "restaurants, fast food, McDonald's, KFC, and places to eat",
         "attraction": "tourist attractions and interesting places to see",
         "charging": "electric vehicle charging stations",
         "coffee": "coffee shops and cafes",
@@ -85,7 +85,7 @@ class GooglePlacesProvider:
                         json={
                             "textQuery": query,
                             "languageCode": "en",
-                            "maxResultCount": 10,
+                            "maxResultCount": 20 if location == "stop" else 10,
                             "locationBias": {
                                 "circle": {
                                     "center": {
@@ -100,7 +100,7 @@ class GooglePlacesProvider:
                             "X-Goog-Api-Key": self._api_key,
                             "X-Goog-FieldMask": (
                                 "places.id,places.displayName,places.location,places.types,"
-                                "places.rating,places.editorialSummary,places.formattedAddress,"
+                                "places.rating,places.userRatingCount,places.editorialSummary,places.formattedAddress,"
                                 "places.evChargeOptions"
                             ),
                         },
@@ -144,8 +144,10 @@ class GooglePlacesProvider:
     async def search_charging(
         self, route: ProviderRoute, max_distance_km: float
     ) -> tuple[ChargingCandidate, ...]:
+        del max_distance_km
+        started_at = monotonic()
         stops = await self.search("charging", location="route", route=route)
-        return tuple(
+        candidates = tuple(
             ChargingCandidate(
                 stop=stop,
                 distance_from_route_km=distance_to_route_km(
@@ -158,8 +160,14 @@ class GooglePlacesProvider:
                 charging_duration_minutes=stop.charging_duration_minutes,
             )
             for stop in stops
-            if route_progress_km(stop.coords, tuple(route.geometry)) <= max_distance_km
         )
+        LOGGER.info(
+            "charging_lookup_ms=%d candidate_count=%d route_distance_km=%s",
+            round((monotonic() - started_at) * 1000),
+            len(candidates),
+            round(route.distance_meters / 1000, 2),
+        )
+        return candidates
 
     def _to_stop(
         self,
@@ -190,6 +198,10 @@ class GooglePlacesProvider:
             if route_distance_km > corridor_radius_km:
                 return None
         rating = place.get("rating")
+        user_review_count = place.get("userRatingCount")
+        if category == "attraction":
+            if not isinstance(user_review_count, int) or user_review_count < 10:
+                return None
         summary = place.get("editorialSummary") or {}
         address = place.get("formattedAddress")
         types = tuple(str(item).casefold() for item in (place.get("types") or ()))
@@ -206,6 +218,7 @@ class GooglePlacesProvider:
             category=category,
             coords=coords,
             rating=float(rating) if rating is not None else None,
+            user_review_count=user_review_count,
             tag=tag,
             amenities=factual_types,
             charging_power_kw=charging_power_kw,

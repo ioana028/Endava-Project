@@ -20,6 +20,8 @@ from .models.contracts import (
     VehicleTelemetryResponse,
 )
 from .services.trip.service import RouteService
+from .services.commerce.service import CommerceService
+from .services.wallet.service import WalletService
 
 
 def create_app(
@@ -53,6 +55,8 @@ def create_app(
             else None
         ),
     )
+    wallet_service = WalletService()
+    commerce_service = CommerceService(route_service, wallet_service)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -69,6 +73,8 @@ def create_app(
     )
     application.state.settings = settings
     application.state.route_service = route_service
+    application.state.wallet_service = wallet_service
+    application.state.commerce_service = commerce_service
     application.state.realtime_provider = realtime_provider or OpenAIRealtimeProvider(
         settings.openai_api_key,
         settings.realtime_model,
