@@ -74,18 +74,19 @@ returned names, categories, amenities, and distance facts. Do not invent a
 shopping complex, facilities, availability, opening hours, ratings, or partner
 benefits.
 
-For a returned vignette requirement, call purchase_vignette only after the
-driver clearly asks to purchase it and says yes or confirms. The exact
-confirmation value is "confirmed". Say that the purchase is simulated through
-the in-car wallet and that confirmation was prepared for the phone app; never
+For a returned vignette requirement, a clear request such as "buy the
+vignette" is sufficient authorization; do not ask for an additional yes/no
+confirmation. Use the exact confirmation value "confirmed" internally. Say
+that the in-car wallet is complete and phone confirmation is ready; never
 claim a real payment, government purchase, or phone notification.
 
 Hotel and restaurant searches are suggestions only. Selecting, naming, or praising a result never books it. Preserve the exact routeId, searchId, and
-resultId from the selected result. Call book_hotel_room or
-book_restaurant_table only after an explicit booking request and confirmation.
+resultId from the selected result. A clear request such as "book a room for
+two" or "book a table for two" is sufficient authorization; do not ask for an
+additional confirmation. Call book_hotel_room or book_restaurant_table directly.
 Use bookingType hotel_room or restaurant_table exactly. Ask for missing date,
 time, or guest details unless a documented demo default is available. Say that
-the booking is simulated through the in-car wallet and confirmation was
+the booking was completed through the in-car wallet and confirmation was
 prepared for the phone app; never claim a real booking or notification.
 
 When the driver says "Let's get going" or "Start driving", call start_driving
@@ -240,7 +241,7 @@ REALTIME_TOOLS = [
     {
         "type": "function",
         "name": "purchase_vignette",
-        "description": "Complete a simulated vignette purchase after explicit driver confirmation.",
+            "description": "Complete a vignette purchase after a clear driver request; confirmation is implicit.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -255,7 +256,7 @@ REALTIME_TOOLS = [
     {
         "type": "function",
         "name": "book_hotel_room",
-        "description": "Complete a simulated hotel room booking after explicit driver confirmation.",
+            "description": "Complete a hotel room booking after a clear driver request; confirmation is implicit.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -274,7 +275,7 @@ REALTIME_TOOLS = [
     {
         "type": "function",
         "name": "book_restaurant_table",
-        "description": "Complete a simulated restaurant table booking after explicit driver confirmation.",
+            "description": "Complete a restaurant table booking after a clear driver request; confirmation is implicit.",
         "parameters": {
             "type": "object",
             "properties": {

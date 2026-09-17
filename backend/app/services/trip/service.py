@@ -24,6 +24,7 @@ from ...models.contracts import (
 )
 from .country_rules import derive_requirements, detect_border_crossings
 from .deterministic import (
+    MIN_CHARGER_PROGRESS_KM,
     POI_COORDINATE_TOLERANCE,
     enrich_partner,
     estimate_charging_duration_minutes,
@@ -218,20 +219,25 @@ class RouteService:
                         "No suitable charging stop was found for this route.",
                     )
                 legacy_candidate = next(
-                    (
-                        candidate
-                        for candidate in enriched_candidates
-                        if candidate.compatible
-                        and candidate.available
-                        and candidate.distance_from_origin_km is not None
-                        and candidate.distance_from_origin_km <= reachable_distance_km
+                    iter(
+                        sorted(
+                            (
+                                candidate
+                                for candidate in enriched_candidates
+                                if candidate.compatible
+                                and candidate.available
+                                and candidate.distance_from_origin_km is not None
+                                and MIN_CHARGER_PROGRESS_KM
+                                <= candidate.distance_from_origin_km
+                                <= reachable_distance_km
+                            ),
+                            key=lambda candidate: candidate.distance_from_origin_km or 0,
+                            reverse=True,
+                        )
                     ),
                     None,
                 )
-                if (
-                    legacy_candidate is not None
-                    and legacy_candidate.charging_duration_minutes > 0
-                ):
+                if legacy_candidate is not None:
                     selected_candidates = [legacy_candidate]
                 else:
                     raise APIError(

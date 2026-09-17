@@ -62,6 +62,30 @@ class CommerceService:
             booking_time=booking_time, request_key=request_key,
         )
 
+    async def book_hotel_room(
+        self, *, route_id: str, search_id: str, result_id: str,
+        booking_type: str, guests: int, date: str,
+        time: str | None = None, confirmation: str,
+        request_key: str | None = None,
+    ):
+        return await self.book(
+            route_id=route_id, search_id=search_id, result_id=result_id,
+            booking_type=booking_type, guests=guests, confirmation=confirmation,
+            booking_date=date, booking_time=time, request_key=request_key,
+        )
+
+    async def book_restaurant_table(
+        self, *, route_id: str, search_id: str, result_id: str,
+        booking_type: str, guests: int, date: str,
+        time: str | None = None, confirmation: str,
+        request_key: str | None = None,
+    ):
+        return await self.book(
+            route_id=route_id, search_id=search_id, result_id=result_id,
+            booking_type=booking_type, guests=guests, confirmation=confirmation,
+            booking_date=date, booking_time=time, request_key=request_key,
+        )
+
     def _require_active_route(self, route_id: str) -> None:
         if route_id != getattr(self._route_service, "active_route_id", None):
             raise APIError(409, "STALE_ROUTE", "The selected route is no longer current.")

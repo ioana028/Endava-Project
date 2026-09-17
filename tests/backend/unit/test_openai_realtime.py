@@ -148,7 +148,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "confirmed"
     ]
     assert tools[8]["parameters"]["required"] == ["routeId"]
-    assert "simulated through" in instructions
+    assert "in-car wallet" in instructions
     assert "Selecting, naming, or praising a result never books it" in instructions
 
 

@@ -1,4 +1,5 @@
 from collections.abc import Awaitable
+from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -59,6 +60,16 @@ async def _call_service(
 
 
 def _validate_response(model: type[Any], result: Any) -> Any:
+    if is_dataclass(result):
+        result = asdict(result)
+    if isinstance(result, dict) and "booking_id" in result and "status" not in result:
+        result["status"] = "completed"
+    if isinstance(result, dict):
+        result = {
+            field_name: result[field_name]
+            for field_name in model.model_fields
+            if field_name in result
+        }
     return model.model_validate(result)
 
 
