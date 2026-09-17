@@ -25,8 +25,8 @@ from .deterministic import (
     enrich_partner,
     estimate_charging_duration_minutes,
     route_progress_km,
+    select_chargers_iteratively,
     select_stop_amenities,
-    select_charger,
     select_route_stops,
 )
 from .fixture_providers import FixtureChargingProvider
@@ -79,6 +79,21 @@ class RouteService:
     def active_search_id(self) -> str | None:
         return self._active_search_id
 
+    @property
+    def active_search_results(self) -> dict[str, StopPinpoint]:
+        return dict(self._active_search_results)
+
+    @property
+    def active_route_requirements(self) -> tuple[RouteRequirement, ...]:
+        if self._active_provider_route is None or self._active_origin is None or self._active_destination is None:
+            return ()
+        _, requirements = self._route_facts(
+            self._active_provider_route,
+            self._active_origin.display_name,
+            self._active_destination.display_name,
+        )
+        return tuple(requirements)
+
     async def plan(self, intent: AssistantIntent) -> RouteResponse:
         try:
             origin = await self._provider.geocode(self._origin)
@@ -128,30 +143,60 @@ class RouteService:
                 )
                 for candidate in candidates
             )
-            candidate = select_charger(enriched_candidates, reachable_distance_km)
-            if candidate is None:
-                raise APIError(
-                    422,
-                    "NO_SUITABLE_CHARGER",
-                    "No suitable charging stop was found for this route.",
-                )
-
-            charger_progress_km = candidate.distance_from_origin_km or 0
-            charging_duration_minutes = estimate_charging_duration_minutes(
-                candidate,
-                provider_route.distance_meters / 1000,
-                charger_progress_km,
-                self._fixture_repository.fixtures.telemetry.estimated_range_km,
+            selected_candidates = select_chargers_iteratively(
+                enriched_candidates,
+                initial_distance_km,
+                reachable_distance_km,
                 self._safety_buffer_km,
-                self._fixture_repository.fixtures.telemetry.consumption_rate_kwh,
             )
-            charging_stop = candidate.stop.model_copy(update={"mandatory": True})
-            charging_stop = charging_stop.model_copy(
-                update={
-                    "charging_duration_minutes": charging_duration_minutes
-                }
-            )
-            stops.append(charging_stop)
+            if selected_candidates is None:
+                if not enriched_candidates:
+                    raise APIError(
+                        422,
+                        "NO_SUITABLE_CHARGER",
+                        "No suitable charging stop was found for this route.",
+                    )
+                legacy_candidate = next(
+                    (
+                        candidate
+                        for candidate in enriched_candidates
+                        if candidate.compatible
+                        and candidate.available
+                        and candidate.distance_from_origin_km is not None
+                        and candidate.distance_from_origin_km <= reachable_distance_km
+                    ),
+                    None,
+                )
+                if (
+                    legacy_candidate is not None
+                    and legacy_candidate.charging_duration_minutes > 0
+                ):
+                    selected_candidates = [legacy_candidate]
+                else:
+                    raise APIError(
+                        422,
+                        "NO_SAFE_CHARGING_PLAN",
+                        "No safe sequence of compatible charging stops was found for this route.",
+                    )
+
+            for candidate in selected_candidates:
+                charger_progress_km = candidate.distance_from_origin_km or 0
+                charging_duration_minutes = estimate_charging_duration_minutes(
+                    candidate,
+                    provider_route.distance_meters / 1000,
+                    charger_progress_km,
+                    self._fixture_repository.fixtures.telemetry.estimated_range_km,
+                    self._safety_buffer_km,
+                    self._fixture_repository.fixtures.telemetry.consumption_rate_kwh,
+                )
+                stops.append(
+                    candidate.stop.model_copy(
+                        update={
+                            "mandatory": True,
+                            "charging_duration_minutes": charging_duration_minutes,
+                        }
+                    )
+                )
 
             if not self._supports_waypoints():
                 raise APIError(
@@ -160,15 +205,16 @@ class RouteService:
                     "The routing service cannot route through a charging stop.",
                 )
 
-            waypoint = GeocodedPlace(
-                charging_stop.name,
-                Coordinates(
-                    lng=charging_stop.coords[0], lat=charging_stop.coords[1]
-                ),
+            waypoints = tuple(
+                GeocodedPlace(
+                    stop.name,
+                    Coordinates(lng=stop.coords[0], lat=stop.coords[1]),
+                )
+                for stop in stops
             )
             try:
                 provider_route = await self._provider.route(
-                    origin, destination, intent.priority, (waypoint,)
+                    origin, destination, intent.priority, waypoints
                 )
             except (RoutingProviderError, OSError) as error:
                 raise APIError(

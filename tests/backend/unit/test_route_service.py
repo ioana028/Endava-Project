@@ -12,10 +12,16 @@ from backend.app.models.contracts import (
     StopPinpoint,
 )
 from backend.app.services.trip.ports import (
+    ChargingCandidate,
     GeocodedPlace,
     InvalidDestinationError,
     ProviderRoute,
     RoutingProviderError,
+)
+from backend.app.services.trip.deterministic import (
+    estimate_eta_minutes,
+    route_remaining_distance_km,
+    select_chargers_iteratively,
 )
 from backend.app.services.trip.service import RouteService
 
@@ -322,4 +328,31 @@ def test_invalid_provider_route_returns_stable_api_error(
 
     assert error.value.status_code == 503
     assert error.value.code == "INVALID_ROUTE"
+
+
+def test_long_route_selects_multiple_chargers_in_route_order() -> None:
+    candidates = tuple(
+        ChargingCandidate(
+            stop=StopPinpoint(
+                id=f"charger-{progress}",
+                name=f"Charger {progress}",
+                category="charging",
+                coords=(16.37 + progress / 100, 48.20),
+            ),
+            distance_from_origin_km=progress,
+        )
+        for progress in (80, 160, 230)
+    )
+
+    selected = select_chargers_iteratively(
+        candidates, route_distance_km=300, vehicle_range_km=100, safety_buffer_km=10
+    )
+
+    assert selected is not None
+    assert [item.stop.id for item in selected] == ["charger-80", "charger-160", "charger-230"]
+
+
+def test_route_progress_helpers_report_remaining_distance_and_eta() -> None:
+    assert route_remaining_distance_km(300, 160) == 140
+    assert estimate_eta_minutes(140, 70) == 120
 
