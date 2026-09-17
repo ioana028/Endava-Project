@@ -185,8 +185,9 @@ def select_chargers_iteratively(
     route_distance_km: float,
     vehicle_range_km: float,
     safety_buffer_km: float,
+    max_charged_range_km: float | None = None,
 ) -> list[ChargingCandidate] | None:
-    """Select the furthest reachable charger at each leg of a route."""
+    """Select chargers using initial range first, then post-charge range."""
     ordered = sorted(
         (
             candidate
@@ -203,10 +204,15 @@ def select_chargers_iteratively(
             candidate.stop.id,
         ),
     )
-    safe_leg_km = max(0.0, vehicle_range_km - safety_buffer_km)
+    charged_range_km = max_charged_range_km or vehicle_range_km
+    initial_safe_leg_km = max(0.0, vehicle_range_km - safety_buffer_km)
+    charged_safe_leg_km = max(0.0, charged_range_km - safety_buffer_km)
     selected: list[ChargingCandidate] = []
     previous_progress_km = 0.0
-    while route_distance_km - previous_progress_km > safe_leg_km:
+    while route_distance_km - previous_progress_km > (
+        initial_safe_leg_km if not selected else charged_safe_leg_km
+    ):
+        safe_leg_km = initial_safe_leg_km if not selected else charged_safe_leg_km
         reachable = [
             candidate
             for candidate in ordered

@@ -352,6 +352,32 @@ def test_long_route_selects_multiple_chargers_in_route_order() -> None:
     assert [item.stop.id for item in selected] == ["charger-80", "charger-160", "charger-230"]
 
 
+def test_charged_range_prevents_unnecessary_second_stop() -> None:
+    candidates = tuple(
+        ChargingCandidate(
+            stop=StopPinpoint(
+                id=f"charger-{progress}",
+                name=f"Charger {progress}",
+                category="charging",
+                coords=(16.37 + progress / 100, 48.20),
+            ),
+            distance_from_origin_km=progress,
+        )
+        for progress in (80, 160)
+    )
+
+    selected = select_chargers_iteratively(
+        candidates,
+        route_distance_km=244,
+        vehicle_range_km=95,
+        safety_buffer_km=10,
+        max_charged_range_km=250,
+    )
+
+    assert selected is not None
+    assert [item.stop.id for item in selected] == ["charger-80"]
+
+
 def test_route_progress_helpers_report_remaining_distance_and_eta() -> None:
     assert route_remaining_distance_km(300, 160) == 140
     assert estimate_eta_minutes(140, 70) == 120

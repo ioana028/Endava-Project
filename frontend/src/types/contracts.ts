@@ -186,6 +186,7 @@ export interface VehicleTelemetry {
   propulsion: 'BEV';
   batteryPercent: number;
   estimatedRangeKm: number;
+  maxChargedRangeKm: number;
   consumptionRateKwh: number;
   tyres: 'SUMMER' | 'WINTER' | 'ALL_SEASON';
   odometerKm: number;

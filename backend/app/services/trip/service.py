@@ -170,6 +170,10 @@ class RouteService:
         initial_distance_km = round(provider_route.distance_meters / 1000, 2)
         safe_distance_km = self._safe_distance_km()
         reachable_distance_km = self._fixture_repository.fixtures.telemetry.estimated_range_km
+        max_charged_range_km = (
+            self._fixture_repository.fixtures.telemetry.max_charged_range_km
+            or reachable_distance_km
+        )
         stops: list[StopPinpoint] = []
 
         if initial_distance_km > safe_distance_km:
@@ -204,6 +208,7 @@ class RouteService:
                 initial_distance_km,
                 reachable_distance_km,
                 self._safety_buffer_km,
+                max_charged_range_km,
             )
             if selected_candidates is None:
                 if not enriched_candidates:

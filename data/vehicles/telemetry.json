@@ -3,6 +3,7 @@
   "propulsion": "BEV",
   "batteryPercent": 42,
   "estimatedRangeKm": 95,
+  "maxChargedRangeKm": 250,
   "consumptionRateKwh": 17.2,
   "tyres": "SUMMER",
   "odometerKm": 14250
