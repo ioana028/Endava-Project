@@ -71,6 +71,12 @@ export interface DrivingState extends StartDrivingResponse {
   active: boolean
 }
 
+export interface SuccessFeedback {
+  action: 'purchase' | 'booking' | 'driving'
+  label: string
+  reference: string
+}
+
 function createRouteResponse(
   route: RouteResponse,
   priority: AssistantResponse['intent']['priority'],
@@ -241,6 +247,7 @@ export function useRealtimeAssistant() {
   const [purchase, setPurchase] = useState<PurchaseState | null>(null)
   const [booking, setBooking] = useState<BookingState | null>(null)
   const [driving, setDriving] = useState<DrivingState | null>(null)
+  const [successFeedback, setSuccessFeedback] = useState<SuccessFeedback | null>(null)
   const [selectedBookingPoi, setSelectedBookingPoi] = useState<StopPinpoint | null>(null)
   const [telemetry, setTelemetry] = useState<RealtimeTelemetry>({})
   const [error, setError] = useState<string | null>(null)
@@ -259,6 +266,7 @@ export function useRealtimeAssistant() {
   const assistantTranscriptRef = useRef('')
   const startingRef = useRef(false)
   const toolRequestIdRef = useRef(0)
+  const successFeedbackTimerRef = useRef<number | null>(null)
 
   function recordTelemetry(name: keyof RealtimeTelemetry) {
     setTelemetry((current) => ({ ...current, [name]: performance.now() }))
@@ -268,6 +276,17 @@ export function useRealtimeAssistant() {
     channelRef.current?.send(JSON.stringify(event))
   }
 
+  function showSuccessFeedback(feedback: SuccessFeedback) {
+    if (successFeedbackTimerRef.current !== null) {
+      window.clearTimeout(successFeedbackTimerRef.current)
+    }
+    setSuccessFeedback(feedback)
+    successFeedbackTimerRef.current = window.setTimeout(() => {
+      setSuccessFeedback(null)
+      successFeedbackTimerRef.current = null
+    }, 4500)
+  }
+
   function closeSession() {
     startingRef.current = false
     connectionAbortRef.current?.abort()
@@ -275,6 +294,11 @@ export function useRealtimeAssistant() {
     toolAbortRef.current?.abort()
     toolAbortRef.current = null
     toolRequestIdRef.current += 1
+    if (successFeedbackTimerRef.current !== null) {
+      window.clearTimeout(successFeedbackTimerRef.current)
+      successFeedbackTimerRef.current = null
+    }
+    setSuccessFeedback(null)
     pendingRouteRef.current = null
     assistantTranscriptRef.current = ''
     channelRef.current?.close()
@@ -386,11 +410,26 @@ export function useRealtimeAssistant() {
         if (event.name === 'purchase_vignette') {
           const purchaseResult = result as PurchaseVignetteResponse
           setPurchase({ ...purchaseResult, status: purchaseResult.status })
+          showSuccessFeedback({
+            action: 'purchase',
+            label: 'Vignette purchase confirmed',
+            reference: purchaseResult.transactionId,
+          })
         } else if (event.name === 'book_hotel_room' || event.name === 'book_restaurant_table') {
           const bookingResult = result as BookingResponse
           setBooking({ ...bookingResult, status: bookingResult.status })
+          showSuccessFeedback({
+            action: 'booking',
+            label: `${bookingResult.bookingType === 'hotel_room' ? 'Hotel room' : 'Restaurant table'} confirmed`,
+            reference: bookingResult.bookingId,
+          })
         } else if (event.name === 'start_driving') {
           setDriving({ ...result as StartDrivingResponse, active: true })
+          showSuccessFeedback({
+            action: 'driving',
+            label: 'Driving mode active',
+            reference: 'route-active',
+          })
         } else {
           setAmenityResults([])
           setAmenitySearchContext(null)
@@ -829,6 +868,7 @@ export function useRealtimeAssistant() {
     driving,
     selectedBookingPoi,
     telemetry,
+    successFeedback,
     selectPoi,
     error,
     enable,

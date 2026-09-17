@@ -1,4 +1,6 @@
+import logging
 import re
+from time import monotonic
 
 import httpx
 
@@ -14,6 +16,7 @@ from ...services.trip.ports import (
 GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
 _DURATION_PATTERN = re.compile(r"^(?P<seconds>[0-9]+(?:\.[0-9]+)?)s$")
+LOGGER = logging.getLogger(__name__)
 
 
 class GoogleMapsRoutingProvider:
@@ -25,6 +28,7 @@ class GoogleMapsRoutingProvider:
         if not self._api_key:
             raise RoutingProviderError("GOOGLE_SERVER_API_KEY is not configured")
 
+        started_at = monotonic()
         try:
             async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
                 response = await client.get(
@@ -34,6 +38,12 @@ class GoogleMapsRoutingProvider:
                 response.raise_for_status()
                 payload = response.json()
         except (httpx.HTTPError, AttributeError, ValueError, TypeError) as error:
+            LOGGER.warning(
+                "geocode_ms=%d place=%s error=%s",
+                round((monotonic() - started_at) * 1000),
+                place,
+                type(error).__name__,
+            )
             raise RoutingProviderError("Google geocoding request failed") from error
 
         results = payload.get("results") or []
@@ -47,6 +57,8 @@ class GoogleMapsRoutingProvider:
         except (KeyError, TypeError, ValueError) as error:
             raise RoutingProviderError("Google geocoding response was invalid") from error
 
+        latency_ms = round((monotonic() - started_at) * 1000)
+        LOGGER.info("geocode_ms=%d place=%s", latency_ms, place)
         return GeocodedPlace(
             display_name=result.get("formatted_address", place),
             coordinates=coordinates,
@@ -62,6 +74,7 @@ class GoogleMapsRoutingProvider:
         if not self._api_key:
             raise RoutingProviderError("GOOGLE_SERVER_API_KEY is not configured")
 
+        started_at = monotonic()
         request = {
             "origin": {"location": {"latLng": self._lat_lng(origin)}},
             "destination": {"location": {"latLng": self._lat_lng(destination)}},
@@ -92,6 +105,11 @@ class GoogleMapsRoutingProvider:
                 response.raise_for_status()
                 payload = response.json()
         except (httpx.HTTPError, AttributeError, ValueError, TypeError) as error:
+            LOGGER.warning(
+                "route_provider_ms=%d error=%s",
+                round((monotonic() - started_at) * 1000),
+                type(error).__name__,
+            )
             raise RoutingProviderError("Google route request failed") from error
 
         try:
@@ -114,13 +132,25 @@ class GoogleMapsRoutingProvider:
                 for price in (route.get("travelAdvisory", {}).get("tollInfo", {})
                               .get("estimatedPrice", []) or [])
             )
-            return ProviderRoute(
+            provider_route = ProviderRoute(
                 distance_meters=float(route["distanceMeters"]),
                 duration_seconds=float(duration.group("seconds")),
                 geometry=geometry,
                 tolls=tolls,
             )
+            LOGGER.info(
+                "route_provider_ms=%d distance_meters=%s duration_seconds=%s",
+                round((monotonic() - started_at) * 1000),
+                provider_route.distance_meters,
+                provider_route.duration_seconds,
+            )
+            return provider_route
         except (IndexError, KeyError, TypeError, ValueError) as error:
+            LOGGER.warning(
+                "route_provider_ms=%d error=%s",
+                round((monotonic() - started_at) * 1000),
+                type(error).__name__,
+            )
             raise RoutingProviderError("Google route response was invalid") from error
 
     @staticmethod

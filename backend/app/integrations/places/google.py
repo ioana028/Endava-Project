@@ -144,8 +144,9 @@ class GooglePlacesProvider:
     async def search_charging(
         self, route: ProviderRoute, max_distance_km: float
     ) -> tuple[ChargingCandidate, ...]:
+        started_at = monotonic()
         stops = await self.search("charging", location="route", route=route)
-        return tuple(
+        candidates = tuple(
             ChargingCandidate(
                 stop=stop,
                 distance_from_route_km=distance_to_route_km(
@@ -160,6 +161,13 @@ class GooglePlacesProvider:
             for stop in stops
             if route_progress_km(stop.coords, tuple(route.geometry)) <= max_distance_km
         )
+        LOGGER.info(
+            "charging_lookup_ms=%d candidate_count=%d route_distance_km=%s",
+            round((monotonic() - started_at) * 1000),
+            len(candidates),
+            round(route.distance_meters / 1000, 2),
+        )
+        return candidates
 
     def _to_stop(
         self,

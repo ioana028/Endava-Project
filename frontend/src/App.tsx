@@ -54,9 +54,18 @@ function App() {
             poiResults={assistant.poiResults}
             amenityResults={assistant.amenityResults}
             amenityFocusName={assistant.amenitySearchContext?.selectedStopName}
+            drivingActive={assistant.driving?.active ?? false}
             selectedPoiId={assistant.selectedPoi?.id}
             onPoiSelect={assistant.selectPoi}
           />
+          {assistant.driving?.active && (
+            <section className="driving-status" aria-live="polite">
+              <p className="panel-kicker">Driving mode</p>
+              <strong>{Math.round(assistant.driving.remainingDistanceKm)} km remaining</strong>
+              <span>{Math.round(assistant.driving.remainingDurationMinutes)} min · ETA {assistant.driving.eta}</span>
+              <span>{assistant.driving.nextStop ? `Next stop: ${assistant.driving.nextStop.name}` : 'No mandatory stop ahead'}</span>
+            </section>
+          )}
           {assistant.amenitySearchState !== 'IDLE' && assistant.amenitySearchContext && (
             <section className="amenity-results" aria-live="polite">
               <div className="section-heading">
@@ -104,7 +113,7 @@ function App() {
             <div className="vehicle-footnote"><span>Current charge</span><span>{telemetry ? `${telemetry.consumptionRateKwh.toFixed(1)} kWh / 100 km` : 'Telemetry loading'}</span></div>
           </section>
 
-          <div className={`utility-panel-stage${route ? ' has-route' : ''}`} aria-live="polite">
+          <div className={`utility-panel-stage${route && !assistant.driving?.active ? ' has-route' : ''}`} aria-live="polite">
             <section className="cockpit-card media-card utility-panel">
               <div className="media-art" aria-hidden="true" />
               <div><strong>Crystal Sky</strong><span>Luminous · Suzanne mix</span></div>
@@ -118,6 +127,28 @@ function App() {
               </section>
             )}
           </div>
+          {assistant.purchase && (
+            <section className="cockpit-card transaction-panel" aria-label="Wallet confirmation">
+              <p className="panel-kicker">In-car wallet</p>
+              <strong>Vignette {assistant.purchase.status}</strong>
+              <span>{assistant.purchase.phoneConfirmationStatus === 'sent' ? 'Phone confirmation sent' : 'Phone confirmation pending'}</span>
+              <span>Reference: {assistant.purchase.transactionId}</span>
+            </section>
+          )}
+          {assistant.booking && (
+            <section className="cockpit-card transaction-panel" aria-label="Booking confirmation">
+              <p className="panel-kicker">In-car wallet</p>
+              <strong>Booking {assistant.booking.status}</strong>
+              <span>{assistant.booking.phoneConfirmationStatus === 'sent' ? 'Phone confirmation sent' : 'Phone confirmation pending'}</span>
+              <span>Reference: {assistant.booking.bookingId}</span>
+            </section>
+          )}
+          {assistant.successFeedback && (
+            <div className="suzanne-success" role="status" aria-live="assertive">
+              <span className="suzanne-check" aria-hidden="true">✓</span>
+              <span>{assistant.successFeedback.label}</span>
+            </div>
+          )}
         </aside>
       </section>
 

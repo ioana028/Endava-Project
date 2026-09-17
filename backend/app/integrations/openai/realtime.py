@@ -1,7 +1,11 @@
+import logging
+from time import monotonic
 from typing import Protocol
 
 from ...core.errors import APIError
 
+
+LOGGER = logging.getLogger(__name__)
 
 REALTIME_INSTRUCTIONS = """
 You are Suzanne, the driver's friendly in-car companion.
@@ -76,8 +80,7 @@ confirmation value is "confirmed". Say that the purchase is simulated through
 the in-car wallet and that confirmation was prepared for the phone app; never
 claim a real payment, government purchase, or phone notification.
 
-Hotel and restaurant searches are suggestions only. Selecting, naming, or
-praising a result never books it. Preserve the exact routeId, searchId, and
+Hotel and restaurant searches are suggestions only. Selecting, naming, or praising a result never books it. Preserve the exact routeId, searchId, and
 resultId from the selected result. Call book_hotel_room or
 book_restaurant_table only after an explicit booking request and confirmation.
 Use bookingType hotel_room or restaurant_table exactly. Ask for missing date,
@@ -339,6 +342,7 @@ class OpenAIRealtimeProvider:
                 "Realtime voice is not configured.",
             )
 
+        started_at = monotonic()
         try:
             from openai import AsyncOpenAI
 
@@ -362,6 +366,11 @@ class OpenAIRealtimeProvider:
         except APIError:
             raise
         except Exception as error:
+            LOGGER.warning(
+                "session_secret_request_ms=%d error=%s",
+                round((monotonic() - started_at) * 1000),
+                type(error).__name__,
+            )
             raise APIError(
                 503,
                 "REALTIME_UNAVAILABLE",
@@ -374,4 +383,8 @@ class OpenAIRealtimeProvider:
                 "REALTIME_UNAVAILABLE",
                 "The Realtime voice service returned an invalid session.",
             )
+        LOGGER.info(
+            "session_secret_request_ms=%d",
+            round((monotonic() - started_at) * 1000),
+        )
         return response.value

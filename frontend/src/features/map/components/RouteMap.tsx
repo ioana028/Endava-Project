@@ -71,6 +71,7 @@ interface RouteMapProps {
   poiResults?: StopPinpoint[]
   amenityResults?: StopPinpoint[]
   amenityFocusName?: string | null
+  drivingActive?: boolean
   selectedPoiId?: string | null
   onPoiSelect?: (poiId: string) => void
 }
@@ -80,6 +81,7 @@ export function RouteMap({
   poiResults = [],
   amenityResults = [],
   amenityFocusName = null,
+  drivingActive = false,
   selectedPoiId = null,
   onPoiSelect,
 }: RouteMapProps) {
@@ -447,23 +449,37 @@ export function RouteMap({
   }, [route])
 
   useEffect(() => {
-    if (!mapReady || !mapRef.current || !route || !amenityFocusName) {
+    if (!mapReady || !mapRef.current || !route) {
       return
     }
 
-    const selectedStop = route.stops.find(
-      (stop) => stop.category === 'charging' && stop.name === amenityFocusName,
-    )
-    if (!selectedStop) {
+    if (amenityFocusName) {
+      const selectedStop = route.stops.find(
+        (stop) => stop.category === 'charging' && stop.name === amenityFocusName,
+      )
+      if (!selectedStop) {
+        return
+      }
+
+      mapRef.current.panTo({
+        lat: selectedStop.coords[1],
+        lng: selectedStop.coords[0],
+      })
+      mapRef.current.setZoom(16)
       return
     }
 
-    mapRef.current.panTo({
-      lat: selectedStop.coords[1],
-      lng: selectedStop.coords[0],
-    })
-    mapRef.current.setZoom(16)
-  }, [amenityFocusName, mapReady, route])
+    const path = toGooglePath(route.geometry)
+    const bounds = new google.maps.LatLngBounds()
+    path.forEach((point) => bounds.extend(point))
+    mapRef.current.setTilt(drivingActive ? 45 : 25)
+    if (drivingActive) {
+      mapRef.current.panTo(path[0])
+      mapRef.current.setZoom(15)
+    } else {
+      mapRef.current.fitBounds(bounds, 48)
+    }
+  }, [amenityFocusName, drivingActive, mapReady, route])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) {

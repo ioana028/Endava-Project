@@ -1,5 +1,7 @@
 import inspect
 from datetime import datetime, timedelta
+import logging
+from time import monotonic
 from uuid import uuid4
 
 from ...core.errors import APIError
@@ -40,11 +42,11 @@ from .ports import (
     JourneyProviderError,
     RoutingProvider,
     RoutingProviderError,
-    JourneyProviderError,
 )
 
 
 DEFAULT_ORIGIN = "Vienna, Austria"
+LOGGER = logging.getLogger(__name__)
 
 
 class RouteService:
@@ -148,6 +150,7 @@ class RouteService:
         )
 
     async def plan(self, intent: AssistantIntent) -> RouteResponse:
+        started_at = monotonic()
         try:
             origin = await self._provider.geocode(self._origin)
             destination = await self._provider.geocode(intent.destination)
@@ -286,6 +289,12 @@ class RouteService:
         self._active_priority = intent.priority
         self._active_stops = list(stops)
         self._active_search_results = {}
+        LOGGER.info(
+            "total_route_plan_ms=%d destination=%s charging_stop=%s",
+            round((monotonic() - started_at) * 1000),
+            intent.destination,
+            route_response.charging_stop.name if route_response.charging_stop else "none",
+        )
         return route_response
 
     async def search_route_poi(
@@ -294,6 +303,7 @@ class RouteService:
         location: str | None = None,
         preference: str | None = None,
     ) -> list[StopPinpoint]:
+        started_at = monotonic()
         try:
             if self._active_provider_route is None:
                 raise APIError(
@@ -336,6 +346,14 @@ class RouteService:
                 )
             self._active_search_id = uuid4().hex
             self._active_search_results = {result.id: result for result in results}
+            LOGGER.info(
+                "tool_call_ms=%d tool=%s category=%s location=%s result_count=%d",
+                round((monotonic() - started_at) * 1000),
+                "search_route_poi",
+                category,
+                location or "route",
+                len(results),
+            )
             return results
         except ValueError as error:
             raise APIError(
@@ -416,6 +434,7 @@ class RouteService:
         coords: tuple[float, float] | None = None,
         priority=None,
     ) -> RouteResponse:
+        started_at = monotonic()
         if (
             self._active_provider_route is None
             or self._active_origin is None
@@ -473,6 +492,13 @@ class RouteService:
         self._active_route_id = uuid4().hex
         self._active_search_id = None
         self._active_search_results = {}
+        LOGGER.info(
+            "tool_call_ms=%d tool=%s route_id=%s result_count=%d",
+            round((monotonic() - started_at) * 1000),
+            "reroute_through_poi",
+            self._active_route_id,
+            len(route_response.stops),
+        )
         return route_response
 
     @staticmethod
