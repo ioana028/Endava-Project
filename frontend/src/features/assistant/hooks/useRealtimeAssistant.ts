@@ -299,7 +299,7 @@ export function useRealtimeAssistant() {
     successFeedbackTimerRef.current = window.setTimeout(() => {
       setSuccessFeedback(null)
       successFeedbackTimerRef.current = null
-    }, 4500)
+    }, 5000)
   }
 
   function closeSession() {

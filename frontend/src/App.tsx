@@ -93,12 +93,13 @@ function App() {
 
         <aside className="cockpit-rail">
           <section className="suzanne-orb-panel">
-            {assistant.booking ? (
-              <div className="booking-confirmation" role="status" aria-live="assertive">
-                <p className="eyebrow">Booking confirmed</p>
-                <h1>{assistant.booking.bookingType === 'hotel_room' ? 'Hotel room booked' : 'Restaurant table booked'}</h1>
-                <strong>{assistant.booking.phoneConfirmationStatus === 'sent' ? 'Phone confirmation sent' : 'Confirmation pending'}</strong>
-                <span>Reference: {assistant.booking.bookingId}</span>
+            {assistant.successFeedback && (assistant.successFeedback.action === 'booking' || assistant.successFeedback.action === 'purchase') ? (
+              <div className="action-confirmation" role="status" aria-live="assertive">
+                <span className="confirmation-check" aria-hidden="true">✓</span>
+                <p className="eyebrow">Complete</p>
+                <h1>{assistant.successFeedback.label}</h1>
+                <strong>Confirmation ready</strong>
+                <span>Reference: {assistant.successFeedback.reference}</span>
               </div>
             ) : (
               <>
@@ -138,28 +139,6 @@ function App() {
               </section>
             )}
           </div>
-          {assistant.purchase && (
-            <section className="cockpit-card transaction-panel" aria-label="Wallet confirmation">
-              <p className="panel-kicker">In-car wallet</p>
-              <strong>Vignette {assistant.purchase.status}</strong>
-              <span>{assistant.purchase.phoneConfirmationStatus === 'sent' ? 'Phone confirmation sent' : 'Phone confirmation pending'}</span>
-              <span>Reference: {assistant.purchase.transactionId}</span>
-            </section>
-          )}
-          {assistant.booking && (
-            <section className="cockpit-card transaction-panel" aria-label="Booking confirmation">
-              <p className="panel-kicker">In-car wallet</p>
-              <strong>Booking {assistant.booking.status}</strong>
-              <span>{assistant.booking.phoneConfirmationStatus === 'sent' ? 'Phone confirmation sent' : 'Phone confirmation pending'}</span>
-              <span>Reference: {assistant.booking.bookingId}</span>
-            </section>
-          )}
-          {assistant.successFeedback && (
-            <div className="suzanne-success" role="status" aria-live="assertive">
-              <span className="suzanne-check" aria-hidden="true">✓</span>
-              <span>{assistant.successFeedback.label}</span>
-            </div>
-          )}
         </aside>
       </section>
 
