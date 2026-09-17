@@ -51,6 +51,7 @@ def test_duplicate_purchase_returns_existing_transaction() -> None:
 
     assert first.transaction_id == duplicate.transaction_id
     assert duplicate.status.value == "duplicate"
+    assert first.amount_eur == 16.5
 
 
 def test_stale_requirement_and_search_are_rejected() -> None:

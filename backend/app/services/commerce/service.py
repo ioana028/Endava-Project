@@ -1,5 +1,6 @@
 from ...core.errors import APIError
 from ..wallet.service import WalletService
+from .catalog import vignette_amount_eur
 
 
 class CommerceService:
@@ -27,6 +28,7 @@ class CommerceService:
             route_id=route_id,
             requirement_id=requirement_id,
             request_key=request_key,
+            amount_eur=vignette_amount_eur(requirement_id),
         )
 
     async def book(

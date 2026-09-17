@@ -37,6 +37,21 @@ def test_phone_confirmation_can_be_sent_for_transaction() -> None:
     assert updated.phone_confirmation_status == PhoneConfirmationStatus.SENT
 
 
+def test_declined_purchase_and_failed_phone_confirmation_are_simulated() -> None:
+    wallet = WalletService()
+    declined = asyncio.run(
+        wallet.decline_purchase(route_id="route-1", requirement_id="req-1")
+    )
+    transaction = asyncio.run(
+        wallet.process_purchase(route_id="route-2", requirement_id="req-2")
+    )
+    failed = asyncio.run(wallet.fail_phone_confirmation(transaction.transaction_id))
+
+    assert declined.wallet_status == WalletStatus.DECLINED
+    assert declined.phone_confirmation_status == PhoneConfirmationStatus.FAILED
+    assert failed.phone_confirmation_status == PhoneConfirmationStatus.FAILED
+
+
 def test_wallet_purchase_transitions_from_processing_to_completed() -> None:
     wallet = WalletService()
     transaction = asyncio.run(
@@ -46,6 +61,15 @@ def test_wallet_purchase_transitions_from_processing_to_completed() -> None:
 
     assert transaction.wallet_status == WalletStatus.PROCESSING
     assert completed.wallet_status == WalletStatus.COMPLETED
+
+
+def test_wallet_can_prepare_purchase_in_ready_state() -> None:
+    transaction = asyncio.run(
+        WalletService().prepare_purchase(route_id="route-1", requirement_id="req-1")
+    )
+
+    assert transaction.wallet_status == WalletStatus.READY
+    assert transaction.phone_confirmation_status == PhoneConfirmationStatus.PENDING
 
 
 def test_booking_requires_guests_and_restaurant_time() -> None:
