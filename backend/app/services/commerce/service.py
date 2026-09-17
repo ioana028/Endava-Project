@@ -49,10 +49,10 @@ class CommerceService:
             raise APIError(409, "STALE_SEARCH", "The selected search is no longer current.")
         results = getattr(self._route_service, "active_search_results", {})
         result = results.get(result_id)
-        if result is None or result.category not in {"hotel", "restaurant", "food"}:
+        if result is None or result.category not in {"hotel", "restaurant"}:
             raise APIError(409, "STALE_RESULT", "The selected provider result is no longer current.")
         expected_category = "hotel" if booking_type == "hotel_room" else "restaurant"
-        if result.category not in {expected_category, "food"}:
+        if result.category != expected_category:
             raise APIError(422, "INVALID_BOOKING_TYPE", "Booking type does not match the selected result.")
         return await self._wallet.process_booking(
             route_id=route_id, search_id=search_id, result_id=result_id,

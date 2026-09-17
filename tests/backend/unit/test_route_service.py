@@ -356,3 +356,17 @@ def test_route_progress_helpers_report_remaining_distance_and_eta() -> None:
     assert route_remaining_distance_km(300, 160) == 140
     assert estimate_eta_minutes(140, 70) == 120
 
+
+def test_route_exposes_driving_facts_and_next_mandatory_stop() -> None:
+    route_service = RouteService(FakeRoutingProvider(distance_meters=243_000), repository())
+    asyncio.run(route_service.plan(intent()))
+
+    facts = route_service.route_state_facts()
+
+    assert facts["status"] == "active"
+    assert facts["route_id"] == route_service.active_route_id
+    assert facts["remaining_distance_km"] == 243
+    assert facts["remaining_duration_minutes"] == 165
+    assert facts["next_stop"]["category"] == "charging"
+    assert facts["charging_required"] is True
+

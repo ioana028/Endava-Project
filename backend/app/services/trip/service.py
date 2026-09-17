@@ -1,4 +1,5 @@
 import inspect
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from ...core.errors import APIError
@@ -24,7 +25,9 @@ from .deterministic import (
     POI_COORDINATE_TOLERANCE,
     enrich_partner,
     estimate_charging_duration_minutes,
+    estimate_eta_minutes,
     route_progress_km,
+    route_remaining_distance_km,
     select_chargers_iteratively,
     select_stop_amenities,
     select_route_stops,
@@ -93,6 +96,56 @@ class RouteService:
             self._active_destination.display_name,
         )
         return tuple(requirements)
+
+    def route_state_facts(self, progress_km: float = 0.0) -> dict[str, object]:
+        if self._active_provider_route is None or self._active_route_id is None:
+            raise APIError(409, "NO_ACTIVE_ROUTE", "Plan a route before requesting route facts.")
+        route_distance_km = self._active_provider_route.distance_meters / 1000
+        progress_km = min(max(progress_km, 0.0), route_distance_km)
+        remaining_distance_km = route_remaining_distance_km(route_distance_km, progress_km)
+        average_speed_kmh = (
+            route_distance_km / (self._active_provider_route.duration_seconds / 3600)
+            if self._active_provider_route.duration_seconds > 0
+            else 0
+        )
+        remaining_duration_minutes = estimate_eta_minutes(
+            remaining_distance_km, average_speed_kmh
+        ) if average_speed_kmh > 0 else 0.0
+        next_stop = self.next_mandatory_stop(progress_km)
+        eta = datetime.now() + timedelta(minutes=remaining_duration_minutes)
+        return {
+            "status": "active",
+            "route_id": self._active_route_id,
+            "remaining_distance_km": remaining_distance_km,
+            "remaining_duration_minutes": remaining_duration_minutes,
+            "eta": eta.strftime("%H:%M"),
+            "next_stop": (
+                {
+                    "id": next_stop.id,
+                    "name": next_stop.name,
+                    "category": next_stop.category,
+                }
+                if next_stop is not None else None
+            ),
+            "charging_required": next_stop is not None and next_stop.category == "charging",
+        }
+
+    def next_mandatory_stop(self, progress_km: float = 0.0) -> StopPinpoint | None:
+        if self._active_provider_route is None:
+            return None
+        candidates = (
+            stop for stop in self._active_stops
+            if stop.mandatory
+            and route_progress_km(stop.coords, tuple(self._active_provider_route.geometry))
+            > progress_km
+        )
+        return min(
+            candidates,
+            key=lambda stop: route_progress_km(
+                stop.coords, tuple(self._active_provider_route.geometry)
+            ),
+            default=None,
+        )
 
     async def plan(self, intent: AssistantIntent) -> RouteResponse:
         try:

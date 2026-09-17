@@ -108,3 +108,31 @@ def test_booking_does_not_change_route_context() -> None:
 
     assert booking.booking_type == "hotel_room"
     assert context.active_route_id == "route-1"
+
+
+def test_selection_context_alone_does_not_create_booking() -> None:
+    wallet = WalletService()
+    context = RouteContext()
+    CommerceService(context, wallet)
+
+    assert wallet._bookings == {}
+
+
+def test_restaurant_booking_is_idempotent() -> None:
+    commerce = service()
+    kwargs = {
+        "route_id": "route-1",
+        "search_id": "search-1",
+        "result_id": "restaurant-1",
+        "booking_type": "restaurant_table",
+        "guests": 2,
+        "booking_date": "2026-09-17",
+        "booking_time": "19:00",
+        "confirmation": "confirmed",
+    }
+
+    first = asyncio.run(commerce.book(**kwargs))
+    duplicate = asyncio.run(commerce.book(**kwargs))
+
+    assert duplicate.booking_id == first.booking_id
+    assert duplicate.guests == 2
