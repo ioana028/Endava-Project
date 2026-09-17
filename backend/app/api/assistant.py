@@ -1,3 +1,6 @@
+from collections.abc import Awaitable
+from typing import Any
+
 from fastapi import APIRouter, Request
 
 from ..core.errors import APIError
@@ -6,12 +9,20 @@ from ..models.contracts import (
     RealtimeSessionResponse,
     RealtimeToolRouteRequest,
     RealtimeToolRouteResponse,
+    RealtimeToolBookingRequest,
+    RealtimeToolBookingResponse,
+    RealtimeToolPurchaseVignetteRequest,
+    RealtimeToolPurchaseVignetteResponse,
+    RealtimeToolReturnToMainRouteRequest,
+    RealtimeToolReturnToMainRouteResponse,
     RealtimeToolRerouteRequest,
     RealtimeToolRerouteResponse,
     RealtimeToolSearchRoutePoiRequest,
     RealtimeToolSearchRoutePoiResponse,
     RealtimeToolSearchStopAmenitiesRequest,
     RealtimeToolSearchStopAmenitiesResponse,
+    RealtimeToolStartDrivingRequest,
+    RealtimeToolStartDrivingResponse,
 )
 
 
@@ -23,6 +34,32 @@ def _active_context_id(route_service: object, name: str) -> str | None:
     if public_value is not None:
         return public_value
     return getattr(route_service, f"_{name}", None)
+
+
+async def _call_service(
+    request: Request,
+    service_names: tuple[str, ...],
+    method_name: str,
+    **payload: Any,
+) -> Any:
+    for service_name in service_names:
+        service = getattr(request.app.state, service_name, None)
+        method = getattr(service, method_name, None)
+        if method is not None:
+            result = method(**payload)
+            if isinstance(result, Awaitable):
+                return await result
+            return result
+
+    raise APIError(
+        503,
+        f"{method_name.upper()}_UNAVAILABLE",
+        f"The {method_name.replace('_', ' ')} service is not available yet.",
+    )
+
+
+def _validate_response(model: type[Any], result: Any) -> Any:
+    return model.model_validate(result)
 
 
 @router.post(
@@ -130,3 +167,96 @@ async def realtime_reroute_through_poi(
         priority=payload.priority,
     )
     return RealtimeToolRerouteResponse(route=route)
+
+
+@router.post(
+    "/realtime/tools/purchase-vignette",
+    response_model=RealtimeToolPurchaseVignetteResponse,
+)
+async def realtime_purchase_vignette(
+    payload: RealtimeToolPurchaseVignetteRequest,
+    request: Request,
+) -> RealtimeToolPurchaseVignetteResponse:
+    result = await _call_service(
+        request,
+        ("commerce_service", "wallet_service", "route_service"),
+        "purchase_vignette",
+        **payload.model_dump(),
+    )
+    return _validate_response(RealtimeToolPurchaseVignetteResponse, result)
+
+
+@router.post(
+    "/realtime/tools/book-hotel-room",
+    response_model=RealtimeToolBookingResponse,
+)
+async def realtime_book_hotel_room(
+    payload: RealtimeToolBookingRequest,
+    request: Request,
+) -> RealtimeToolBookingResponse:
+    if payload.booking_type != "hotel_room":
+        raise APIError(422, "VALIDATION_ERROR", "The booking type must be hotel_room.")
+    result = await _call_service(
+        request,
+        ("booking_service", "commerce_service", "route_service"),
+        "book_hotel_room",
+        **payload.model_dump(),
+    )
+    return _validate_response(RealtimeToolBookingResponse, result)
+
+
+@router.post(
+    "/realtime/tools/book-restaurant-table",
+    response_model=RealtimeToolBookingResponse,
+)
+async def realtime_book_restaurant_table(
+    payload: RealtimeToolBookingRequest,
+    request: Request,
+) -> RealtimeToolBookingResponse:
+    if payload.booking_type != "restaurant_table":
+        raise APIError(
+            422,
+            "VALIDATION_ERROR",
+            "The booking type must be restaurant_table.",
+        )
+    result = await _call_service(
+        request,
+        ("booking_service", "commerce_service", "route_service"),
+        "book_restaurant_table",
+        **payload.model_dump(),
+    )
+    return _validate_response(RealtimeToolBookingResponse, result)
+
+
+@router.post(
+    "/realtime/tools/start-driving",
+    response_model=RealtimeToolStartDrivingResponse,
+)
+async def realtime_start_driving(
+    payload: RealtimeToolStartDrivingRequest,
+    request: Request,
+) -> RealtimeToolStartDrivingResponse:
+    result = await _call_service(
+        request,
+        ("route_service", "navigation_service"),
+        "start_driving",
+        **payload.model_dump(),
+    )
+    return _validate_response(RealtimeToolStartDrivingResponse, result)
+
+
+@router.post(
+    "/realtime/tools/return-to-main-route",
+    response_model=RealtimeToolReturnToMainRouteResponse,
+)
+async def realtime_return_to_main_route(
+    payload: RealtimeToolReturnToMainRouteRequest,
+    request: Request,
+) -> RealtimeToolReturnToMainRouteResponse:
+    result = await _call_service(
+        request,
+        ("route_service", "navigation_service"),
+        "return_to_main_route",
+        **payload.model_dump(),
+    )
+    return _validate_response(RealtimeToolReturnToMainRouteResponse, result)

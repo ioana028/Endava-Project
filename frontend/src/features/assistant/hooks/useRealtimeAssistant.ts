@@ -1,17 +1,25 @@
 import { useEffect, useRef, useState } from 'react'
 import type {
   AssistantResponse,
+  BookingResponse,
+  PurchaseVignetteResponse,
   RouteResponse,
+  StartDrivingResponse,
   StopPinpoint,
 } from '../../../types/contracts'
 import {
+  bookHotelRoomWithTool,
+  bookRestaurantTableWithTool,
   createRealtimeSession,
   getRealtimeToolErrorMessage,
   planRouteWithTool,
+  purchaseVignetteWithTool,
   RealtimeToolRequestError,
+  returnToMainRouteWithTool,
   rerouteWithTool,
   searchRoutePoiWithTool,
   searchStopAmenitiesWithTool,
+  startDrivingWithTool,
 } from '../../../services/realtimeAssistantApi'
 
 export type RealtimeAssistantState =
@@ -49,6 +57,18 @@ export interface RealtimeTelemetry {
   assistantReady?: number
   toolCallStarted?: number
   toolCallCompleted?: number
+}
+
+export interface PurchaseState extends Omit<PurchaseVignetteResponse, 'status'> {
+  status: PurchaseVignetteResponse['status'] | 'pending' | 'failed'
+}
+
+export interface BookingState extends Omit<BookingResponse, 'status'> {
+  status: BookingResponse['status'] | 'pending' | 'failed'
+}
+
+export interface DrivingState extends StartDrivingResponse {
+  active: boolean
 }
 
 function createRouteResponse(
@@ -218,6 +238,10 @@ export function useRealtimeAssistant() {
     routeId: string
     searchId: string | null
   } | null>(null)
+  const [purchase, setPurchase] = useState<PurchaseState | null>(null)
+  const [booking, setBooking] = useState<BookingState | null>(null)
+  const [driving, setDriving] = useState<DrivingState | null>(null)
+  const [selectedBookingPoi, setSelectedBookingPoi] = useState<StopPinpoint | null>(null)
   const [telemetry, setTelemetry] = useState<RealtimeTelemetry>({})
   const [error, setError] = useState<string | null>(null)
   const connectionRef = useRef<RTCPeerConnection | null>(null)
@@ -280,7 +304,12 @@ export function useRealtimeAssistant() {
       event.name !== 'plan_route' &&
       event.name !== 'search_route_poi' &&
       event.name !== 'search_stop_amenities' &&
-      event.name !== 'reroute_through_poi'
+      event.name !== 'reroute_through_poi' &&
+      event.name !== 'purchase_vignette' &&
+      event.name !== 'book_hotel_room' &&
+      event.name !== 'book_restaurant_table' &&
+      event.name !== 'start_driving' &&
+      event.name !== 'return_to_main_route'
     ) {
       return
     }
@@ -326,6 +355,53 @@ export function useRealtimeAssistant() {
                 compactPoiFacts(stop, result),
               ),
             }),
+          },
+        })
+        sendEvent({ type: 'response.create' })
+        return
+      }
+
+      if (
+        event.name === 'purchase_vignette' ||
+        event.name === 'book_hotel_room' ||
+        event.name === 'book_restaurant_table' ||
+        event.name === 'start_driving' ||
+        event.name === 'return_to_main_route'
+      ) {
+        let result: PurchaseVignetteResponse | BookingResponse | StartDrivingResponse | { status: 'success'; routeId: string }
+        if (event.name === 'purchase_vignette') {
+          result = await purchaseVignetteWithTool(event.arguments, toolController.signal)
+        } else if (event.name === 'book_hotel_room') {
+          result = await bookHotelRoomWithTool(event.arguments, toolController.signal)
+        } else if (event.name === 'book_restaurant_table') {
+          result = await bookRestaurantTableWithTool(event.arguments, toolController.signal)
+        } else if (event.name === 'start_driving') {
+          result = await startDrivingWithTool(event.arguments, toolController.signal)
+        } else {
+          result = await returnToMainRouteWithTool(event.arguments, toolController.signal)
+        }
+        if (!startingRef.current || requestId !== toolRequestIdRef.current) {
+          return
+        }
+        if (event.name === 'purchase_vignette') {
+          const purchaseResult = result as PurchaseVignetteResponse
+          setPurchase({ ...purchaseResult, status: purchaseResult.status })
+        } else if (event.name === 'book_hotel_room' || event.name === 'book_restaurant_table') {
+          const bookingResult = result as BookingResponse
+          setBooking({ ...bookingResult, status: bookingResult.status })
+        } else if (event.name === 'start_driving') {
+          setDriving({ ...result as StartDrivingResponse, active: true })
+        } else {
+          setAmenityResults([])
+          setAmenitySearchContext(null)
+          setAmenitySearchState('IDLE')
+        }
+        sendEvent({
+          type: 'conversation.item.create',
+          item: {
+            type: 'function_call_output',
+            call_id: event.call_id,
+            output: JSON.stringify(result),
           },
         })
         sendEvent({ type: 'response.create' })
@@ -417,6 +493,10 @@ export function useRealtimeAssistant() {
       setAmenityResults([])
       setAmenitySearchContext(null)
       setAmenitySearchState('IDLE')
+      setPurchase(null)
+      setBooking(null)
+      setDriving(null)
+      setSelectedBookingPoi(null)
       const routePriority = getRoutePriority(event.arguments)
       activePriorityRef.current = routePriority
       pendingRouteRef.current = {
@@ -705,10 +785,17 @@ export function useRealtimeAssistant() {
     }
 
     setSelectedPoi(poi)
+    setSelectedBookingPoi(
+      poi.category === 'hotel' || poi.category === 'restaurant' ? poi : null,
+    )
     setPoiActionState('CONFIRMATION_PENDING')
     setError(null)
 
     if (startingRef.current) {
+      const selectionPrompt =
+        poi.category === 'hotel' || poi.category === 'restaurant'
+          ? `I selected the ${poi.category} suggestion "${poi.name}" (POI ID: ${poi.id}). Store this selection and ask for any missing booking details. Do not book it yet.`
+          : `I selected the suggested stop "${poi.name}" (POI ID: ${poi.id}). Explain the proposed detour and ask for my confirmation. Do not reroute yet.`
       sendEvent({
         type: 'conversation.item.create',
         item: {
@@ -717,7 +804,7 @@ export function useRealtimeAssistant() {
           content: [
             {
               type: 'input_text',
-              text: `I selected the suggested stop "${poi.name}" (POI ID: ${poi.id}). Explain the proposed detour and ask for my confirmation. Do not reroute yet.`,
+              text: selectionPrompt,
             },
           ],
         },
@@ -737,6 +824,10 @@ export function useRealtimeAssistant() {
     amenityResults,
     amenitySearchState,
     amenitySearchContext,
+    purchase,
+    booking,
+    driving,
+    selectedBookingPoi,
     telemetry,
     selectPoi,
     error,

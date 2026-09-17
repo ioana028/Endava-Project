@@ -12,6 +12,57 @@ class FakeRealtimeProvider:
         return "ek_test_secret"
 
 
+class FakeDay6Service:
+    async def purchase_vignette(self, **payload: Any) -> dict[str, Any]:
+        return {
+            "status": "completed",
+            "transaction_id": "txn-vignette-001",
+            "route_id": payload["route_id"],
+            "requirement_id": payload["requirement_id"],
+            "wallet_status": "completed",
+            "phone_confirmation_status": "sent",
+            "amount_eur": 16.5,
+            "currency": "EUR",
+        }
+
+    async def book_hotel_room(self, **payload: Any) -> dict[str, Any]:
+        return {
+            "status": "completed",
+            "booking_id": "bk-hotel-001",
+            "result_id": payload["result_id"],
+            "route_id": payload["route_id"],
+            "booking_type": payload["booking_type"],
+            "guests": payload["guests"],
+            "date": payload["date"],
+            "time": payload.get("time"),
+            "wallet_status": "completed",
+            "phone_confirmation_status": "sent",
+        }
+
+    async def book_restaurant_table(self, **payload: Any) -> dict[str, Any]:
+        result = await self.book_hotel_room(**payload)
+        result["booking_id"] = "bk-restaurant-001"
+        return result
+
+    async def start_driving(self, **payload: Any) -> dict[str, Any]:
+        return {
+            "status": "active",
+            "route_id": payload["route_id"],
+            "remaining_distance_km": 184,
+            "remaining_duration_minutes": 161,
+            "eta": "14:35",
+            "next_stop": {
+                "id": "charging-1",
+                "name": "TEA Mosonmagyarovar",
+                "category": "charging",
+            },
+            "charging_required": True,
+        }
+
+    async def return_to_main_route(self, **payload: Any) -> dict[str, Any]:
+        return {"status": "success", "route_id": payload["route_id"]}
+
+
 class FakeRouteService:
     async def plan(self, intent: Any) -> RouteResponse:
         return RouteResponse(
@@ -292,3 +343,85 @@ def test_realtime_reroute_reports_unavailable_service() -> None:
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "REROUTE_UNAVAILABLE"
+
+
+def _day6_app() -> Any:
+    app = create_app(
+        route_service=FakeRouteService(),
+        realtime_provider=FakeRealtimeProvider(),
+    )
+    app.state.commerce_service = FakeDay6Service()
+    app.state.booking_service = app.state.commerce_service
+    app.state.navigation_service = app.state.commerce_service
+    return app
+
+
+def test_realtime_day6_tools_return_camel_case_contracts() -> None:
+    app = _day6_app()
+
+    with TestClient(app) as client:
+        purchase = client.post(
+            "/api/assistant/realtime/tools/purchase-vignette",
+            json={
+                "routeId": "route-123",
+                "requirementId": "hu-vignette-10d",
+                "confirmation": "confirmed",
+            },
+        )
+        hotel = client.post(
+            "/api/assistant/realtime/tools/book-hotel-room",
+            json={
+                "routeId": "route-123",
+                "searchId": "search-456",
+                "resultId": "hotel-riverside",
+                "bookingType": "hotel_room",
+                "guests": 2,
+                "date": "2026-09-17",
+                "confirmation": "confirmed",
+            },
+        )
+        restaurant = client.post(
+            "/api/assistant/realtime/tools/book-restaurant-table",
+            json={
+                "routeId": "route-123",
+                "searchId": "search-456",
+                "resultId": "restaurant-italia",
+                "bookingType": "restaurant_table",
+                "guests": 2,
+                "date": "2026-09-17",
+                "time": "19:00",
+                "confirmation": "confirmed",
+            },
+        )
+        driving = client.post(
+            "/api/assistant/realtime/tools/start-driving",
+            json={"routeId": "route-123", "confirmation": "confirmed"},
+        )
+        returned = client.post(
+            "/api/assistant/realtime/tools/return-to-main-route",
+            json={"routeId": "route-123"},
+        )
+
+    assert purchase.status_code == hotel.status_code == restaurant.status_code == 200
+    assert purchase.json()["transactionId"] == "txn-vignette-001"
+    assert hotel.json()["bookingType"] == "hotel_room"
+    assert restaurant.json()["bookingType"] == "restaurant_table"
+    assert driving.json()["nextStop"]["name"] == "TEA Mosonmagyarovar"
+    assert returned.json() == {"status": "success", "routeId": "route-123"}
+
+
+def test_realtime_day6_tools_require_exact_confirmation() -> None:
+    app = _day6_app()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/assistant/realtime/tools/purchase-vignette",
+            json={
+                "routeId": "route-123",
+                "requirementId": "hu-vignette-10d",
+                "confirmation": "yes",
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"

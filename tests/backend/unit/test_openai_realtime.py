@@ -54,6 +54,11 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "search_route_poi",
         "reroute_through_poi",
         "search_stop_amenities",
+        "purchase_vignette",
+        "book_hotel_room",
+        "book_restaurant_table",
+        "start_driving",
+        "return_to_main_route",
     ]
     instructions = kwargs["session"]["instructions"]
     assert "Never ask permission before a mandatory charging stop is added" in instructions
@@ -110,6 +115,41 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "restaurant",
         "service",
     ]
+
+    purchase_tool = tools[4]
+    assert purchase_tool["parameters"]["required"] == [
+        "routeId",
+        "requirementId",
+        "confirmation",
+    ]
+    assert purchase_tool["parameters"]["properties"]["confirmation"]["enum"] == [
+        "confirmed"
+    ]
+
+    hotel_tool = tools[5]
+    assert hotel_tool["parameters"]["properties"]["bookingType"]["enum"] == [
+        "hotel_room"
+    ]
+    assert hotel_tool["parameters"]["properties"]["confirmation"]["enum"] == [
+        "confirmed"
+    ]
+
+    restaurant_tool = tools[6]
+    assert restaurant_tool["parameters"]["properties"]["bookingType"]["enum"] == [
+        "restaurant_table"
+    ]
+    assert restaurant_tool["parameters"]["properties"]["confirmation"]["enum"] == [
+        "confirmed"
+    ]
+
+    driving_tool = tools[7]
+    assert driving_tool["parameters"]["required"] == ["routeId", "confirmation"]
+    assert driving_tool["parameters"]["properties"]["confirmation"]["enum"] == [
+        "confirmed"
+    ]
+    assert tools[8]["parameters"]["required"] == ["routeId"]
+    assert "simulated through" in instructions
+    assert "Selecting, naming, or praising a result never books it" in instructions
 
 
 def test_realtime_provider_rejects_missing_server_key() -> None:

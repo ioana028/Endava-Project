@@ -1,6 +1,10 @@
 import type {
+  BookingResponse,
+  PurchaseVignetteResponse,
+  ReturnToMainRouteResponse,
   RoutePoiResponse,
   RouteResponse,
+  StartDrivingResponse,
   StopAmenitiesResponse,
 } from '../types/contracts'
 
@@ -62,6 +66,14 @@ export function getRealtimeToolErrorMessage(code: string, fallback: string): str
     STALE_SEARCH: 'That place search is no longer current.',
     STALE_POI_SELECTION: 'That suggestion is no longer available for this route.',
     REROUTE_UNAVAILABLE: 'I cannot change the route through that stop right now.',
+    DUPLICATE_PURCHASE: 'That vignette purchase was already completed.',
+    DUPLICATE_BOOKING: 'That booking was already completed.',
+    MISSING_REQUIREMENT: 'There is no current vignette requirement to purchase.',
+    MISSING_DETAILS: 'I need the remaining booking details before I can book it.',
+    PURCHASE_UNAVAILABLE: 'I cannot complete the simulated purchase right now.',
+    BOOKING_UNAVAILABLE: 'I cannot complete the simulated booking right now.',
+    DRIVING_UNAVAILABLE: 'I cannot start driving mode right now.',
+    NOT_IN_AMENITY_VIEW: 'There is no charger-focused view to leave right now.',
     VALIDATION_ERROR: 'I could not validate that assistant request.',
   }
 
@@ -172,4 +184,84 @@ export async function rerouteWithTool(
   }
 
   return (await response.json()) as RerouteToolResponse
+}
+
+async function callDay6Tool<T>(
+  path: string,
+  argumentsJson: string,
+  fallback: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}/api/assistant/realtime/tools/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: argumentsJson,
+    signal,
+  })
+
+  if (!response.ok) {
+    return throwToolError(response, fallback)
+  }
+
+  return (await response.json()) as T
+}
+
+export function purchaseVignetteWithTool(
+  argumentsJson: string,
+  signal?: AbortSignal,
+): Promise<PurchaseVignetteResponse> {
+  return callDay6Tool(
+    'purchase-vignette',
+    argumentsJson,
+    'The simulated vignette purchase could not be completed.',
+    signal,
+  )
+}
+
+export function bookHotelRoomWithTool(
+  argumentsJson: string,
+  signal?: AbortSignal,
+): Promise<BookingResponse> {
+  return callDay6Tool(
+    'book-hotel-room',
+    argumentsJson,
+    'The simulated hotel booking could not be completed.',
+    signal,
+  )
+}
+
+export function bookRestaurantTableWithTool(
+  argumentsJson: string,
+  signal?: AbortSignal,
+): Promise<BookingResponse> {
+  return callDay6Tool(
+    'book-restaurant-table',
+    argumentsJson,
+    'The simulated restaurant booking could not be completed.',
+    signal,
+  )
+}
+
+export function startDrivingWithTool(
+  argumentsJson: string,
+  signal?: AbortSignal,
+): Promise<StartDrivingResponse> {
+  return callDay6Tool(
+    'start-driving',
+    argumentsJson,
+    'Driving mode could not be started.',
+    signal,
+  )
+}
+
+export function returnToMainRouteWithTool(
+  argumentsJson: string,
+  signal?: AbortSignal,
+): Promise<ReturnToMainRouteResponse> {
+  return callDay6Tool(
+    'return-to-main-route',
+    argumentsJson,
+    'The main route view could not be restored.',
+    signal,
+  )
 }
