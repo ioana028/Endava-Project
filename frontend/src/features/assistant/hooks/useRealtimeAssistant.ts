@@ -150,6 +150,8 @@ function compactPoiFacts(
   stop: StopPinpoint,
   context: { routeId?: string | null; searchId?: string | null },
 ) {
+  const partnerBenefit = stop.partner?.benefit ?? stop.partnerBenefit
+
   return {
     id: stop.id,
     name: stop.name,
@@ -162,6 +164,9 @@ function compactPoiFacts(
     ...(stop.amenities?.length ? { amenities: stop.amenities } : {}),
     ...(stop.distanceMeters !== undefined ? { distanceMeters: stop.distanceMeters } : {}),
     detourMinutes: stop.detourMinutes,
+    ...(stop.partner?.id ? { partnerId: stop.partner.id } : {}),
+    ...(stop.partner?.name ? { partnerName: stop.partner.name } : {}),
+    ...(partnerBenefit ? { partnerBenefit } : {}),
     ...(context.routeId ? { routeId: context.routeId } : {}),
     ...(context.searchId ? { searchId: context.searchId } : {}),
   }
