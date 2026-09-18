@@ -144,6 +144,30 @@ def test_route_within_vehicle_range_has_no_range_warning() -> None:
     assert route.alerts == []
 
 
+def test_start_driving_returns_current_route_facts_without_replanning() -> None:
+    provider = FakeRoutingProvider(distance_meters=95_000)
+    route_service = RouteService(provider, repository())
+    asyncio.run(route_service.plan(intent("Bratislava")))
+    route_id = route_service.active_route_id
+
+    facts = route_service.start_driving(route_id or "")
+
+    assert facts["status"] == "active"
+    assert facts["route_id"] == route_id
+    assert len(provider.geocoded) == 2
+
+
+def test_start_driving_rejects_stale_route_context() -> None:
+    route_service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
+    asyncio.run(route_service.plan(intent("Bratislava")))
+
+    with pytest.raises(APIError) as error:
+        route_service.start_driving("stale-route")
+
+    assert error.value.status_code == 409
+    assert error.value.code == "STALE_ROUTE"
+
+
 def test_route_beyond_vehicle_range_returns_range_warning_and_charging_stop() -> None:
     route = asyncio.run(
         RouteService(FakeRoutingProvider(distance_meters=243_000), repository()).plan(
