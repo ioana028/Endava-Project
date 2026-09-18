@@ -128,10 +128,10 @@ def test_route_normalizes_provider_units_and_geometry() -> None:
     assert route.destination == "Budapest"
     assert route.stats.total_distance_km == 243
     assert route.stats.driving_duration_minutes == 165
-    assert route.stats.total_duration_minutes == 192
-    assert route.charging_stop is not None
-    assert route.charging_stop.name == "Ionity Győr"
-    assert route.charging_stop.charging_duration_minutes == 25
+    assert route.stats.total_duration_minutes == 165
+    assert route.charging_required is True
+    assert route.charging_stop is None
+    assert route.stops == []
 
 
 def test_route_within_vehicle_range_has_no_range_warning() -> None:
@@ -144,7 +144,31 @@ def test_route_within_vehicle_range_has_no_range_warning() -> None:
     assert route.alerts == []
 
 
-def test_route_beyond_vehicle_range_returns_range_warning_and_charging_stop() -> None:
+def test_start_driving_returns_current_route_facts_without_replanning() -> None:
+    provider = FakeRoutingProvider(distance_meters=95_000)
+    route_service = RouteService(provider, repository())
+    asyncio.run(route_service.plan(intent("Bratislava")))
+    route_id = route_service.active_route_id
+
+    facts = route_service.start_driving(route_id or "")
+
+    assert facts["status"] == "active"
+    assert facts["route_id"] == route_id
+    assert len(provider.geocoded) == 2
+
+
+def test_start_driving_rejects_stale_route_context() -> None:
+    route_service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
+    asyncio.run(route_service.plan(intent("Bratislava")))
+
+    with pytest.raises(APIError) as error:
+        route_service.start_driving("stale-route")
+
+    assert error.value.status_code == 409
+    assert error.value.code == "STALE_ROUTE"
+
+
+def test_route_beyond_vehicle_range_requires_charging_before_confirmation() -> None:
     route = asyncio.run(
         RouteService(FakeRoutingProvider(distance_meters=243_000), repository()).plan(
             intent()
@@ -152,8 +176,8 @@ def test_route_beyond_vehicle_range_returns_range_warning_and_charging_stop() ->
     )
 
     assert route.alerts == []
-    assert route.charging_stop is not None
-    assert route.charging_stop.name == "Ionity Győr"
+    assert route.charging_required is True
+    assert route.charging_stop is None
     assert [(item.from_country, item.to_country) for item in route.border_crossings] == [
         ("Austria", "Hungary")
     ]
@@ -258,10 +282,7 @@ def test_reroute_through_poi_preserves_mandatory_charger() -> None:
     )
 
     assert replacement.destination == route.destination
-    assert [stop.id for stop in replacement.stops] == [
-        "route-coffee",
-        route.charging_stop.id,
-    ]
+    assert [stop.id for stop in replacement.stops] == ["route-coffee"]
     assert len(provider.geocoded) == 2
 
 
@@ -406,6 +427,6 @@ def test_route_exposes_driving_facts_and_next_mandatory_stop() -> None:
     assert facts["route_id"] == route_service.active_route_id
     assert facts["remaining_distance_km"] == 243
     assert facts["remaining_duration_minutes"] == 165
-    assert facts["next_stop"]["category"] == "charging"
+    assert facts["next_stop"] is None
     assert facts["charging_required"] is True
 

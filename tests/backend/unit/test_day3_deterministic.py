@@ -189,18 +189,27 @@ class FakeChargingProvider:
 
 def test_route_service_automatically_reroutes_through_safe_charger() -> None:
     provider = WaypointRoutingProvider()
+    route_service = RouteService(
+        provider,
+        repository(),
+        charging_provider=FakeChargingProvider(),
+    )
     route = asyncio.run(
-        RouteService(
-            provider,
-            repository(),
-            charging_provider=FakeChargingProvider(),
-        ).plan(AssistantIntent(destination="Budapest", priority=RoutePriority.FASTEST))
+        route_service.plan(AssistantIntent(destination="Budapest", priority=RoutePriority.FASTEST))
     )
 
-    assert route.stops[0].id == "ionity-gyor"
-    assert route.stops[0].mandatory is True
-    assert route.stats.driving_duration_minutes == 170
-    assert route.stats.total_duration_minutes == 171
+    assert route.stops == []
+    assert route.charging_required is True
+    assert route.charging_stop is None
+    assert route.stats.driving_duration_minutes == 165
+    assert route.stats.total_duration_minutes == 165
+    assert len(provider.waypoints) == 1
+
+    confirmed = asyncio.run(
+        route_service.confirm_charging_stop(route_service.active_route_id or "")
+    )
+    assert confirmed["route"].charging_stop is not None
+    assert confirmed["route"].charging_stop.id == "ionity-gyor"
     assert len(provider.waypoints) == 2
     assert provider.waypoints[1][0].display_name == "ionity-gyor"
 

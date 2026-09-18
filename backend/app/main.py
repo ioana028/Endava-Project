@@ -98,6 +98,10 @@ def create_app(
             or (provider_mode == "auto" and settings.google_server_api_key)
             else "offline"
         )
+        partner_records = fixture_repository.load().partners
+        scenic_capability = bool(settings.google_server_api_key) or (
+            resolved_places_provider == "offline"
+        )
         return ProviderHealthResponse(
             status="ok",
             environment=settings.environment,
@@ -108,6 +112,8 @@ def create_app(
                 and bool(settings.google_server_api_key)
             ),
             places_provider=resolved_places_provider,
+            scenic_capability=scenic_capability,
+            partner_enrichment_ready=bool(partner_records),
         )
 
     @application.get("/api/vehicle/telemetry", response_model=VehicleTelemetryResponse)

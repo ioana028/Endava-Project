@@ -55,6 +55,8 @@ function App() {
             amenityResults={assistant.amenityResults}
             amenityFocusName={assistant.amenitySearchContext?.selectedStopName}
             drivingActive={assistant.driving?.active ?? false}
+            showChargingStop={assistant.chargingStopConfirmed || Boolean(assistant.driving?.active)}
+            routePriority={assistant.response?.intent.priority}
             selectedPoiId={assistant.selectedPoi?.id}
             onPoiSelect={assistant.selectPoi}
           />
@@ -81,8 +83,18 @@ function App() {
                 <ul>
                   {assistant.amenityResults.map((amenity) => (
                     <li key={amenity.id}>
-                      <strong>{amenity.name}</strong>
-                      <span>{amenity.category} {amenity.distanceMeters ? `· ${Math.round(amenity.distanceMeters)} m` : ''}</span>
+                      <div>
+                        <strong>{amenity.name}</strong>
+                        {amenity.partner?.name && (
+                          <small className="partner-label">Partner location · {amenity.partner.name}</small>
+                        )}
+                      </div>
+                      <span>
+                        {amenity.category} {amenity.distanceMeters ? `· ${Math.round(amenity.distanceMeters)} m` : ''}
+                        {(amenity.partner?.benefit ?? amenity.partnerBenefit) && (
+                          <small className="partner-benefit">{amenity.partner?.benefit ?? amenity.partnerBenefit}</small>
+                        )}
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -93,7 +105,7 @@ function App() {
 
         <aside className="cockpit-rail">
           <section className="suzanne-orb-panel">
-            {assistant.successFeedback && (assistant.successFeedback.action === 'booking' || assistant.successFeedback.action === 'purchase') ? (
+            {assistant.successFeedback ? (
               <div className="action-confirmation" role="status" aria-live="assertive">
                 <span className="confirmation-check" aria-hidden="true">✓</span>
                 <p className="eyebrow">Complete</p>
@@ -135,7 +147,11 @@ function App() {
             </section>
             {route && (
               <section className="cockpit-card cost-panel utility-panel">
-                <RouteSummary route={route} />
+                <RouteSummary
+                  route={route}
+                  priority={assistant.response?.intent.priority}
+                  showChargingStop={assistant.chargingStopConfirmed || Boolean(assistant.driving?.active)}
+                />
               </section>
             )}
           </div>
