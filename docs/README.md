@@ -16,6 +16,8 @@ for coding AIs.
 6. Read [Delivery Roadmap](product/roadmap.md) for current and future work.
 7. Read [Day 5 Voice Flows](api/day5-voice-flows.md) when working on realtime
   conversation, POI discovery, or charging-stop amenities.
+8. Read [Day 7 runtime configuration](configuration/day7-runtime.md) before
+  validating provider health, scenic fallback, or route/Places diagnostics.
 
 ## Documentation map
 
