@@ -18,6 +18,7 @@ from ...models.contracts import (
     Coordinates,
     RouteAlert,
     RouteRequirement,
+    RoutePriority,
     RouteResponse,
     StopPinpoint,
     TripStats,
@@ -362,6 +363,7 @@ class RouteService:
                     tuple(self._active_provider_route.geometry),
                     preference,
                     selection_location,
+                    scenic=self._active_priority == RoutePriority.SCENIC,
                 )
             self._active_search_id = uuid4().hex
             self._active_search_results = {result.id: result for result in results}

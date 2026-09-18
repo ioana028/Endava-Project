@@ -45,3 +45,24 @@ def test_scenic_ranking_is_distinct_from_fastest_ranking() -> None:
 
     assert fastest[0].stop.id == "fastest-view"
     assert scenic[0].stop.id == "scenic-lake"
+
+
+def test_scenic_route_stop_selection_uses_scenic_ranking() -> None:
+    from backend.app.services.trip.deterministic import select_route_stops
+
+    stops = [
+        StopPinpoint(
+            id="ordinary", name="ordinary", category="attraction",
+            coords=(17.5, 47.90), tag="ordinary stop", rating=5,
+        ),
+        StopPinpoint(
+            id="lake", name="lake", category="attraction",
+            coords=(17.6, 47.87), tag="lake viewpoint", rating=3,
+        ),
+    ]
+
+    results = select_route_stops(
+        stops, ((16.37, 48.20), (19.04, 47.50)), location="route", scenic=True
+    )
+
+    assert results[0].id == "lake"

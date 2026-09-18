@@ -95,6 +95,7 @@ def select_route_stops(
     geometry: tuple[tuple[float, float], ...],
     preference: str | None = None,
     location: str = "route",
+    scenic: bool = False,
 ) -> list[StopPinpoint]:
     candidates = [
         POICandidate(
@@ -105,18 +106,24 @@ def select_route_stops(
         for stop in stops
         if _matches_search_scope(stop.coords, geometry, location)
     ]
-    selected = select_route_pois(candidates, preference)
+    selected = (
+        rank_scenic_pois(candidates)
+        if scenic
+        else select_route_pois(candidates, preference)
+    )[:POI_MAX_RESULTS]
     if location == "route" and any(
         candidate.stop.category == "attraction" for candidate in candidates
     ):
-        selected = _select_route_attractions(candidates, preference)
+        selected = _select_route_attractions(candidates, preference, scenic)
     return [candidate.stop for candidate in selected]
 
 
 def _select_route_attractions(
-    candidates: Iterable[POICandidate], preference: str | None = None
+    candidates: Iterable[POICandidate],
+    preference: str | None = None,
+    scenic: bool = False,
 ) -> list[POICandidate]:
-    ranked = rank_pois(candidates, preference)
+    ranked = rank_scenic_pois(candidates) if scenic else rank_pois(candidates, preference)
     selected: list[POICandidate] = []
     for candidate in ranked:
         if any(
@@ -399,7 +406,8 @@ def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpo
         update={
             "partner": PartnerEnrichment(
                 id=partner.id, name=partner.name, benefit=benefit
-            )
+            ),
+            "partner_benefit": benefit,
         }
     )
 

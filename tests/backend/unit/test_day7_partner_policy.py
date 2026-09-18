@@ -43,6 +43,7 @@ def test_provider_brand_match_requires_an_exact_normalized_prefix() -> None:
 
     assert result.partner is not None
     assert result.partner.benefit == "10% off charging sessions"
+    assert result.partner_benefit == "10% off charging sessions"
 
 
 def test_partial_brand_overlap_does_not_create_a_commercial_match() -> None:
