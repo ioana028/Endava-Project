@@ -18,6 +18,7 @@ from ...models.contracts import (
     Coordinates,
     RouteAlert,
     RouteRequirement,
+    RoutePriority,
     RouteResponse,
     StopPinpoint,
     TripStats,
@@ -132,6 +133,14 @@ class RouteService:
             ),
             "charging_required": next_stop is not None and next_stop.category == "charging",
         }
+
+    def start_driving(
+        self, route_id: str, confirmation: str = "confirmed"
+    ) -> dict[str, object]:
+        del confirmation
+        if self._active_provider_route is None or route_id != self._active_route_id:
+            raise APIError(409, "STALE_ROUTE", "The selected route is no longer current.")
+        return self.route_state_facts()
 
     def next_mandatory_stop(self, progress_km: float = 0.0) -> StopPinpoint | None:
         if self._active_provider_route is None:
@@ -354,6 +363,7 @@ class RouteService:
                     tuple(self._active_provider_route.geometry),
                     preference,
                     selection_location,
+                    scenic=self._active_priority == RoutePriority.SCENIC,
                 )
             self._active_search_id = uuid4().hex
             self._active_search_results = {result.id: result for result in results}
