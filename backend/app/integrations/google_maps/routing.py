@@ -162,4 +162,8 @@ class GoogleMapsRoutingProvider:
 
     @staticmethod
     def _routing_preference(priority: RoutePriority) -> str:
-        return "TRAFFIC_AWARE_OPTIMAL" if priority == RoutePriority.FASTEST else "TRAFFIC_AWARE"
+        if priority == RoutePriority.FASTEST:
+            return "TRAFFIC_AWARE_OPTIMAL"
+        if priority == RoutePriority.SCENIC:
+            return "TRAFFIC_AWARE"
+        return "TRAFFIC_AWARE"
