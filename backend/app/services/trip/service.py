@@ -25,6 +25,7 @@ from ...models.contracts import (
 )
 from .country_rules import derive_requirements, detect_border_crossings
 from .deterministic import (
+    DEFAULT_CHARGING_POWER_KW,
     MIN_CHARGER_PROGRESS_KM,
     POI_COORDINATE_TOLERANCE,
     enrich_partner,
@@ -48,6 +49,8 @@ from .ports import (
 
 
 DEFAULT_ORIGIN = "Vienna, Austria"
+CHARGING_PRICE_EUR_PER_KWH = 0.45
+HUNGARIAN_VIGNETTE_PRICE_EUR = 16.50
 LOGGER = logging.getLogger(__name__)
 
 
@@ -76,6 +79,7 @@ class RouteService:
         self._active_destination: GeocodedPlace | None = None
         self._active_priority = None
         self._active_stops: list[StopPinpoint] = []
+        self._pending_charging_stops: list[StopPinpoint] = []
         self._active_search_results: dict[str, StopPinpoint] = {}
 
     @property
@@ -131,7 +135,9 @@ class RouteService:
                 }
                 if next_stop is not None else None
             ),
-            "charging_required": next_stop is not None and next_stop.category == "charging",
+            "charging_required": (
+                next_stop is not None and next_stop.category == "charging"
+            ) or bool(self._pending_charging_stops),
         }
 
     def start_driving(
@@ -274,32 +280,8 @@ class RouteService:
                     )
                 )
 
-            if not self._supports_waypoints():
-                raise APIError(
-                    503,
-                    "ROUTING_UNAVAILABLE",
-                    "The routing service cannot route through a charging stop.",
-                )
-
-            waypoints = tuple(
-                GeocodedPlace(
-                    stop.name,
-                    Coordinates(lng=stop.coords[0], lat=stop.coords[1]),
-                )
-                for stop in stops
-            )
-            try:
-                provider_route = await self._provider.route(
-                    origin, destination, intent.priority, waypoints
-                )
-            except (RoutingProviderError, OSError) as error:
-                raise APIError(
-                    503, "ROUTING_UNAVAILABLE", "The routing service is unavailable."
-                ) from error
-            self._validate_route(provider_route)
-
         route_response = self._build_route_response(
-            provider_route, origin, destination, stops
+            provider_route, origin, destination, stops, include_charging=False
         )
         self._active_provider_route = provider_route
         self._active_route_id = uuid4().hex
@@ -307,7 +289,8 @@ class RouteService:
         self._active_origin = origin
         self._active_destination = destination
         self._active_priority = intent.priority
-        self._active_stops = list(stops)
+        self._active_stops = []
+        self._pending_charging_stops = list(stops)
         self._active_search_results = {}
         LOGGER.info(
             "total_route_plan_ms=%d destination=%s charging_stop=%s",
@@ -452,6 +435,74 @@ class RouteService:
             "search_id": search_id,
         }
 
+    async def confirm_charging_stop(
+        self, route_id: str, stop_id: str | None = None, confirmation: str = "confirmed"
+    ) -> dict[str, object]:
+        del confirmation
+        if self._active_provider_route is None or route_id != self._active_route_id:
+            raise APIError(409, "STALE_ROUTE", "The selected route is no longer current.")
+
+        stop = next(
+            (
+                item
+            for item in self._pending_charging_stops
+                if item.category == "charging"
+                and (stop_id is None or item.id == stop_id)
+            ),
+            None,
+        )
+        if stop is None:
+            raise APIError(409, "STALE_STOP", "That charging stop is no longer current.")
+        if self._active_origin is None or self._active_destination is None:
+            raise APIError(409, "NO_ACTIVE_ROUTE", "Plan a route before confirming a charging stop.")
+
+        if not self._supports_waypoints():
+            raise APIError(
+                503,
+                "ROUTING_UNAVAILABLE",
+                "The routing service cannot route through a charging stop.",
+            )
+
+        waypoints = tuple(
+            GeocodedPlace(
+                item.name,
+                Coordinates(lng=item.coords[0], lat=item.coords[1]),
+            )
+            for item in self._pending_charging_stops
+        )
+        try:
+            provider_route = await self._provider.route(
+                self._active_origin,
+                self._active_destination,
+                self._active_priority,
+                waypoints,
+            )
+            self._validate_route(provider_route)
+        except (RoutingProviderError, OSError) as error:
+            raise APIError(
+                503, "ROUTING_UNAVAILABLE", "The routing service is unavailable."
+            ) from error
+
+        self._active_provider_route = provider_route
+        self._active_stops = list(self._pending_charging_stops)
+        self._pending_charging_stops = []
+
+        amenity_search = await self.search_stop_amenities(
+            stop_id=stop.id,
+            route_id=route_id,
+            search_id=None,
+        )
+        route = self._build_route_response(
+            self._active_provider_route,
+            self._active_origin,
+            self._active_destination,
+            self._active_stops,
+        )
+        return {
+            "route": route,
+            **amenity_search,
+        }
+
     async def reroute_through_poi(
         self,
         poi_id: str,
@@ -550,14 +601,19 @@ class RouteService:
         origin: GeocodedPlace,
         destination: GeocodedPlace,
         stops: list[StopPinpoint],
+        include_charging: bool = True,
     ) -> RouteResponse:
+        charging_required = any(stop.category == "charging" for stop in stops)
+        response_stops = stops if include_charging else [
+            stop for stop in stops if stop.category != "charging"
+        ]
         distance_km = round(provider_route.distance_meters / 1000, 2)
         driving_minutes = round(provider_route.duration_seconds / 60, 1)
         total_minutes = round(
             driving_minutes
             + sum(
                 stop.detour_minutes + stop.charging_duration_minutes
-                for stop in stops
+                for stop in response_stops
             ),
             1,
         )
@@ -575,9 +631,21 @@ class RouteService:
                     kind="toll",
                 )
             )
-        total_price_eur = sum(
+        toll_price_eur = sum(
             toll.amount for toll in provider_route.tolls if toll.currency == "EUR"
         )
+        vignette_price_eur = sum(
+            HUNGARIAN_VIGNETTE_PRICE_EUR
+            for requirement in route_requirements
+            if requirement.kind == "vignette"
+        )
+        charging_price_eur = sum(
+            stop.charging_duration_minutes
+            * (DEFAULT_CHARGING_POWER_KW * CHARGING_PRICE_EUR_PER_KWH / 60)
+            for stop in response_stops
+            if stop.category == "charging"
+        )
+        total_price_eur = toll_price_eur + vignette_price_eur + charging_price_eur
         return RouteResponse(
             origin=origin.display_name,
             destination=destination.display_name,
@@ -588,14 +656,15 @@ class RouteService:
                 total_price_eur=round(total_price_eur, 2),
             ),
             geometry=list(provider_route.geometry),
-            stops=stops,
+            stops=response_stops,
             charging_stop=next(
-                (stop for stop in stops if stop.mandatory and stop.category == "charging"),
+                (stop for stop in response_stops if stop.mandatory and stop.category == "charging"),
                 None,
             ),
-            alerts=self._range_alert(distance_km) if not stops else [],
+            alerts=self._range_alert(distance_km) if not charging_required else [],
             border_crossings=border_crossings,
             route_requirements=route_requirements,
+            charging_required=charging_required,
         )
 
     def _safe_distance_km(self) -> float:

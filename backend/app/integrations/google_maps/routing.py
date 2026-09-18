@@ -17,6 +17,12 @@ GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
 _DURATION_PATTERN = re.compile(r"^(?P<seconds>[0-9]+(?:\.[0-9]+)?)s$")
 LOGGER = logging.getLogger(__name__)
+SCENIC_HIGHWAY_CORRIDOR_MARKERS = (
+    "grossglockner",
+    "alpine road",
+    "dolomites",
+    "trollstigen",
+)
 
 
 class GoogleMapsRoutingProvider:
@@ -86,6 +92,10 @@ class GoogleMapsRoutingProvider:
             "languageCode": "en-US",
             "extraComputations": ["TOLLS"],
         }
+        if priority == RoutePriority.SCENIC and not self._known_scenic_highway_corridor(
+            destination.display_name
+        ):
+            request["routeModifiers"] = {"avoidHighways": True}
         if waypoints:
             request["intermediates"] = [
                 {"location": {"latLng": self._lat_lng(waypoint)}}
@@ -167,3 +177,8 @@ class GoogleMapsRoutingProvider:
         if priority == RoutePriority.SCENIC:
             return "TRAFFIC_AWARE"
         return "TRAFFIC_AWARE"
+
+    @staticmethod
+    def _known_scenic_highway_corridor(destination_name: str) -> bool:
+        normalized = destination_name.casefold()
+        return any(marker in normalized for marker in SCENIC_HIGHWAY_CORRIDOR_MARKERS)

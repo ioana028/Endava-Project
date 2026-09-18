@@ -53,8 +53,13 @@ def test_day7_tool_contract_preserves_start_driving_and_scenic_values() -> None:
     route_priority = tool_by_name["plan_route"]["parameters"]["properties"]["priority"]
 
     assert driving["parameters"]["required"] == ["routeId", "confirmation"]
+    assert tool_by_name["plan_route"]["parameters"]["required"] == [
+        "destination",
+        "priority",
+    ]
     assert driving["parameters"]["properties"]["confirmation"]["enum"] == ["confirmed"]
     assert "SCENIC" in route_priority["enum"]
+    assert "Never infer SCENIC" in route_priority["description"]
 
 
 def test_day7_start_driving_preserves_current_route_id_and_returns_compact_facts() -> None:

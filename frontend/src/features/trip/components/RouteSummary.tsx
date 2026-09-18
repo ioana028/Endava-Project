@@ -1,7 +1,9 @@
-import type { RouteResponse } from '../../../types/contracts'
+import type { RoutePriority, RouteResponse } from '../../../types/contracts'
 
 interface RouteSummaryProps {
   route: RouteResponse
+  priority?: RoutePriority
+  showChargingStop?: boolean
 }
 
 function formatDuration(totalMinutes: number) {
@@ -12,8 +14,14 @@ function formatDuration(totalMinutes: number) {
   return hours === 0 ? `${minutes} min` : `${hours} h ${minutes} min`
 }
 
-export function RouteSummary({ route }: RouteSummaryProps) {
-  const stopCount = route.stops.length
+export function RouteSummary({
+  route,
+  priority = 'BALANCED',
+  showChargingStop = true,
+}: RouteSummaryProps) {
+  const stopCount = route.stops.filter(
+    (stop) => showChargingStop || stop.category !== 'charging',
+  ).length
 
   return (
     <section className="route-summary" aria-live="polite">
@@ -22,7 +30,7 @@ export function RouteSummary({ route }: RouteSummaryProps) {
           <p className="eyebrow">Trip details</p>
           <h2>{route.destination}</h2>
         </div>
-        <span className="trip-status">ROUTE ACTIVE</span>
+        <span className="trip-status">{priority} · ROUTE ACTIVE</span>
       </div>
       <p className="route-endpoints">
         {route.origin} to {route.destination}

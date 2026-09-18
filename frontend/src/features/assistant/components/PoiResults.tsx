@@ -30,6 +30,7 @@ export function PoiResults({
       <div className="poi-list">
         {results.slice(0, 2).map((result) => {
           const selected = result.id === selectedPoiId
+          const partnerBenefit = result.partner?.benefit ?? result.partnerBenefit
           return (
             <button
               className={`poi-card${selected ? ' poi-card-selected' : ''}`}
@@ -44,6 +45,12 @@ export function PoiResults({
               </span>
               <strong>{result.name}</strong>
               <span className="poi-tag">{result.tag}</span>
+              {result.partner?.name && (
+                <span className="partner-label">Partner location · {result.partner.name}</span>
+              )}
+              {partnerBenefit && (
+                <span className="partner-benefit">{partnerBenefit}</span>
+              )}
               {result.amenities && result.amenities.length > 0 && (
                 <span className="poi-amenities">
                   {result.amenities.join(' · ')}

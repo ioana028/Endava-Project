@@ -54,7 +54,6 @@
     "name": "OMV partner network",
     "category": "fuel",
     "categories": ["fuel", "coffee", "rest"],
-    "coords": [19.15, 47.55],
     "coords": null,
     "tag": "Fuel and convenience network",
     "benefit": "Free coffee with a meal purchase",

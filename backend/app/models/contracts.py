@@ -98,6 +98,7 @@ class RouteResponse(ContractModel):
     border_crossings: list[BorderCrossing] = Field(default_factory=list)
     route_requirements: list[RouteRequirement] = Field(default_factory=list)
     charging_stop: StopPinpoint | None = None
+    charging_required: bool = False
 
 
 class RealtimeToolRouteRequest(ContractModel):
@@ -132,6 +133,21 @@ class RealtimeToolSearchStopAmenitiesRequest(ContractModel):
 
 class RealtimeToolSearchStopAmenitiesResponse(ContractModel):
     selected_stop_name: str = Field(min_length=1)
+    results: list[StopPinpoint] = Field(default_factory=list, max_length=4)
+    radius_meters: int = Field(default=500, ge=500, le=500)
+    route_id: str
+    search_id: str | None = None
+
+
+class RealtimeToolConfirmChargingRequest(ContractModel):
+    route_id: str = Field(min_length=1, max_length=200)
+    stop_id: str | None = Field(default=None, max_length=200)
+    confirmation: Literal["confirmed"]
+
+
+class RealtimeToolConfirmChargingResponse(ContractModel):
+    route: RouteResponse
+    selected_stop_name: str
     results: list[StopPinpoint] = Field(default_factory=list, max_length=4)
     radius_meters: int = Field(default=500, ge=500, le=500)
     route_id: str

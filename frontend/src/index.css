@@ -32,3 +32,51 @@ button { font: inherit; }
 @media (prefers-reduced-motion: reduce) { .suzanne-orb { animation: none; } }
 @media (max-width: 800px) { .cockpit-shell { height: 100dvh; padding: 12px; }.cockpit-grid { grid-template-columns: 1fr; height: calc(100% - 72px); min-height: 0; }.map-stage, .route-map { min-height: 0; height: 100%; }.cockpit-rail { display: none; }.cockpit-nav { margin-top: 10px; } }
 @media (max-width: 520px) { .cockpit-rail { grid-template-columns: 1fr; }.media-card { min-height: 130px; }.poi-results { right: 12px; bottom: 76px; width: calc(100vw - 24px); }.poi-list { grid-template-columns: 1fr; } }
+.partner-label { color: #f2cc61; font-size: .63rem; }
+.partner-benefit { color: #62e6dc; font-size: .68rem; font-weight: 700; }
+.amenity-results li > div, .amenity-results li > span { display: grid; gap: 3px; }
+.amenity-results .partner-label, .amenity-results .partner-benefit { text-transform: none; }
+
+/* Luxury cockpit finish: quiet graphite surfaces, warm metal accents, crisp telemetry. */
+:root { --cockpit-graphite: #0b1117; --cockpit-panel: #101820; --cockpit-line: #29414c; --cockpit-champagne: #d9bd79; --cockpit-ice: #b8d9dc; }
+.cockpit-shell { background: radial-gradient(circle at 72% 14%, #17252b 0, transparent 34%), linear-gradient(135deg, #111a20 0%, #05090d 64%, #020407 100%); }
+.cockpit-topbar { height: 38px; padding: 0 4px; color: var(--cockpit-ice); letter-spacing: .1em; }
+.status-time { color: #f1e4c2; font-size: .8rem; }
+.status-weather, .status-device { color: #77919a; }
+.map-stage { border-color: #34515a; border-radius: 6px; box-shadow: 0 24px 70px #000d, inset 0 0 0 1px #ffffff08; }
+.suzanne-orb-panel, .cockpit-card { border-color: #263c46; border-radius: 6px; background: linear-gradient(145deg, var(--cockpit-panel), var(--cockpit-graphite)); box-shadow: 0 16px 34px #0009, inset 0 1px #ffffff08; }
+.suzanne-orb-panel { padding: 24px; }
+.suzanne-orb-panel h1 { color: #e8d7aa; letter-spacing: .01em; }
+.eyebrow, .panel-kicker { color: var(--cockpit-champagne); }
+.suzanne-orb { border-color: var(--cockpit-champagne); box-shadow: 0 0 26px #d9bd7955, inset 0 0 16px #d9bd7955; }
+.suzanne-orb::after { background: #f3d998; box-shadow: 0 0 15px #f3d998; }
+.assistant-panel button { border-color: var(--cockpit-champagne); color: #17130b; background: var(--cockpit-champagne); box-shadow: 0 5px 16px #d9bd7933; }
+.assistant-panel button:hover { color: #17130b; background: #f4dfaa; }
+.assistant-state { color: var(--cockpit-ice) !important; letter-spacing: .08em; text-transform: uppercase; }
+.state-processing, .state-connecting { background: var(--cockpit-champagne); box-shadow: 0 0 10px #d9bd79; }
+.state-listening { background: #82cfd0; box-shadow: 0 0 10px #82cfd0; }
+.state-speaking { background: #f0d18d; box-shadow: 0 0 10px #f0d18d; }
+.vehicle-values strong, .trip-metric strong { color: #f1e4c2; }
+.battery-track span { background: var(--cockpit-champagne); box-shadow: 0 0 12px #d9bd79; }
+.trip-status { color: var(--cockpit-champagne); }
+.trip-metrics { border-color: #53605b; background: #53605b; }
+.trip-metric { background: #111b21; }
+.cockpit-nav { border-color: #2c4249; background: #2c4249; }
+.cockpit-nav button { color: #78919a; background: #0b1319; }
+.cockpit-nav button span { color: #afc5c8; }
+.cockpit-nav button.active, .cockpit-nav button.active span { color: #f1d696; background: #1b2528; }
+
+/* Blue-green glass cockpit palette. */
+:root { --glass-blue: #071a2b; --glass-blue-light: #123c58; --glass-green: #61e4c1; --glass-text: #e6f7fb; }
+.cockpit-shell { background: radial-gradient(circle at 75% 12%, #0b3148 0, transparent 34%), linear-gradient(145deg, #071827 0%, #020a12 72%); }
+.map-stage { border-color: #1c6680; background: #082639; box-shadow: 0 24px 70px #000d, inset 0 0 0 1px #6be8d51c; }
+.suzanne-orb-panel, .cockpit-card { border-color: #1d516b; background: linear-gradient(145deg, #0c2538b8, #061522c9); box-shadow: 0 16px 34px #0009, inset 0 1px #b4f8ff14; backdrop-filter: blur(18px); }
+.suzanne-orb-panel h1 { color: var(--glass-text); }
+.eyebrow, .panel-kicker, .trip-status { color: var(--glass-green); }
+.suzanne-orb { border-color: var(--glass-green); box-shadow: 0 0 26px #61e4c155, inset 0 0 16px #61e4c155; }
+.suzanne-orb::after { background: #a2ffe3; box-shadow: 0 0 15px #61e4c1; }
+.assistant-panel button { border-color: var(--glass-green); color: #031813; background: var(--glass-green); box-shadow: 0 5px 16px #61e4c133; }
+.assistant-panel button:hover { background: #a2ffe3; }
+.battery-track span { background: var(--glass-green); box-shadow: 0 0 12px var(--glass-green); }
+.cockpit-nav button.active, .cockpit-nav button.active span { color: var(--glass-green); background: #0b3042; }
+.driving-status, .amenity-results { border-color: #61e4c1; background: #061b29d9; backdrop-filter: blur(18px); }
