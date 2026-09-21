@@ -1,5 +1,9 @@
+from dataclasses import dataclass
+from collections.abc import Iterable
+
 from ...models.contracts import Coordinates, RoutePriority, StopPinpoint
 from ..trip.deterministic import select_route_pois
+from ..trip.deterministic import distance_to_route_km
 from ..trip.ports import GeocodedPlace, POIProvider, ProviderRoute, RoutingProvider
 
 
@@ -9,6 +13,51 @@ SUPPORTED_CATEGORIES = frozenset(
         "toilets", "fuel", "service",
     }
 )
+
+
+@dataclass(frozen=True, slots=True)
+class PartnerOpportunity:
+    id: str
+    stop: StopPinpoint
+    reason: str
+    detour_minutes: float
+    requires_route_confirmation: bool = True
+    score: float = 0.0
+
+
+def rank_partner_opportunities(
+    stops: Iterable[StopPinpoint],
+    geometry: tuple[tuple[float, float], ...],
+    safe_stop_ids: Iterable[str] | None = None,
+    max_results: int = 2,
+) -> list[PartnerOpportunity]:
+    """Return a small, deterministic list of safe, verified partner suggestions."""
+    safe_ids = set(safe_stop_ids) if safe_stop_ids is not None else None
+    ranked: list[PartnerOpportunity] = []
+    for stop in stops:
+        if not stop.partner or not stop.partner_benefit:
+            continue
+        if safe_ids is not None and stop.id not in safe_ids:
+            continue
+        route_relevance = 1 / (1 + distance_to_route_km(stop.coords, geometry))
+        benefit_relevance = 1.0 if stop.partner_benefit else 0.0
+        score = (
+            route_relevance * 5
+            + benefit_relevance * 2
+            + (stop.rating or 0) * 0.25
+            - stop.detour_minutes * 0.2
+        )
+        ranked.append(
+            PartnerOpportunity(
+                id=f"partner-opportunity-{stop.id}",
+                stop=stop,
+                reason=f"Verified demo partner benefit: {stop.partner_benefit}",
+                detour_minutes=stop.detour_minutes,
+                score=score,
+            )
+        )
+    ranked.sort(key=lambda item: (-item.score, item.detour_minutes, item.stop.id))
+    return ranked[: max(0, max_results)]
 
 
 class POIService:

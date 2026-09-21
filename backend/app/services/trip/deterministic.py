@@ -363,13 +363,14 @@ def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpo
     partner_list = tuple(partners)
     normalized_stop_name = _normalize_partner_name(stop.name)
 
-    partner = next((item for item in partner_list if item.id == stop.id), None)
+    partner = next((item for item in partner_list if item.id == stop.id and item.enabled), None)
     if partner is None:
         partner = next(
             (
                 item
                 for item in partner_list
-                if item.category == stop.category
+                if item.enabled
+                and item.category == stop.category
                 and _normalize_partner_name(item.name) == _normalize_partner_name(stop.name)
             ),
             None,
@@ -379,8 +380,11 @@ def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpo
             for provider_brand in (item.brand, *tuple(item.provider_brands or ())):
                 normalized_brand = _normalize_partner_name(provider_brand)
                 if (
+                    item.enabled
+                    and
                     item.category == stop.category
                     and normalized_brand
+                    and _category_is_eligible(item, stop.category)
                     and (
                         normalized_stop_name == normalized_brand
                         or normalized_stop_name.startswith(f"{normalized_brand} ")
@@ -410,6 +414,11 @@ def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpo
             "partner_benefit": benefit,
         }
     )
+
+
+def _category_is_eligible(partner: Partner, category: str) -> bool:
+    categories = tuple(partner.categories or ())
+    return not categories or category in categories
 
 
 def _has_concrete_benefit(benefit: str) -> bool:
