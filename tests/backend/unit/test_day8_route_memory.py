@@ -1,10 +1,13 @@
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from backend.app.core.fixture_repository import FixtureRepository
+from backend.app.core.errors import APIError
 from backend.app.models.contracts import AssistantIntent, Coordinates, RoutePriority, StopPinpoint
 from backend.app.services.commerce.service import CommerceService
-from backend.app.services.trip.ports import GeocodedPlace, ProviderRoute
+from backend.app.services.trip.ports import GeocodedPlace, ProviderRoute, RoutingProviderError
 from backend.app.services.trip.service import RouteService
 from backend.app.services.wallet.service import WalletService
 
@@ -16,6 +19,13 @@ class RouteProvider:
     async def route(self, origin, destination, priority, waypoints=()):
         del origin, destination, priority, waypoints
         return ProviderRoute(95_000, 3_600, ((16.37, 48.20), (19.04, 47.50)))
+
+
+class FailingWaypointProvider(RouteProvider):
+    async def route(self, origin, destination, priority, waypoints=()):
+        if waypoints:
+            raise RoutingProviderError
+        return await super().route(origin, destination, priority, waypoints)
 
 
 def repository() -> FixtureRepository:
@@ -110,3 +120,18 @@ def test_confirmation_returns_amenities_for_each_confirmed_stop() -> None:
     assert service.route_session_facts["confirmed_charging_stop_ids"] == [
         "charger-a", "charger-b"
     ]
+
+
+def test_failed_confirmation_does_not_partially_mutate_pending_plan() -> None:
+    service = RouteService(FailingWaypointProvider(), repository())
+    asyncio.run(service.plan(AssistantIntent(destination="Budapest", priority=RoutePriority.FASTEST)))
+    route_id = service.active_route_id or ""
+    pending_ids = [stop.id for stop in service._pending_charging_stops]
+
+    with pytest.raises(APIError) as error:
+        asyncio.run(service.confirm_charging_stop(route_id))
+
+    assert error.value.code == "ROUTING_UNAVAILABLE"
+    assert [stop.id for stop in service._pending_charging_stops] == pending_ids
+    assert service._active_stops == []
+    assert service.route_session_facts["charging_plan_confirmed"] is False

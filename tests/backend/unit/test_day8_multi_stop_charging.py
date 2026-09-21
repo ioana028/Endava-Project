@@ -30,6 +30,25 @@ def test_selector_returns_ordered_two_stop_plan_when_one_charge_is_insufficient(
     assert [item.stop.id for item in plan] == ["charger-a", "charger-b"]
 
 
+def test_selector_returns_ordered_three_stop_plan_for_long_route() -> None:
+    plan = select_chargers_iteratively(
+        [
+            candidate("charger-a", 80),
+            candidate("charger-b", 160),
+            candidate("charger-c", 240),
+        ],
+        route_distance_km=320,
+        vehicle_range_km=95,
+        safety_buffer_km=10,
+        max_charged_range_km=95,
+    )
+
+    assert plan is not None
+    assert [item.stop.id for item in plan] == [
+        "charger-a", "charger-b", "charger-c"
+    ]
+
+
 def test_selector_rejects_duplicate_or_unreachable_progress() -> None:
     plan = select_chargers_iteratively(
         [candidate("charger-a", 80), candidate("charger-a", 80)],
