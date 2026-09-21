@@ -78,6 +78,10 @@ export interface SuccessFeedback {
   reference: string
 }
 
+export function formatEurAmount(amountEur: number): string {
+  return `${amountEur.toFixed(2)} euros`
+}
+
 function createRouteResponse(
   route: RouteResponse,
   priority: AssistantResponse['intent']['priority'],
@@ -114,15 +118,20 @@ function compactRouteFacts(
     route.stats.drivingDurationMinutes,
     route.stats.totalDurationMinutes - unconfirmedChargingMinutes,
   )
-  const partnerBenefits = route.stops
-    .map((stop) => ({
-      name: stop.partner?.name,
-      benefit: stop.partner?.benefit ?? stop.partnerBenefit,
-    }))
+  const partnerFacts = route.stops
+    .map((stop) => stop.partner)
     .filter(
-      (entry): entry is { name: string; benefit: string } =>
-        Boolean(entry.name && entry.benefit),
+      (partner): partner is NonNullable<StopPinpoint['partner']> =>
+        Boolean(partner?.name && partner.verified && partner.benefit),
     )
+    .map((partner) => ({
+      partnerId: partner.id,
+      brand: partner.name,
+      benefit: partner.benefit,
+      ...(partner.benefitScope ? { benefitScope: partner.benefitScope } : {}),
+      ...(partner.benefitSource ? { benefitSource: partner.benefitSource } : {}),
+      verified: true,
+    }))
 
   return {
     status: 'success',
@@ -135,7 +144,26 @@ function compactRouteFacts(
     vignetteRequired: route.routeRequirements.some(
       (requirement) => requirement.kind === 'vignette',
     ),
-    ...(partnerBenefits.length > 0 ? { partnerBenefits } : {}),
+    ...(route.opportunities?.length
+      ? {
+          opportunities: route.opportunities.map((opportunity) => ({
+            id: opportunity.id,
+            type: opportunity.type,
+            ...(opportunity.stopId ? { stopId: opportunity.stopId } : {}),
+            ...(opportunity.resultId ? { resultId: opportunity.resultId } : {}),
+            reason: opportunity.reason,
+            detourMinutes: opportunity.detourMinutes,
+            requiresRouteConfirmation: opportunity.requiresRouteConfirmation,
+            status: opportunity.status,
+            ...(opportunity.partnerFact?.verified
+              ? { partnerFact: opportunity.partnerFact }
+              : {}),
+          })),
+        }
+      : {}),
+    ...(partnerFacts.length > 0 ? { partnerFacts } : {}),
+    ...(route.chargingPlan ? { chargingPlan: route.chargingPlan } : {}),
+    ...(route.sessionFacts ? { sessionFacts: route.sessionFacts } : {}),
     ...(route.borderCrossings.length > 0
       ? {
           borderCrossings: route.borderCrossings.map(
@@ -162,7 +190,20 @@ function compactPoiFacts(
   stop: StopPinpoint,
   context: { routeId?: string | null; searchId?: string | null },
 ) {
-  const partnerBenefit = stop.partner?.benefit ?? stop.partnerBenefit
+  const partnerFact = stop.partner?.verified && stop.partner.benefit
+    ? {
+        partnerId: stop.partner.id,
+        brand: stop.partner.name,
+        benefit: stop.partner.benefit,
+        ...(stop.partner.benefitScope
+          ? { benefitScope: stop.partner.benefitScope }
+          : {}),
+        ...(stop.partner.benefitSource
+          ? { benefitSource: stop.partner.benefitSource }
+          : {}),
+        verified: true,
+      }
+    : null
 
   return {
     id: stop.id,
@@ -176,16 +217,27 @@ function compactPoiFacts(
     ...(stop.amenities?.length ? { amenities: stop.amenities } : {}),
     ...(stop.distanceMeters !== undefined ? { distanceMeters: stop.distanceMeters } : {}),
     detourMinutes: stop.detourMinutes,
-    ...(stop.partner?.id ? { partnerId: stop.partner.id } : {}),
-    ...(stop.partner?.name ? { partnerName: stop.partner.name } : {}),
-    ...(partnerBenefit ? { partnerBenefit } : {}),
+    ...(partnerFact ? { partnerFact } : {}),
     ...(context.routeId ? { routeId: context.routeId } : {}),
     ...(context.searchId ? { searchId: context.searchId } : {}),
   }
 }
 
 function compactAmenityFacts(stop: StopPinpoint) {
-  const partnerBenefit = stop.partner?.benefit ?? stop.partnerBenefit
+  const partnerFact = stop.partner?.verified && stop.partner.benefit
+    ? {
+        partnerId: stop.partner.id,
+        brand: stop.partner.name,
+        benefit: stop.partner.benefit,
+        ...(stop.partner.benefitScope
+          ? { benefitScope: stop.partner.benefitScope }
+          : {}),
+        ...(stop.partner.benefitSource
+          ? { benefitSource: stop.partner.benefitSource }
+          : {}),
+        verified: true,
+      }
+    : null
 
   return {
     id: stop.id,
@@ -196,7 +248,7 @@ function compactAmenityFacts(stop: StopPinpoint) {
       ? { distanceMeters: stop.distanceMeters }
       : {}),
     ...(stop.partner?.name ? { providerBrand: stop.partner.name } : {}),
-    ...(partnerBenefit ? { partnerBenefit } : {}),
+    ...(partnerFact ? { partnerFact } : {}),
   }
 }
 
@@ -411,6 +463,9 @@ export function useRealtimeAssistant() {
             call_id: event.call_id,
             output: JSON.stringify({
               status: 'success',
+              ...(result.opportunities?.length
+                ? { opportunities: result.opportunities }
+                : {}),
               results: result.results.map((stop) =>
                 compactPoiFacts(stop, result),
               ),
@@ -462,7 +517,8 @@ export function useRealtimeAssistant() {
             output: JSON.stringify({
               status: 'success',
               chargingStopAdded: result.selectedStopName,
-              chargingDurationMinutes: result.route.chargingStop?.chargingDurationMinutes,
+              chargingPlan: result.chargingPlan ?? result.route.chargingPlan,
+              sessionFacts: result.sessionFacts ?? result.route.sessionFacts,
               nearbyAmenities: result.results.map(compactAmenityFacts),
             }),
           },
@@ -539,7 +595,14 @@ export function useRealtimeAssistant() {
           item: {
             type: 'function_call_output',
             call_id: event.call_id,
-            output: JSON.stringify(result),
+            output: JSON.stringify({
+              ...result,
+              ...(event.name === 'purchase_vignette' &&
+              'amountEur' in result &&
+              typeof result.amountEur === 'number'
+                ? { amountSpoken: formatEurAmount(result.amountEur) }
+                : {}),
+            }),
           },
         })
         sendEvent({
@@ -589,6 +652,9 @@ export function useRealtimeAssistant() {
               status: result.results.length ? 'success' : 'empty',
               selectedStopName: result.selectedStopName,
               radiusMeters: result.radiusMeters,
+              ...(result.opportunities?.length
+                ? { opportunities: result.opportunities }
+                : {}),
               results: result.results.map(compactAmenityFacts),
             }),
           },

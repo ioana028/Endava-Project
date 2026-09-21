@@ -120,6 +120,7 @@ async def realtime_search_route_poi(
     )
     return RealtimeToolSearchRoutePoiResponse(
         results=results,
+        opportunities=[],
         route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
         search_id=_active_context_id(request.app.state.route_service, "active_search_id"),
     )
@@ -150,6 +151,7 @@ async def realtime_search_stop_amenities(
     return RealtimeToolSearchStopAmenitiesResponse(
         selected_stop_name=result["selected_stop_name"],
         results=result.get("results", []),
+        opportunities=result.get("opportunities", []),
         radius_meters=result.get("radius_meters", 500),
         route_id=payload.route_id,
         search_id=payload.search_id,
@@ -181,6 +183,8 @@ async def realtime_confirm_charging_stop(
         route=result["route"],
         selected_stop_name=result["selected_stop_name"],
         results=result.get("results", []),
+        charging_plan=result.get("charging_plan"),
+        session_facts=result.get("session_facts"),
         radius_meters=result.get("radius_meters", 500),
         route_id=result["route_id"],
         search_id=result.get("search_id"),

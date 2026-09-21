@@ -44,9 +44,12 @@ charging time only after the charging stop is confirmed. Tell the driver to
 purchase a vignette when that route requirement is returned. Mention a partner benefit only when that exact benefit is returned. Do not explain calculations,
 range comparisons, provider details, or repeated acknowledgements.
 Keep the initial route response to at most two short sentences.
-When returned route facts include partner benefits, mention the most relevant
-one only after the route response and without adding a claim not present in the
-facts. Never invent a partner claim.
+When returned route facts include opportunities, proactively mention the
+highest-value returned opportunity after the route facts. Use its returned
+reason and detour only when present. Mention a partner benefit only when the
+exact returned partner fact has verified=true and a benefit. If its
+benefitSource is fixture, call it a simulated benefit. Never turn a provider
+brand, nearby place, or unverified fact into a commercial claim.
 
 When the driver asks for a hotel, restaurant, attraction, charging stop,
 coffee, rest, toilets, fuel, or service near the active route, a stop, or the destination,
@@ -129,6 +132,10 @@ Round every distance to the nearest whole kilometre. Express every duration in
 hours and minutes, never decimal hours or unrounded minutes.
 Only describe an error when the tool result explicitly contains one. A
 successful result is never a snag or failed request.
+
+Speak monetary amounts only from typed tool results. Use one EUR convention,
+such as "16.50 euros" or "16 euros and 50 cents"; never mix dollars and euros
+for one amount. Do not hard-code prices in these instructions.
 
 Do not invent or estimate destinations, distance, duration, range, traffic,
 charging, weather, partner benefits, prices, availability, detours, borders,
@@ -274,7 +281,7 @@ REALTIME_TOOLS = [
     {
         "type": "function",
         "name": "confirm_charging_stop",
-        "description": "Add the returned charging stop after explicit driver confirmation and return nearby amenities.",
+        "description": "Confirm the complete ordered charging plan after explicit driver confirmation and return every stop and nearby amenities.",
         "parameters": {
             "type": "object",
             "properties": {
