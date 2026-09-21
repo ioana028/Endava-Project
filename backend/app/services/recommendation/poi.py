@@ -30,6 +30,7 @@ def rank_partner_opportunities(
     geometry: tuple[tuple[float, float], ...],
     safe_stop_ids: Iterable[str] | None = None,
     max_results: int = 2,
+    priority: RoutePriority = RoutePriority.BALANCED,
 ) -> list[PartnerOpportunity]:
     """Return a small, deterministic list of safe, verified partner suggestions."""
     safe_ids = set(safe_stop_ids) if safe_stop_ids is not None else None
@@ -41,11 +42,18 @@ def rank_partner_opportunities(
             continue
         route_relevance = 1 / (1 + distance_to_route_km(stop.coords, geometry))
         benefit_relevance = 1.0 if stop.partner_benefit else 0.0
+        priority_score = {
+            RoutePriority.FASTEST: -stop.detour_minutes * 0.35,
+            RoutePriority.CHEAPEST: benefit_relevance * 1.5,
+            RoutePriority.SCENIC: (stop.rating or 0) * 0.35,
+            RoutePriority.BALANCED: 0.0,
+        }[priority]
         score = (
             route_relevance * 5
             + benefit_relevance * 2
             + (stop.rating or 0) * 0.25
             - stop.detour_minutes * 0.2
+            + priority_score
         )
         ranked.append(
             PartnerOpportunity(
