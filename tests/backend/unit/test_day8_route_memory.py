@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 
 from backend.app.core.fixture_repository import FixtureRepository
-from backend.app.models.contracts import AssistantIntent, Coordinates, RoutePriority, RouteRequirement
+from backend.app.models.contracts import AssistantIntent, Coordinates, RoutePriority, StopPinpoint
 from backend.app.services.commerce.service import CommerceService
 from backend.app.services.trip.ports import GeocodedPlace, ProviderRoute
 from backend.app.services.trip.service import RouteService
@@ -67,3 +67,46 @@ def test_route_session_records_complete_charging_sequence_once() -> None:
     service.mark_partner_opportunity_completed("hotel-1")
 
     assert service.route_session_facts["completed_partner_opportunity_ids"] == ["hotel-1"]
+
+
+def test_route_facts_expose_pending_and_confirmed_plan_states() -> None:
+    service = RouteService(RouteProvider(), repository())
+    asyncio.run(service.plan(AssistantIntent(destination="Budapest", priority=RoutePriority.FASTEST)))
+
+    facts = service.route_state_facts()
+
+    assert facts["charging_plan_status"] == "pending"
+    assert facts["pending_charging_stop_ids"] == ["tea-sopron"]
+    assert facts["confirmed_charging_stop_ids"] == []
+
+
+def test_confirmation_returns_amenities_for_each_confirmed_stop() -> None:
+    service = RouteService(RouteProvider(), repository())
+    service._active_route_id = "route-1"
+    service._active_provider_route = ProviderRoute(
+        240_000, 9_000, ((16.37, 48.20), (19.04, 47.50))
+    )
+    service._active_origin = GeocodedPlace(
+        "Vienna", Coordinates(lng=16.37, lat=48.20)
+    )
+    service._active_destination = GeocodedPlace(
+        "Budapest", Coordinates(lng=19.04, lat=47.50)
+    )
+    service._active_priority = RoutePriority.FASTEST
+    service._pending_charging_stops = [
+        StopPinpoint(id="charger-a", name="Charger A", category="charging", coords=(17.0, 48.0)),
+        StopPinpoint(id="charger-b", name="Charger B", category="charging", coords=(18.0, 47.8)),
+    ]
+    service._route_session = {
+        "charging_plan_confirmed": False,
+        "confirmed_charging_stop_ids": [],
+        "purchased_vignette_requirement_ids": [],
+        "completed_partner_opportunity_ids": [],
+    }
+
+    result = asyncio.run(service.confirm_charging_stop("route-1"))
+
+    assert set(result["amenities_by_stop"]) == {"charger-a", "charger-b"}
+    assert service.route_session_facts["confirmed_charging_stop_ids"] == [
+        "charger-a", "charger-b"
+    ]

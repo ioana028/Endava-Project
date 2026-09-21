@@ -168,6 +168,19 @@ class RouteService:
             "charging_required": (
                 next_stop is not None and next_stop.category == "charging"
             ) or bool(self._pending_charging_stops),
+            "charging_plan_status": (
+                "confirmed"
+                if self._route_session.get("charging_plan_confirmed")
+                else "pending"
+                if self._pending_charging_stops
+                else "none"
+            ),
+            "pending_charging_stop_ids": [
+                stop.id for stop in self._pending_charging_stops
+            ],
+            "confirmed_charging_stop_ids": list(
+                self._route_session.get("confirmed_charging_stop_ids", [])
+            ),
             "route_session": self.route_session_facts,
         }
 
@@ -539,6 +552,13 @@ class RouteService:
             route_id=route_id,
             search_id=None,
         )
+        amenities_by_stop = {stop.id: amenity_search}
+        for confirmed_stop in self._active_stops[1:]:
+            amenities_by_stop[confirmed_stop.id] = await self.search_stop_amenities(
+                stop_id=confirmed_stop.id,
+                route_id=route_id,
+                search_id=None,
+            )
         route = self._build_route_response(
             self._active_provider_route,
             self._active_origin,
@@ -548,6 +568,7 @@ class RouteService:
         response = {
             "route": route,
             **amenity_search,
+            "amenities_by_stop": amenities_by_stop,
         }
         self._confirmed_charging_response = response
         return response
