@@ -84,7 +84,18 @@ stable API error.
 `GET /health/config` reports only non-secret configuration state, including
 whether backend credentials are present and whether Places resolved to Google
 or the explicit offline provider. It never returns credentials or provider
-payloads.
+payloads. Day 7 adds safe runtime diagnostics for scenic preference capability
+and partner enrichment readiness without exposing secret material or raw Google
+responses.
+
+Day 7 reliability rules:
+
+- if Google routing is unavailable, scenic requests must degrade to a labeled
+  offline estimate instead of silently acting like `FASTEST`;
+- route and Places searches remain bounded through a fixed sample interval, a
+  maximum search count, and deduplicated provider results;
+- provider error logs keep only latent timing and stable IDs, never raw JSON,
+  credentials, or route geometry.
 
 ## CORS
 

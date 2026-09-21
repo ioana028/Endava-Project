@@ -1,5 +1,6 @@
 import type {
   BookingResponse,
+  ConfirmChargingStopResponse,
   PurchaseVignetteResponse,
   ReturnToMainRouteResponse,
   RoutePoiResponse,
@@ -163,6 +164,18 @@ export async function searchStopAmenitiesWithTool(
   }
 
   return (await response.json()) as StopAmenitiesResponse
+}
+
+export function confirmChargingStopWithTool(
+  argumentsJson: string,
+  signal?: AbortSignal,
+): Promise<ConfirmChargingStopResponse> {
+  return callDay6Tool(
+    'confirm-charging-stop',
+    argumentsJson,
+    'The charging stop could not be added right now.',
+    signal,
+  )
 }
 
 export async function rerouteWithTool(

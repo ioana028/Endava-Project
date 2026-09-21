@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
-import type { RouteResponse, StopPinpoint } from '../../../types/contracts'
+import type { RoutePriority, RouteResponse, StopPinpoint } from '../../../types/contracts'
 import attractionPin from '../../../assets/attractionpin.png'
 import chargingPin from '../../../assets/chargingpin.png'
 import destinationPin from '../../../assets/destinationpin.png'
@@ -59,6 +59,19 @@ function markerClearanceScore(
   )
 }
 
+function routeHeading(path: google.maps.LatLngLiteral[]) {
+  if (path.length < 2) {
+    return 0
+  }
+
+  const from = path[0]
+  const to = path[1]
+  const latitude = ((from.lat + to.lat) / 2) * Math.PI / 180
+  const longitude = (to.lng - from.lng) * Math.cos(latitude)
+  const north = to.lat - from.lat
+  return (Math.atan2(longitude, north) * 180 / Math.PI + 360) % 360
+}
+
 if (browserKey) {
   setOptions({
     key: browserKey,
@@ -72,6 +85,8 @@ interface RouteMapProps {
   amenityResults?: StopPinpoint[]
   amenityFocusName?: string | null
   drivingActive?: boolean
+  showChargingStop?: boolean
+  routePriority?: RoutePriority
   selectedPoiId?: string | null
   onPoiSelect?: (poiId: string) => void
 }
@@ -82,6 +97,8 @@ export function RouteMap({
   amenityResults = [],
   amenityFocusName = null,
   drivingActive = false,
+  showChargingStop = true,
+  routePriority = 'BALANCED',
   selectedPoiId = null,
   onPoiSelect,
 }: RouteMapProps) {
@@ -98,20 +115,37 @@ export function RouteMap({
 
   poiResultsRef.current = poiResults
 
+  function disposeMap() {
+    const map = mapRef.current
+    if (map && typeof google !== 'undefined') {
+      google.maps.event.clearInstanceListeners(map)
+      map.unbindAll()
+      map.getDiv().replaceChildren()
+    }
+    mapRef.current = null
+  }
+
+  function disposeMarker(marker: google.maps.Marker) {
+    if (typeof google !== 'undefined') {
+      google.maps.event.clearInstanceListeners(marker)
+    }
+    marker.setMap(null)
+  }
+
   useEffect(() => {
     let cancelled = false
 
     polylineRef.current?.setMap(null)
     polylineRef.current = null
-    markersRef.current.forEach((marker) => marker.setMap(null))
+    disposeMap()
+    markersRef.current.forEach(disposeMarker)
     markersRef.current = []
-    poiMarkersRef.current.forEach((marker) => marker.setMap(null))
+    poiMarkersRef.current.forEach(disposeMarker)
     poiMarkersRef.current = []
-    amenityMarkersRef.current.forEach((marker) => marker.setMap(null))
+    amenityMarkersRef.current.forEach(disposeMarker)
     amenityMarkersRef.current = []
     durationOverlayRef.current?.setMap(null)
     durationOverlayRef.current = null
-    mapRef.current = null
     setMapReady(false)
 
     async function renderMap() {
@@ -230,7 +264,7 @@ export function RouteMap({
         const map = new Map(mapElementRef.current, {
           center: path[0],
           zoom: route ? 7 : 17,
-          tilt: route ? 25 : 25,
+          tilt: 25,
           heading: 0,
           mapId: mapId || undefined,
           colorScheme: google.maps.ColorScheme.DARK,
@@ -365,7 +399,7 @@ export function RouteMap({
           polylineRef.current = new google.maps.Polyline({
             map,
             path,
-            strokeColor: '#19a7ff',
+            strokeColor: routePriority === 'SCENIC' ? '#f2cc61' : '#19a7ff',
             strokeOpacity: 0.95,
             strokeWeight: 6,
           })
@@ -394,7 +428,9 @@ export function RouteMap({
           zIndex: 3,
         }) : null
 
-        const stopMarkers = route?.stops.map(
+        const stopMarkers = route?.stops.filter(
+          (stop) => showChargingStop || stop.category !== 'charging',
+        ).map(
           (stop) =>
             new google.maps.Marker({
               map,
@@ -407,7 +443,11 @@ export function RouteMap({
 
         const durationOverlay = route ? new DurationOverlay(
           getCalloutPosition(path, [...route.stops, ...poiResultsRef.current]),
-          formatDuration(route.stats.totalDurationMinutes),
+          formatDuration(
+            showChargingStop
+              ? route.stats.totalDurationMinutes
+              : route.stats.drivingDurationMinutes,
+          ),
           Math.abs(path[path.length - 1].lng - path[0].lng)
             >= Math.abs(path[path.length - 1].lat - path[0].lat)
             ? 'above'
@@ -435,18 +475,18 @@ export function RouteMap({
       cancelled = true
       polylineRef.current?.setMap(null)
       polylineRef.current = null
-      markersRef.current.forEach((marker) => marker.setMap(null))
+      disposeMap()
+      markersRef.current.forEach(disposeMarker)
       markersRef.current = []
-      poiMarkersRef.current.forEach((marker) => marker.setMap(null))
+      poiMarkersRef.current.forEach(disposeMarker)
       poiMarkersRef.current = []
-      amenityMarkersRef.current.forEach((marker) => marker.setMap(null))
+      amenityMarkersRef.current.forEach(disposeMarker)
       amenityMarkersRef.current = []
       durationOverlayRef.current?.setMap(null)
       durationOverlayRef.current = null
-      mapRef.current = null
       setMapReady(false)
     }
-  }, [route])
+  }, [route, routePriority, showChargingStop])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || !route) {
@@ -454,9 +494,11 @@ export function RouteMap({
     }
 
     if (amenityFocusName) {
-      const selectedStop = route.stops.find(
+      const selectedStop = (route.chargingStop?.name === amenityFocusName
+        ? route.chargingStop
+        : route.stops.find(
         (stop) => stop.category === 'charging' && stop.name === amenityFocusName,
-      )
+          ))
       if (!selectedStop) {
         return
       }
@@ -465,6 +507,8 @@ export function RouteMap({
         lat: selectedStop.coords[1],
         lng: selectedStop.coords[0],
       })
+      mapRef.current.setTilt(25)
+      mapRef.current.setHeading(0)
       mapRef.current.setZoom(16)
       return
     }
@@ -472,11 +516,13 @@ export function RouteMap({
     const path = toGooglePath(route.geometry)
     const bounds = new google.maps.LatLngBounds()
     path.forEach((point) => bounds.extend(point))
-    mapRef.current.setTilt(drivingActive ? 45 : 25)
+    mapRef.current.setTilt(drivingActive ? 67.5 : 25)
     if (drivingActive) {
       mapRef.current.panTo(path[0])
-      mapRef.current.setZoom(15)
+      mapRef.current.setHeading(routeHeading(path))
+      mapRef.current.setZoom(18)
     } else {
+      mapRef.current.setHeading(0)
       mapRef.current.fitBounds(bounds, 48)
     }
   }, [amenityFocusName, drivingActive, mapReady, route])
@@ -486,7 +532,7 @@ export function RouteMap({
       return
     }
 
-    amenityMarkersRef.current.forEach((marker) => marker.setMap(null))
+    amenityMarkersRef.current.forEach(disposeMarker)
     amenityMarkersRef.current = amenityResults.map((amenity) => {
       return new google.maps.Marker({
         map: mapRef.current,
@@ -498,7 +544,7 @@ export function RouteMap({
     })
 
     return () => {
-      amenityMarkersRef.current.forEach((marker) => marker.setMap(null))
+      amenityMarkersRef.current.forEach(disposeMarker)
       amenityMarkersRef.current = []
     }
   }, [amenityResults, mapReady])
@@ -508,7 +554,7 @@ export function RouteMap({
       return
     }
 
-    poiMarkersRef.current.forEach((marker) => marker.setMap(null))
+    poiMarkersRef.current.forEach(disposeMarker)
     poiMarkersRef.current = poiResults.map((poi) => {
       const marker = new google.maps.Marker({
         map: mapRef.current,
@@ -532,7 +578,7 @@ export function RouteMap({
     })
 
     return () => {
-      poiMarkersRef.current.forEach((marker) => marker.setMap(null))
+      poiMarkersRef.current.forEach(disposeMarker)
       poiMarkersRef.current = []
     }
   }, [mapReady, onPoiSelect, poiResults, selectedPoiId])

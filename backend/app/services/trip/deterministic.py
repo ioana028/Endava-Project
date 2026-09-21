@@ -18,6 +18,7 @@ POI_DIVERSITY_DISTANCE_KM = 15.0
 POI_COORDINATE_TOLERANCE = 0.01
 DEFAULT_CHARGING_POWER_KW = 50.0
 MIN_CHARGER_PROGRESS_KM = 20.0
+SCENIC_TAGS = frozenset({"scenic", "landmark", "lake", "river", "forest", "viewpoint"})
 
 
 def distance_km(first: tuple[float, float], second: tuple[float, float]) -> float:
@@ -94,6 +95,7 @@ def select_route_stops(
     geometry: tuple[tuple[float, float], ...],
     preference: str | None = None,
     location: str = "route",
+    scenic: bool = False,
 ) -> list[StopPinpoint]:
     candidates = [
         POICandidate(
@@ -104,18 +106,24 @@ def select_route_stops(
         for stop in stops
         if _matches_search_scope(stop.coords, geometry, location)
     ]
-    selected = select_route_pois(candidates, preference)
+    selected = (
+        rank_scenic_pois(candidates)
+        if scenic
+        else select_route_pois(candidates, preference)
+    )[:POI_MAX_RESULTS]
     if location == "route" and any(
         candidate.stop.category == "attraction" for candidate in candidates
     ):
-        selected = _select_route_attractions(candidates, preference)
+        selected = _select_route_attractions(candidates, preference, scenic)
     return [candidate.stop for candidate in selected]
 
 
 def _select_route_attractions(
-    candidates: Iterable[POICandidate], preference: str | None = None
+    candidates: Iterable[POICandidate],
+    preference: str | None = None,
+    scenic: bool = False,
 ) -> list[POICandidate]:
-    ranked = rank_pois(candidates, preference)
+    ranked = rank_scenic_pois(candidates) if scenic else rank_pois(candidates, preference)
     selected: list[POICandidate] = []
     for candidate in ranked:
         if any(
@@ -320,6 +328,24 @@ def rank_pois(
     )
 
 
+def rank_scenic_pois(candidates: Iterable[POICandidate]) -> list[POICandidate]:
+    """Rank offline route candidates by explicit scenic metadata and relevance."""
+    return sorted(
+        candidates,
+        key=lambda candidate: (
+            -sum(
+                1
+                for value in (candidate.stop.tag, *candidate.stop.amenities)
+                if any(tag in _normalized_tokens(value) for tag in SCENIC_TAGS)
+            ),
+            -candidate.route_relevance,
+            candidate.stop.detour_minutes,
+            -candidate.quality,
+            candidate.stop.id,
+        ),
+    )
+
+
 def _normalize_partner_name(value: str | None) -> str:
     if not value:
         return ""
@@ -335,8 +361,7 @@ def _normalized_tokens(value: str | None) -> set[str]:
 
 def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpoint:
     partner_list = tuple(partners)
-    stop_text = " ".join(part for part in (stop.name, stop.tag) if part)
-    stop_tokens = _normalized_tokens(stop_text)
+    normalized_stop_name = _normalize_partner_name(stop.name)
 
     partner = next((item for item in partner_list if item.id == stop.id), None)
     if partner is None:
@@ -351,24 +376,51 @@ def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpo
         )
     if partner is None:
         for item in partner_list:
-            item_tokens = set(_normalized_tokens(item.name))
             for provider_brand in (item.brand, *tuple(item.provider_brands or ())):
-                if provider_brand:
-                    item_tokens.update(_normalized_tokens(provider_brand))
-            if item_tokens.intersection(stop_tokens):
+                normalized_brand = _normalize_partner_name(provider_brand)
+                if (
+                    item.category == stop.category
+                    and normalized_brand
+                    and (
+                        normalized_stop_name == normalized_brand
+                        or normalized_stop_name.startswith(f"{normalized_brand} ")
+                    )
+                ):
+                    partner = item
+                    break
+            if partner is not None:
                 partner = item
                 break
     if partner is None:
         return stop
 
-    benefit = partner.benefit or partner.tag or None
+    candidate_benefit = partner.benefit
+    if candidate_benefit is None and partner.category == "vignette":
+        candidate_benefit = partner.tag
+    benefit = (
+        candidate_benefit
+        if candidate_benefit and _has_concrete_benefit(candidate_benefit)
+        else None
+    )
     return stop.model_copy(
         update={
             "partner": PartnerEnrichment(
                 id=partner.id, name=partner.name, benefit=benefit
-            )
+            ),
+            "partner_benefit": benefit,
         }
     )
+
+
+def _has_concrete_benefit(benefit: str) -> bool:
+    normalized = _normalize_partner_name(benefit)
+    return normalized not in {
+        "",
+        "partner access",
+        "special offer",
+        "preferred location",
+        "convenience partner offer",
+    }
 
 
 def route_progress_km(

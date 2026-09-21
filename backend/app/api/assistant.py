@@ -12,6 +12,8 @@ from ..models.contracts import (
     RealtimeToolRouteResponse,
     RealtimeToolBookingRequest,
     RealtimeToolBookingResponse,
+    RealtimeToolConfirmChargingRequest,
+    RealtimeToolConfirmChargingResponse,
     RealtimeToolPurchaseVignetteRequest,
     RealtimeToolPurchaseVignetteResponse,
     RealtimeToolReturnToMainRouteRequest,
@@ -151,6 +153,37 @@ async def realtime_search_stop_amenities(
         radius_meters=result.get("radius_meters", 500),
         route_id=payload.route_id,
         search_id=payload.search_id,
+    )
+
+
+@router.post(
+    "/realtime/tools/confirm-charging-stop",
+    response_model=RealtimeToolConfirmChargingResponse,
+)
+async def realtime_confirm_charging_stop(
+    payload: RealtimeToolConfirmChargingRequest,
+    request: Request,
+) -> RealtimeToolConfirmChargingResponse:
+    confirm = getattr(request.app.state.route_service, "confirm_charging_stop", None)
+    if confirm is None:
+        raise APIError(
+            503,
+            "CHARGING_CONFIRMATION_UNAVAILABLE",
+            "Charging stop confirmation is not available yet.",
+        )
+
+    result = await confirm(
+        route_id=payload.route_id,
+        stop_id=payload.stop_id,
+        confirmation=payload.confirmation,
+    )
+    return RealtimeToolConfirmChargingResponse(
+        route=result["route"],
+        selected_stop_name=result["selected_stop_name"],
+        results=result.get("results", []),
+        radius_meters=result.get("radius_meters", 500),
+        route_id=result["route_id"],
+        search_id=result.get("search_id"),
     )
 
 

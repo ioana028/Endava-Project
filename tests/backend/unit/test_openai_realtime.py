@@ -54,6 +54,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "search_route_poi",
         "reroute_through_poi",
         "search_stop_amenities",
+        "confirm_charging_stop",
         "purchase_vignette",
         "book_hotel_room",
         "book_restaurant_table",
@@ -61,10 +62,11 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "return_to_main_route",
     ]
     instructions = kwargs["session"]["instructions"]
-    assert "Never ask permission before a mandatory charging stop is added" in instructions
+    assert "should I find an appropriate spot" in instructions
+    assert "Do not" in instructions
     assert "at most two short sentences" in instructions
     assert "vehicleAlerts" not in instructions
-    assert "Should I add a charging stop" not in instructions
+    assert "confirm_charging_stop" in instructions
     assert "Searching returns suggestions only and does not change the route" in instructions
     assert "search_stop_amenities" in instructions
     assert "500 metre stop radius" in instructions
@@ -116,7 +118,16 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "service",
     ]
 
-    purchase_tool = tools[4]
+    confirm_tool = tools[4]
+    assert confirm_tool["parameters"]["required"] == [
+        "routeId",
+        "confirmation",
+    ]
+    assert confirm_tool["parameters"]["properties"]["confirmation"]["enum"] == [
+        "confirmed"
+    ]
+
+    purchase_tool = tools[5]
     assert purchase_tool["parameters"]["required"] == [
         "routeId",
         "requirementId",
@@ -126,7 +137,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "confirmed"
     ]
 
-    hotel_tool = tools[5]
+    hotel_tool = tools[6]
     assert hotel_tool["parameters"]["properties"]["bookingType"]["enum"] == [
         "hotel_room"
     ]
@@ -134,7 +145,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "confirmed"
     ]
 
-    restaurant_tool = tools[6]
+    restaurant_tool = tools[7]
     assert restaurant_tool["parameters"]["properties"]["bookingType"]["enum"] == [
         "restaurant_table"
     ]
@@ -142,12 +153,12 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "confirmed"
     ]
 
-    driving_tool = tools[7]
+    driving_tool = tools[8]
     assert driving_tool["parameters"]["required"] == ["routeId", "confirmation"]
     assert driving_tool["parameters"]["properties"]["confirmation"]["enum"] == [
         "confirmed"
     ]
-    assert tools[8]["parameters"]["required"] == ["routeId"]
+    assert tools[9]["parameters"]["required"] == ["routeId"]
     assert "in-car wallet" in instructions
     assert "Selecting, naming, or praising a result never books it" in instructions
 

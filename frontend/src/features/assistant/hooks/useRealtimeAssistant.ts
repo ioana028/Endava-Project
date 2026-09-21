@@ -10,6 +10,7 @@ import type {
 import {
   bookHotelRoomWithTool,
   bookRestaurantTableWithTool,
+  confirmChargingStopWithTool,
   createRealtimeSession,
   getRealtimeToolErrorMessage,
   planRouteWithTool,
@@ -97,33 +98,44 @@ function compactRouteFacts(
   route: RouteResponse,
   context: { routeId?: string | null; searchId?: string | null } = {},
 ) {
+  const formatDuration = (totalMinutes: number) => {
+    const roundedMinutes = Math.round(totalMinutes)
+    const hours = Math.floor(roundedMinutes / 60)
+    const minutes = roundedMinutes % 60
+    return hours === 0
+      ? `${minutes} minutes`
+      : minutes === 0
+        ? `${hours} hours`
+        : `${hours} hours and ${minutes} minutes`
+  }
   const chargingStop = route.chargingStop ?? route.stops.find((stop) => stop.mandatory)
-  const partnerBenefit = chargingStop?.partner?.benefit ?? chargingStop?.partnerBenefit
+  const unconfirmedChargingMinutes = chargingStop?.chargingDurationMinutes ?? 0
+  const initialTotalDurationMinutes = Math.max(
+    route.stats.drivingDurationMinutes,
+    route.stats.totalDurationMinutes - unconfirmedChargingMinutes,
+  )
+  const partnerBenefits = route.stops
+    .map((stop) => ({
+      name: stop.partner?.name,
+      benefit: stop.partner?.benefit ?? stop.partnerBenefit,
+    }))
+    .filter(
+      (entry): entry is { name: string; benefit: string } =>
+        Boolean(entry.name && entry.benefit),
+    )
 
   return {
     status: 'success',
     destination: route.destination,
-    distanceKm: route.stats.totalDistanceKm,
-    drivingDurationMinutes: route.stats.drivingDurationMinutes,
-    totalDurationMinutes: route.stats.totalDurationMinutes,
-    chargingRequired: Boolean(chargingStop),
-    chargingStop: chargingStop
-      ? {
-          id: chargingStop.id,
-          name: chargingStop.name,
-          detourMinutes: chargingStop.detourMinutes,
-          chargingDurationMinutes: chargingStop.chargingDurationMinutes,
-          partnerLocation: Boolean(chargingStop.partner),
-          ...(partnerBenefit ? { partnerBenefit } : {}),
-        }
-      : null,
-    ...(chargingStop
-      ? {
-          mandatoryStops: route.stops
-            .filter((stop) => stop.mandatory)
-            .map((stop) => stop.name),
-        }
-      : {}),
+    distanceKm: Math.round(route.stats.totalDistanceKm),
+    travelTime: formatDuration(route.stats.drivingDurationMinutes),
+    drivingDurationMinutes: Math.round(route.stats.drivingDurationMinutes),
+    totalDurationMinutes: Math.round(initialTotalDurationMinutes),
+    chargingRequired: route.chargingRequired ?? Boolean(chargingStop),
+    vignetteRequired: route.routeRequirements.some(
+      (requirement) => requirement.kind === 'vignette',
+    ),
+    ...(partnerBenefits.length > 0 ? { partnerBenefits } : {}),
     ...(route.borderCrossings.length > 0
       ? {
           borderCrossings: route.borderCrossings.map(
@@ -150,6 +162,8 @@ function compactPoiFacts(
   stop: StopPinpoint,
   context: { routeId?: string | null; searchId?: string | null },
 ) {
+  const partnerBenefit = stop.partner?.benefit ?? stop.partnerBenefit
+
   return {
     id: stop.id,
     name: stop.name,
@@ -162,6 +176,9 @@ function compactPoiFacts(
     ...(stop.amenities?.length ? { amenities: stop.amenities } : {}),
     ...(stop.distanceMeters !== undefined ? { distanceMeters: stop.distanceMeters } : {}),
     detourMinutes: stop.detourMinutes,
+    ...(stop.partner?.id ? { partnerId: stop.partner.id } : {}),
+    ...(stop.partner?.name ? { partnerName: stop.partner.name } : {}),
+    ...(partnerBenefit ? { partnerBenefit } : {}),
     ...(context.routeId ? { routeId: context.routeId } : {}),
     ...(context.searchId ? { searchId: context.searchId } : {}),
   }
@@ -257,6 +274,7 @@ export function useRealtimeAssistant() {
   const [purchase, setPurchase] = useState<PurchaseState | null>(null)
   const [booking, setBooking] = useState<BookingState | null>(null)
   const [driving, setDriving] = useState<DrivingState | null>(null)
+  const [chargingStopConfirmed, setChargingStopConfirmed] = useState(false)
   const [successFeedback, setSuccessFeedback] = useState<SuccessFeedback | null>(null)
   const [selectedBookingPoi, setSelectedBookingPoi] = useState<StopPinpoint | null>(null)
   const [telemetry, setTelemetry] = useState<RealtimeTelemetry>({})
@@ -268,6 +286,7 @@ export function useRealtimeAssistant() {
   const feedbackAudioRef = useRef<HTMLAudioElement | null>(null)
   const connectionAbortRef = useRef<AbortController | null>(null)
   const toolAbortRef = useRef<AbortController | null>(null)
+  const toolCallInFlightRef = useRef(false)
   const pendingRouteRef = useRef<{
     route: RouteResponse
     priority: AssistantResponse['intent']['priority']
@@ -343,6 +362,7 @@ export function useRealtimeAssistant() {
       event.name !== 'plan_route' &&
       event.name !== 'search_route_poi' &&
       event.name !== 'search_stop_amenities' &&
+      event.name !== 'confirm_charging_stop' &&
       event.name !== 'reroute_through_poi' &&
       event.name !== 'purchase_vignette' &&
       event.name !== 'book_hotel_room' &&
@@ -354,6 +374,7 @@ export function useRealtimeAssistant() {
     }
 
     setState('PROCESSING')
+    toolCallInFlightRef.current = true
     recordTelemetry('toolCallStarted')
     const requestId = ++toolRequestIdRef.current
     if (event.name === 'reroute_through_poi') {
@@ -401,6 +422,56 @@ export function useRealtimeAssistant() {
           response: {
             instructions:
               'Acknowledge that the place search completed, then give the returned results briefly. Never leave the driver without a spoken response.',
+          },
+        })
+        return
+      }
+
+      if (event.name === 'confirm_charging_stop') {
+        const result = await confirmChargingStopWithTool(
+          event.arguments,
+          toolController.signal,
+        )
+        if (!startingRef.current || requestId !== toolRequestIdRef.current) {
+          return
+        }
+
+        pendingRouteRef.current = null
+        setResponse((current) =>
+          current
+            ? { ...current, route: result.route }
+            : createRouteResponse(result.route, activePriorityRef.current),
+        )
+        setChargingStopConfirmed(true)
+        setAmenityResults(result.results)
+        setPoiResults([])
+        setSelectedPoi(null)
+        setAmenitySearchContext({
+          selectedStopName: result.selectedStopName,
+          radiusMeters: result.radiusMeters,
+          routeId: result.routeId,
+          searchId: result.searchId ?? null,
+        })
+        setAmenitySearchState(result.results.length ? 'SUCCESS' : 'EMPTY')
+        setError(null)
+        sendEvent({
+          type: 'conversation.item.create',
+          item: {
+            type: 'function_call_output',
+            call_id: event.call_id,
+            output: JSON.stringify({
+              status: 'success',
+              chargingStopAdded: result.selectedStopName,
+              chargingDurationMinutes: result.route.chargingStop?.chargingDurationMinutes,
+              nearbyAmenities: result.results.map(compactAmenityFacts),
+            }),
+          },
+        })
+        sendEvent({
+          type: 'response.create',
+          response: {
+            instructions:
+              'Confirm that the returned charging stop was added, state its returned charging duration, and summarize the nearby amenities. Do not invent amenities or claim the route was replanned.',
           },
         })
         return
@@ -583,6 +654,7 @@ export function useRealtimeAssistant() {
       setPurchase(null)
       setBooking(null)
       setDriving(null)
+      setChargingStopConfirmed(false)
       setSelectedBookingPoi(null)
       const routePriority = getRoutePriority(event.arguments)
       activePriorityRef.current = routePriority
@@ -611,7 +683,7 @@ export function useRealtimeAssistant() {
         type: 'response.create',
         response: {
           instructions:
-            'Acknowledge that route planning completed, then give the returned route facts briefly. Never leave the driver without a spoken response.',
+            'Acknowledge the route request briefly, then say the returned travelTime, vignette requirement, and charging question exactly. Do not name or time a charging station before confirmation.',
         },
       })
     } catch (toolError) {
@@ -673,6 +745,7 @@ export function useRealtimeAssistant() {
       })
       sendEvent({ type: 'response.create' })
     } finally {
+      toolCallInFlightRef.current = false
       recordTelemetry('toolCallCompleted')
       if (toolAbortRef.current === toolController) {
         toolAbortRef.current = null
@@ -784,7 +857,7 @@ export function useRealtimeAssistant() {
               ),
             )
           }
-          setState('LISTENING')
+          setState(toolCallInFlightRef.current ? 'PROCESSING' : 'LISTENING')
         } else if (event.type === 'error') {
           const eventError = event.error as { message?: string } | undefined
           setError(
@@ -920,6 +993,7 @@ export function useRealtimeAssistant() {
     purchase,
     booking,
     driving,
+    chargingStopConfirmed,
     selectedBookingPoi,
     telemetry,
     successFeedback,

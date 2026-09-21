@@ -36,7 +36,7 @@ export function AssistantStatus({
       {state === 'CONNECTING' && <p>Connecting Suzanne...</p>}
 
       {enabled && state === 'LISTENING' && (
-        <p>Say what you need and Suzanne will help.</p>
+        <p>Waiting for you</p>
       )}
 
       {state === 'SPEAKING' && (
@@ -48,8 +48,8 @@ export function AssistantStatus({
 
       {state === 'PROCESSING' && (
         <>
-          <h2>Planning route</h2>
-          <p>Calculating your route...</p>
+          <h2>Working</h2>
+          <p>Suzanne is checking the returned details...</p>
         </>
       )}
 

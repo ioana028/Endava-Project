@@ -40,6 +40,7 @@ class FakePlacesClient:
 
 class FakeRoutingClient:
     response: FakeResponse | Exception
+    calls: list[dict[str, object]] = []
 
     def __init__(self, **kwargs: object) -> None:
         del kwargs
@@ -51,7 +52,7 @@ class FakeRoutingClient:
         return None
 
     async def post(self, url: str, **kwargs: object) -> FakeResponse:
-        del url, kwargs
+        self.calls.append({"url": url, **kwargs})
         if isinstance(self.response, Exception):
             raise self.response
         return self.response
@@ -256,3 +257,42 @@ def test_routing_malformed_response_is_translated_to_provider_error(
         asyncio.run(
             provider.route(origin, destination, RoutePriority.FASTEST)
         )
+
+
+def test_scenic_routing_avoids_highways_except_known_scenic_corridors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakeRoutingClient.calls = []
+    FakeRoutingClient.response = FakeResponse({
+        "routes": [{
+            "distanceMeters": 300_000,
+            "duration": "10000s",
+            "polyline": {"geoJsonLinestring": {"coordinates": [[16, 48], [19, 47.5]]}},
+        }],
+    })
+    monkeypatch.setattr(
+        "backend.app.integrations.google_maps.routing.httpx.AsyncClient",
+        FakeRoutingClient,
+    )
+    provider = GoogleMapsRoutingProvider("test-key")
+    origin = GeocodedPlace("Vienna", Coordinates(lng=16, lat=48))
+
+    asyncio.run(
+        provider.route(
+            origin,
+            GeocodedPlace("Budapest, Hungary", Coordinates(lng=19, lat=47)),
+            RoutePriority.SCENIC,
+        )
+    )
+    assert FakeRoutingClient.calls[-1]["json"]["routeModifiers"] == {
+        "avoidHighways": True
+    }
+
+    asyncio.run(
+        provider.route(
+            origin,
+            GeocodedPlace("Grossglockner Alpine Road", Coordinates(lng=12, lat=47)),
+            RoutePriority.SCENIC,
+        )
+    )
+    assert "routeModifiers" not in FakeRoutingClient.calls[-1]["json"]

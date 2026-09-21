@@ -91,6 +91,7 @@ export interface RouteResponse {
   stops: StopPinpoint[];
   alerts: RouteAlert[];
   chargingStop?: StopPinpoint | null;
+  chargingRequired?: boolean;
   borderCrossings: BorderCrossing[];
   routeRequirements: RouteRequirement[];
 }
@@ -107,6 +108,10 @@ export interface StopAmenitiesResponse {
   radiusMeters: number;
   routeId: string;
   searchId?: string | null;
+}
+
+export interface ConfirmChargingStopResponse extends StopAmenitiesResponse {
+  route: RouteResponse;
 }
 
 export interface PurchaseVignetteRequest {
