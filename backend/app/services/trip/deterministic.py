@@ -7,14 +7,14 @@ from ...models.fixtures import Partner
 from .ports import ChargingCandidate, POICandidate
 
 
-POI_MAX_RESULTS = 2
-ATTRACTION_MAX_RESULTS = 5
+POI_MAX_RESULTS = 3
+ATTRACTION_MAX_RESULTS = 3
 POI_CORRIDOR_RADIUS_KM = 7.5
 POI_ORIGIN_EXCLUSION_KM = 10.0
 POI_DESTINATION_EXCLUSION_KM = 10.0
 STOP_AMENITY_RADIUS_KM = 0.5
 STOP_AMENITY_MAX_RESULTS = 4
-POI_DIVERSITY_DISTANCE_KM = 15.0
+POI_DIVERSITY_DISTANCE_KM = 8.0
 POI_COORDINATE_TOLERANCE = 0.01
 DEFAULT_CHARGING_POWER_KW = 50.0
 MIN_CHARGER_PROGRESS_KM = 20.0
@@ -217,15 +217,24 @@ def select_chargers_iteratively(
     max_charged_range_km: float | None = None,
 ) -> list[ChargingCandidate] | None:
     """Select chargers using initial range first, then post-charge range."""
+    candidate_list = list(candidates)
+    candidate_ids = [candidate.stop.id for candidate in candidate_list]
+    if len(candidate_ids) != len(set(candidate_ids)):
+        return None
+    if route_distance_km < 0 or vehicle_range_km < 0 or safety_buffer_km < 0:
+        return None
+    if max_charged_range_km is not None and max_charged_range_km < 0:
+        return None
+
     ordered = sorted(
         (
             candidate
-            for candidate in candidates
+            for candidate in candidate_list
             if candidate.compatible
             and candidate.available
             and candidate.stop.detour_minutes >= 0
             and candidate.distance_from_origin_km is not None
-            and candidate.distance_from_origin_km >= MIN_CHARGER_PROGRESS_KM
+            and MIN_CHARGER_PROGRESS_KM <= candidate.distance_from_origin_km < route_distance_km
         ),
         key=lambda candidate: (
             candidate.distance_from_origin_km or 0,
@@ -249,19 +258,12 @@ def select_chargers_iteratively(
             <= previous_progress_km + safe_leg_km
         ]
         if not reachable:
-            if not selected:
-                reachable = [
-                    candidate
-                    for candidate in ordered
-                    if previous_progress_km < (candidate.distance_from_origin_km or 0)
-                    <= previous_progress_km + max(0.0, vehicle_range_km)
-                ]
-            if not reachable:
-                return None
+            return None
         candidate = max(
             reachable,
             key=lambda item: (
                 item.distance_from_origin_km or 0,
+                item.charging_power_kw or 0,
                 0 if item.stop.partner else 1,
                 item.distance_from_route_km,
                 item.stop.id,

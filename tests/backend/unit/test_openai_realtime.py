@@ -62,7 +62,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "return_to_main_route",
     ]
     instructions = kwargs["session"]["instructions"]
-    assert "should I find an appropriate spot" in instructions
+    assert "Should I find the required charging stop?" in instructions
     assert "Do not" in instructions
     assert "at most two short sentences" in instructions
     assert "vehicleAlerts" not in instructions

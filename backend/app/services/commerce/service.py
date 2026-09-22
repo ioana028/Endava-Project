@@ -1,6 +1,41 @@
+from datetime import date, timedelta
+import re
+
 from ...core.errors import APIError
 from ..wallet.service import WalletService
 from .catalog import vignette_amount_eur
+
+
+def normalize_booking_date(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().casefold()
+    today = date.today()
+    if normalized == "today":
+        return today.isoformat()
+    if normalized == "tomorrow":
+        return (today + timedelta(days=1)).isoformat()
+    return value
+
+
+def normalize_booking_time(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().casefold().replace(" ", "")
+    match = re.fullmatch(r"(\d{1,2})(?::(\d{2}))?(am|pm)", normalized)
+    if match:
+        hour = int(match.group(1))
+        minutes = int(match.group(2) or "00")
+        if 1 <= hour <= 12 and 0 <= minutes <= 59:
+            if match.group(3) == "pm" and hour != 12:
+                hour += 12
+            if match.group(3) == "am" and hour == 12:
+                hour = 0
+            return f"{hour:02d}:{minutes:02d}"
+    match = re.fullmatch(r"(\d{1,2}):(\d{2})", normalized)
+    if match and 0 <= int(match.group(1)) <= 23 and 0 <= int(match.group(2)) <= 59:
+        return f"{int(match.group(1)):02d}:{int(match.group(2)):02d}"
+    return value
 
 
 class CommerceService:
@@ -64,7 +99,7 @@ class CommerceService:
         return await self._wallet.process_booking(
             route_id=route_id, search_id=search_id, result_id=result_id,
             booking_type=booking_type, guests=guests, booking_date=booking_date,
-            booking_time=booking_time, request_key=request_key,
+            booking_time=normalize_booking_time(booking_time), request_key=request_key,
         )
 
     async def book_hotel_room(
@@ -76,7 +111,7 @@ class CommerceService:
         return await self.book(
             route_id=route_id, search_id=search_id, result_id=result_id,
             booking_type=booking_type, guests=guests, confirmation=confirmation,
-            booking_date=date, booking_time=time, request_key=request_key,
+            booking_date=normalize_booking_date(date), booking_time=normalize_booking_time(time), request_key=request_key,
         )
 
     async def book_restaurant_table(
@@ -85,10 +120,14 @@ class CommerceService:
         time: str | None = None, confirmation: str,
         request_key: str | None = None,
     ):
+        normalized_date = normalize_booking_date(date)
+        normalized_time = normalize_booking_time(time)
+        if normalized_time is None and date.strip().casefold() == "tonight":
+            normalized_time = "20:00"
         return await self.book(
             route_id=route_id, search_id=search_id, result_id=result_id,
             booking_type=booking_type, guests=guests, confirmation=confirmation,
-            booking_date=date, booking_time=time, request_key=request_key,
+            booking_date=normalized_date, booking_time=normalized_time, request_key=request_key,
         )
 
     def _require_active_route(self, route_id: str) -> None:

@@ -46,6 +46,10 @@ class StopPinpoint(ContractModel):
     user_review_count: int | None = Field(default=None, ge=0)
     tag: str = ""
     details: str | None = None
+    photo_reference: str | None = None
+    keywords: tuple[str, ...] = ()
+    provider: str | None = None
+    source: str | None = None
     amenities: tuple[str, ...] = ()
     charging_power_kw: float | None = Field(default=None, ge=0)
     detour_minutes: float = Field(ge=0, default=0)
@@ -121,6 +125,14 @@ class TripStats(ContractModel):
     total_price_eur: float = Field(ge=0, default=0)
 
 
+class TelemetryNarrationFacts(ContractModel):
+    battery_percent: float = Field(ge=0, le=100)
+    estimated_range_km: float = Field(ge=0)
+    max_charged_range_km: float = Field(ge=0)
+    consumption_rate_kwh: float = Field(gt=0)
+    charging_feasible: bool | None = None
+
+
 class RouteAlert(ContractModel):
     type: Literal["WEATHER", "TRAFFIC", "TOLL", "VEHICLE"]
     location_name: str | None = None
@@ -142,6 +154,7 @@ class RouteResponse(ContractModel):
     opportunities: list[RouteOpportunity] = Field(default_factory=list)
     charging_plan: ChargingPlan | None = None
     session_facts: RouteSessionFacts | None = None
+    telemetry: TelemetryNarrationFacts | None = None
 
 
 class RealtimeToolRouteRequest(ContractModel):
@@ -202,7 +215,7 @@ class RealtimeToolConfirmChargingResponse(ContractModel):
 
 
 class RealtimeToolRerouteRequest(ContractModel):
-    poi_id: str = Field(min_length=1, max_length=200)
+    poi_id: str | list[str] = Field(min_length=1)
     route_id: str = Field(min_length=1, max_length=200)
     search_id: str = Field(min_length=1, max_length=200)
     coords: tuple[float, float] | None = None
@@ -212,6 +225,7 @@ class RealtimeToolRerouteRequest(ContractModel):
 
 class RealtimeToolRerouteResponse(ContractModel):
     route: RouteResponse
+    route_id: str | None = None
 
 
 class RealtimeToolPurchaseVignetteRequest(ContractModel):
@@ -307,6 +321,8 @@ class ProviderHealthResponse(ContractModel):
     google_routes_configured: bool
     google_places_configured: bool
     places_provider: str
+    weather_provider: str = "offline"
+    weather_configured: bool = False
     scenic_capability: bool = False
     partner_enrichment_ready: bool = False
 

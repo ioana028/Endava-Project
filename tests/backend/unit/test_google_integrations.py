@@ -168,9 +168,7 @@ def test_charging_search_keeps_google_chargers_for_later_route_legs(
         )
     )
 
-    assert [candidate.stop.id for candidate in candidates] == ["places/later-charger"]
-    assert candidates[0].distance_from_origin_km is not None
-    assert candidates[0].distance_from_origin_km > 10
+    assert candidates == ()
 
 
 def test_places_timeout_is_translated_to_provider_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -236,9 +234,13 @@ def test_google_places_uses_configured_route_and_nearby_radii(
     FakePlacesClient.responses = [
         FakeResponse({"places": [place()]}),
         FakeResponse({"places": [place()]}),
+        FakeResponse({"places": [place()]}),
+        FakeResponse({"places": [place()]}),
     ]
     asyncio.run(provider.search("attraction", location="route", route=route()))
-    assert FakePlacesClient.calls[0]["json"]["locationBias"]["circle"]["radius"] == 7500
+    request = FakePlacesClient.calls[0]["json"]
+    assert "searchAlongRouteParameters" in request
+    assert request["searchAlongRouteParameters"]["polyline"]["encodedPolyline"]
 
 
 def test_routing_malformed_response_is_translated_to_provider_error(

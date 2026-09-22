@@ -10,8 +10,32 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000
 function App() {
   const assistant = useRealtimeAssistant()
   const [telemetry, setTelemetry] = useState<VehicleTelemetry | null>(null)
+  const [activeBatteryCard, setActiveBatteryCard] = useState(0)
+  const [touchStartX, setTouchStartX] = useState<number | null>(null)
 
   const route = assistant.response?.route
+  const suggestions = assistant.poiResults ?? []
+  const visibleBatteryCard = Math.min(activeBatteryCard, suggestions.length)
+  const suggestion = suggestions[visibleBatteryCard - 1]
+
+  function moveBatteryCard(direction: -1 | 1) {
+    setActiveBatteryCard((index) => Math.min(
+      suggestions.length,
+      Math.max(0, index + direction),
+    ))
+  }
+
+  function handleBatteryTouchEnd(currentX: number) {
+    if (touchStartX === null) {
+      return
+    }
+
+    const distance = currentX - touchStartX
+    if (Math.abs(distance) >= 40) {
+      moveBatteryCard(distance < 0 ? 1 : -1)
+    }
+    setTouchStartX(null)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -43,7 +67,9 @@ function App() {
     <main className="cockpit-shell">
       <header className="cockpit-topbar">
         <div className="status-time">10:42</div>
-        <div className="status-weather">Partly cloudy <strong>18°C</strong></div>
+        <div className="status-weather">
+          {route?.alerts?.find((alert) => alert.type === 'WEATHER')?.message ?? ''}
+        </div>
         <div className="status-device">4G <strong>82%</strong> <span aria-hidden="true">▰</span></div>
       </header>
 
@@ -54,6 +80,7 @@ function App() {
             poiResults={assistant.poiResults}
             amenityResults={assistant.amenityResults}
             amenityFocusName={assistant.amenitySearchContext?.selectedStopName}
+            focusStop={assistant.chargingStopFocus}
             drivingActive={assistant.driving?.active ?? false}
             showChargingStop={assistant.chargingStopConfirmed || Boolean(assistant.driving?.active)}
             routePriority={assistant.response?.intent.priority}
@@ -120,7 +147,7 @@ function App() {
                 <p className="eyebrow">Complete</p>
                 <h1>{assistant.successFeedback.label}</h1>
                 <strong>Confirmation ready</strong>
-                <span>Reference: {assistant.successFeedback.reference}</span>
+                <span>Details sent to your phone app</span>
                 {assistant.successFeedback.action === 'purchase' && assistant.purchase && (
                   <span>Amount: {assistant.purchase.amountEur.toFixed(2)} EUR</span>
                 )}
@@ -142,11 +169,45 @@ function App() {
             )}
           </section>
 
-          <section className="cockpit-card vehicle-card">
-            <div className="card-heading"><span>Battery</span><span>Range</span></div>
-            <div className="vehicle-values"><strong>{telemetry ? `${Math.round(telemetry.batteryPercent)}%` : '--'}</strong><strong>{telemetry ? `${Math.round(telemetry.estimatedRangeKm)} km` : '--'}</strong></div>
-            <div className="battery-track" aria-label={`${Math.round(telemetry?.batteryPercent ?? 0)} percent battery`}><span style={{ width: `${telemetry?.batteryPercent ?? 0}%` }} /></div>
-            <div className="vehicle-footnote"><span>Current charge</span><span>{telemetry ? `${telemetry.consumptionRateKwh.toFixed(1)} kWh / 100 km` : 'Telemetry loading'}</span></div>
+          <section className="cockpit-card vehicle-card" aria-label="Battery and suggested places">
+            <div className="battery-carousel-heading">
+              <span>{visibleBatteryCard === 0 ? 'Battery' : 'Suggested stop'}</span>
+              <span>{visibleBatteryCard + 1} / {suggestions.length + 1}</span>
+            </div>
+            <div
+              className="battery-carousel"
+              onTouchStart={(event) => setTouchStartX(event.touches[0]?.clientX ?? null)}
+              onTouchEnd={(event) => handleBatteryTouchEnd(event.changedTouches[0]?.clientX ?? 0)}
+            >
+              <div
+                className="battery-carousel-track"
+                style={{
+                  width: `${(suggestions.length + 1) * 100}%`,
+                  transform: `translateX(-${(visibleBatteryCard * 100) / (suggestions.length + 1)}%)`,
+                }}
+              >
+                <article className="battery-carousel-card" style={{ flexBasis: `${100 / (suggestions.length + 1)}%` }} aria-label="Battery telemetry">
+                  <div className="card-heading"><span>Battery</span><span>Range</span></div>
+                  <div className="vehicle-values"><strong>{telemetry ? `${Math.round(telemetry.batteryPercent)}%` : '--'}</strong><strong>{telemetry ? `${Math.round(telemetry.estimatedRangeKm)} km` : '--'}</strong></div>
+                  <div className="battery-track" aria-label={`${Math.round(telemetry?.batteryPercent ?? 0)} percent battery`}><span style={{ width: `${telemetry?.batteryPercent ?? 0}%` }} /></div>
+                  <div className="vehicle-footnote"><span>Current charge</span><span>{telemetry ? `${telemetry.consumptionRateKwh.toFixed(1)} kWh / 100 km` : 'Telemetry unavailable'}</span></div>
+                </article>
+                {suggestions.map((place) => (
+                  <article className="battery-carousel-card place-detail-card" style={{ flexBasis: `${100 / (suggestions.length + 1)}%` }} key={place.id} aria-label={`${place.name} suggested stop`} aria-hidden={place.id !== suggestion?.id}>
+                    <span className="place-category">{place.category}</span>
+                    <strong>{place.name}</strong>
+                    <span>{place.tag}</span>
+                    {typeof place.rating === 'number' && <span className="place-rating" aria-label={`${place.rating.toFixed(1)} out of 5 stars`}><span aria-hidden="true">{'★'.repeat(Math.round(place.rating))}{'☆'.repeat(5 - Math.round(place.rating))}</span> {place.rating.toFixed(1)} · {place.userReviewCount ?? 0} reviews</span>}
+                    {place.details && <p>{place.details}</p>}
+                  </article>
+                ))}
+              </div>
+            </div>
+            <div className="battery-carousel-controls">
+              <button type="button" aria-label="Previous battery or suggested stop card" disabled={visibleBatteryCard === 0} onClick={() => moveBatteryCard(-1)}>‹</button>
+              <span>Swipe for route suggestions</span>
+              <button type="button" aria-label="Next battery or suggested stop card" disabled={visibleBatteryCard === suggestions.length} onClick={() => moveBatteryCard(1)}>›</button>
+            </div>
           </section>
 
           <div className={`utility-panel-stage${route && !assistant.driving?.active ? ' has-route' : ''}`} aria-live="polite">
@@ -170,7 +231,6 @@ function App() {
       </section>
 
       {assistant.response && <section className="sr-only" aria-live="polite">{assistant.response.spokenResponse}</section>}
-
       <nav className="cockpit-nav" aria-label="Main navigation">
         <button className="active" type="button"><span aria-hidden="true">➤</span>Map</button>
         <button type="button"><span aria-hidden="true">♫</span>Media</button>

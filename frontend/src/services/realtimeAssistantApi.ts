@@ -25,6 +25,7 @@ interface PlanRouteToolResponse {
 
 interface RerouteToolResponse {
   route: RouteResponse
+  routeId: string
 }
 
 export interface RealtimeToolError {

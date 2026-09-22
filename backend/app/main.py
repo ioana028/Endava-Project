@@ -13,6 +13,7 @@ from .integrations.openai.realtime import (
     OpenAIRealtimeProvider,
     RealtimeSessionProvider,
 )
+from .integrations.weather.provider import OfflineWeatherProvider, OpenMeteoWeatherProvider
 from .models.contracts import (
     HealthResponse,
     ProviderHealthResponse,
@@ -80,10 +81,16 @@ def create_app(
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Content-Type"],
     )
+    weather_provider = (
+        OpenMeteoWeatherProvider(settings.weather_timeout_seconds)
+        if settings.weather_provider == "open-meteo" and settings.weather_enabled
+        else OfflineWeatherProvider()
+    )
     application.state.settings = settings
     application.state.route_service = route_service
     application.state.wallet_service = wallet_service
     application.state.commerce_service = commerce_service
+    application.state.weather_provider = weather_provider
     application.state.realtime_provider = realtime_provider or OpenAIRealtimeProvider(
         settings.openai_api_key,
         settings.realtime_model,
@@ -103,6 +110,11 @@ def create_app(
         resolved_places_provider = "google"
         partner_records = tuple(getattr(application.state, "fixtures", safe_load_fixtures()).partners)
         scenic_capability = bool(settings.google_server_api_key)
+        weather_provider_name = settings.weather_provider or "offline"
+        weather_ready = settings.weather_enabled and (
+            weather_provider_name in {"offline", "open-meteo"}
+            or bool(settings.weather_api_key)
+        )
         return ProviderHealthResponse(
             status="ok",
             environment=settings.environment,
@@ -113,6 +125,8 @@ def create_app(
                 and bool(settings.google_server_api_key)
             ),
             places_provider=resolved_places_provider,
+            weather_provider=weather_provider_name,
+            weather_configured=weather_ready,
             scenic_capability=scenic_capability,
             partner_enrichment_ready=bool(partner_records),
         )

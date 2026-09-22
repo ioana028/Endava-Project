@@ -44,12 +44,16 @@ class Settings:
         os.getenv("GOOGLE_PLACES_SEARCH_RADIUS_METERS", "7500")
     )
     google_places_sample_interval_km: float = float(
-        os.getenv("GOOGLE_PLACES_SAMPLE_INTERVAL_KM", "50")
+        os.getenv("GOOGLE_PLACES_SAMPLE_INTERVAL_KM", "25")
     )
     google_places_max_search_points: int = int(
-        os.getenv("GOOGLE_PLACES_MAX_SEARCH_POINTS", "8")
+        os.getenv("GOOGLE_PLACES_MAX_SEARCH_POINTS", "16")
     )
     places_provider: str = os.getenv("PLACES_PROVIDER", "auto").strip().lower()
+    weather_provider: str = os.getenv("WEATHER_PROVIDER", "offline").strip().lower()
+    weather_enabled: bool = os.getenv("WEATHER_ENABLED", "true").strip().lower() not in {"0", "false", "no"}
+    weather_api_key: str | None = os.getenv("WEATHER_API_KEY")
+    weather_timeout_seconds: float = float(os.getenv("WEATHER_TIMEOUT_SECONDS", "10"))
     cors_origins: tuple[str, ...] = tuple(
         origin.strip()
         for origin in os.getenv(
