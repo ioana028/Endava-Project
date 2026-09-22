@@ -273,11 +273,11 @@ class RouteService:
             )
             try:
                 candidates = await charging_provider.search_charging(
-                    provider_route, reachable_distance_km
+                    provider_route, safe_distance_km
                 )
             except (JourneyProviderError, OSError):
                 candidates = await fixture_provider.search_charging(
-                    provider_route, reachable_distance_km
+                    provider_route, safe_distance_km
                 )
 
             enriched_candidates = tuple(

@@ -7,6 +7,7 @@ from backend.app.core.errors import APIError
 from backend.app.core.fixture_repository import FixtureRepository
 from backend.app.models.contracts import AssistantIntent, Coordinates, RoutePriority, StopPinpoint
 from backend.app.services.trip.ports import ChargingCandidate, GeocodedPlace, ProviderRoute
+from backend.app.services.trip.deterministic import select_chargers_iteratively
 from backend.app.services.trip.service import RouteService
 
 
@@ -66,6 +67,28 @@ def test_riga_returns_stable_unavailable_error_when_no_safe_sequence_exists() ->
     assert error.value.code == "NO_SAFE_CHARGING_PLAN"
     assert "safe sequence" in error.value.message
     assert service.active_route_id is None
+
+
+def test_selector_rejects_a_first_stop_that_requires_the_safety_buffer_to_be_ignored() -> None:
+    plan = select_chargers_iteratively(
+        [
+            ChargingCandidate(
+                stop=StopPinpoint(
+                    id="too-far",
+                    name="Too far",
+                    category="charging",
+                    coords=(17.0, 48.0),
+                ),
+                distance_from_origin_km=95,
+            )
+        ],
+        route_distance_km=200,
+        vehicle_range_km=100,
+        safety_buffer_km=10,
+        max_charged_range_km=200,
+    )
+
+    assert plan is None
 
 
 def test_confirmation_returns_complete_ordered_plan_and_session_state() -> None:
