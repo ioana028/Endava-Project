@@ -217,15 +217,24 @@ def select_chargers_iteratively(
     max_charged_range_km: float | None = None,
 ) -> list[ChargingCandidate] | None:
     """Select chargers using initial range first, then post-charge range."""
+    candidate_list = list(candidates)
+    candidate_ids = [candidate.stop.id for candidate in candidate_list]
+    if len(candidate_ids) != len(set(candidate_ids)):
+        return None
+    if route_distance_km < 0 or vehicle_range_km < 0 or safety_buffer_km < 0:
+        return None
+    if max_charged_range_km is not None and max_charged_range_km < 0:
+        return None
+
     ordered = sorted(
         (
             candidate
-            for candidate in candidates
+            for candidate in candidate_list
             if candidate.compatible
             and candidate.available
             and candidate.stop.detour_minutes >= 0
             and candidate.distance_from_origin_km is not None
-            and candidate.distance_from_origin_km >= MIN_CHARGER_PROGRESS_KM
+            and MIN_CHARGER_PROGRESS_KM <= candidate.distance_from_origin_km < route_distance_km
         ),
         key=lambda candidate: (
             candidate.distance_from_origin_km or 0,
@@ -233,6 +242,9 @@ def select_chargers_iteratively(
             candidate.stop.id,
         ),
     )
+    progress_values = [candidate.distance_from_origin_km for candidate in ordered]
+    if len(progress_values) != len(set(progress_values)):
+        return None
     charged_range_km = max_charged_range_km or vehicle_range_km
     initial_safe_leg_km = max(0.0, vehicle_range_km - safety_buffer_km)
     charged_safe_leg_km = max(0.0, charged_range_km - safety_buffer_km)

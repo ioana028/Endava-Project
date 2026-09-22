@@ -15,6 +15,7 @@ from ...integrations.places.provider import LocalPlacesProvider
 from ...models.contracts import (
     AssistantIntent,
     BorderCrossing,
+    ChargingPlan,
     Coordinates,
     PartnerFact,
     RouteAlert,
@@ -22,6 +23,7 @@ from ...models.contracts import (
     RouteRequirement,
     RoutePriority,
     RouteResponse,
+    RouteSessionFacts,
     StopPinpoint,
     TripStats,
 )
@@ -48,6 +50,7 @@ from .ports import (
     RoutingProvider,
     RoutingProviderError,
 )
+from ..vehicle.service import VehicleTelemetryService
 
 
 DEFAULT_ORIGIN = "Vienna, Austria"
@@ -75,6 +78,7 @@ class RouteService:
         self._places_provider = places_provider or LocalPlacesProvider(
             fixture_repository
         )
+        self._telemetry = VehicleTelemetryService(fixture_repository)
         self._active_provider_route = None
         self._active_route_id: str | None = None
         self._active_search_id: str | None = None
@@ -110,11 +114,21 @@ class RouteService:
                 "confirmed_charging_stop_ids": [],
                 "purchased_vignette_requirement_ids": [],
                 "completed_partner_opportunity_ids": [],
+                "completed_charging_stop_ids": [],
+                "remaining_requirements": [],
             }
+        remaining_requirements = [
+            requirement
+            for requirement in self.active_route_requirements
+            if requirement.id not in self._route_session.get(
+                "purchased_vignette_requirement_ids", []
+            )
+        ]
         return {
             "route_id": self._active_route_id,
             "session_generation": self._session_generation,
             **self._route_session,
+            "remaining_requirements": remaining_requirements,
         }
 
     def mark_vignette_purchased(self, requirement_id: str) -> None:
@@ -125,7 +139,16 @@ class RouteService:
     def mark_partner_opportunity_completed(self, opportunity_id: str) -> None:
         if not self._route_session or opportunity_id in self._route_session["completed_partner_opportunity_ids"]:
             return
-        self._route_session["completed_partner_opportunity_ids"].append(opportunity_id)
+        self._route_session.setdefault("completed_partner_opportunity_ids", []).append(opportunity_id)
+
+    def mark_charging_stop_completed(self, stop_id: str) -> None:
+        if (
+            not self._route_session
+            or stop_id not in self._route_session.get("confirmed_charging_stop_ids", [])
+            or stop_id in self._route_session.get("completed_charging_stop_ids", [])
+        ):
+            return
+        self._route_session.setdefault("completed_charging_stop_ids", []).append(stop_id)
 
     @property
     def active_route_requirements(self) -> tuple[RouteRequirement, ...]:
@@ -172,7 +195,11 @@ class RouteService:
                 next_stop is not None and next_stop.category == "charging"
             ) or bool(self._pending_charging_stops),
             "charging_plan_status": (
-                "confirmed"
+                    "completed"
+                    if self._route_session.get("charging_plan_confirmed")
+                    and set(self._route_session.get("confirmed_charging_stop_ids", []))
+                    <= set(self._route_session.get("completed_charging_stop_ids", []))
+                else "confirmed"
                 if self._route_session.get("charging_plan_confirmed")
                 else "pending"
                 if self._pending_charging_stops
@@ -201,6 +228,7 @@ class RouteService:
         candidates = (
             stop for stop in self._active_stops
             if stop.mandatory
+            and stop.id not in self._route_session.get("completed_charging_stop_ids", [])
             and route_progress_km(stop.coords, tuple(self._active_provider_route.geometry))
             > progress_km
         )
@@ -232,27 +260,25 @@ class RouteService:
         self._validate_route(provider_route)
         initial_distance_km = round(provider_route.distance_meters / 1000, 2)
         safe_distance_km = self._safe_distance_km()
-        reachable_distance_km = self._fixture_repository.fixtures.telemetry.estimated_range_km
-        max_charged_range_km = (
-            self._fixture_repository.fixtures.telemetry.max_charged_range_km
-            or reachable_distance_km
-        )
+        reachable_distance_km = self._telemetry.estimated_range_km
+        max_charged_range_km = self._telemetry.max_charged_range_km or reachable_distance_km
         stops: list[StopPinpoint] = []
 
         if initial_distance_km > safe_distance_km:
             charging_provider = self._charging_provider or FixtureChargingProvider(
                 self._fixture_repository.fixtures.partners
             )
+            fixture_provider = FixtureChargingProvider(
+                self._fixture_repository.fixtures.partners
+            )
             try:
                 candidates = await charging_provider.search_charging(
                     provider_route, reachable_distance_km
                 )
-            except (JourneyProviderError, OSError) as error:
-                raise APIError(
-                    503,
-                    "CHARGING_UNAVAILABLE",
-                    "The charging service is unavailable.",
-                ) from error
+            except (JourneyProviderError, OSError):
+                candidates = await fixture_provider.search_charging(
+                    provider_route, reachable_distance_km
+                )
 
             enriched_candidates = tuple(
                 candidate.__class__(
@@ -297,9 +323,9 @@ class RouteService:
                     candidate,
                     provider_route.distance_meters / 1000,
                     charger_progress_km,
-                    self._fixture_repository.fixtures.telemetry.estimated_range_km,
+                    self._telemetry.estimated_range_km,
                     self._safety_buffer_km,
-                    self._fixture_repository.fixtures.telemetry.consumption_rate_kwh,
+                    self._telemetry.consumption_rate_kwh,
                 )
                 stops.append(
                     candidate.stop.model_copy(
@@ -326,6 +352,7 @@ class RouteService:
             "confirmed_charging_stop_ids": [],
             "purchased_vignette_requirement_ids": [],
             "completed_partner_opportunity_ids": [],
+            "completed_charging_stop_ids": [],
         }
         self._confirmed_charging_response = None
         self._active_search_id = None
@@ -536,6 +563,9 @@ class RouteService:
         self._active_provider_route = provider_route
         self._active_stops = list(self._pending_charging_stops)
         self._pending_charging_stops = []
+        self._route_session.setdefault("purchased_vignette_requirement_ids", [])
+        self._route_session.setdefault("completed_partner_opportunity_ids", [])
+        self._route_session.setdefault("completed_charging_stop_ids", [])
         self._route_session["charging_plan_confirmed"] = True
         self._route_session["confirmed_charging_stop_ids"] = [
             item.id for item in self._active_stops
@@ -559,10 +589,34 @@ class RouteService:
             self._active_destination,
             self._active_stops,
         )
+        charging_plan = ChargingPlan(
+            stops=list(self._active_stops),
+            complete=True,
+            total_charging_minutes=round(
+                sum(stop.charging_duration_minutes for stop in self._active_stops),
+                1,
+            ),
+            confirmed=True,
+        )
+        session_facts = RouteSessionFacts(
+            charging_plan_confirmed=True,
+            confirmed_charging_stop_ids=list(
+                self._route_session["confirmed_charging_stop_ids"]
+            ),
+            purchased_vignette_requirement_ids=list(
+                self._route_session["purchased_vignette_requirement_ids"]
+            ),
+            remaining_requirements=self.route_session_facts["remaining_requirements"],
+        )
+        route = route.model_copy(
+            update={"charging_plan": charging_plan, "session_facts": session_facts}
+        )
         response = {
             "route": route,
             **amenity_search,
             "amenities_by_stop": amenities_by_stop,
+                "charging_plan": charging_plan,
+                "session_facts": session_facts,
         }
         self._confirmed_charging_response = response
         return response
@@ -793,7 +847,7 @@ class RouteService:
     def _safe_distance_km(self) -> float:
         return max(
             0,
-            self._fixture_repository.fixtures.telemetry.estimated_range_km
+            self._telemetry.estimated_range_km
             - self._safety_buffer_km,
         )
 
@@ -845,7 +899,7 @@ class RouteService:
         return crossings, requirements
 
     def _range_alert(self, distance_km: float) -> list[RouteAlert]:
-        vehicle_range = self._fixture_repository.fixtures.telemetry.estimated_range_km
+        vehicle_range = self._telemetry.estimated_range_km
         if distance_km <= vehicle_range:
             return []
         return [
