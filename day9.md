@@ -261,6 +261,63 @@ frontend components, or country-rule fixtures.
 - Speak once when the deterministic route result arrives.
 - Keep the result concise and based only on returned facts.
 
+### Statement-first voice flow
+
+Suzanne should speak in declarative statements by default. She may ask a
+question only when the driver must authorize a clearly defined action or when
+required information is missing.
+
+Allowed authorization questions include:
+
+- "Do you want me to add it to the route?"
+- "Should I purchase that?"
+- "Would you like me to book it?"
+- "Should I reroute through this stop?"
+
+Voice-flow rules:
+
+- Route results, telemetry, weather, charging requirements, vignettes,
+  partner facts, prices, errors, and completed actions are statements.
+- A suggestion remains a statement until the driver needs to authorize adding,
+  purchasing, booking, or rerouting it.
+- Ask at most one authorization question per action and do not repeat it after
+  the driver has answered; repeated authorization questions are prohibited.
+- Do not use rhetorical questions, conversational filler, or questions that
+  merely repeat returned facts.
+- Do not ask for confirmation when the action is already authorized by the
+  documented voice flow, such as a clear request to purchase a vignette.
+- Do not ask a question when a required fact is unavailable; state the missing
+  fact or actionable error instead.
+- After authorization, state the result once. Do not ask a second confirmation
+  question unless a separate action requires separate authorization.
+
+Examples:
+
+| Situation | Preferred Suzanne response shape |
+|---|---|
+| Route completed | Statement with duration, requirements, and one charging statement |
+| Charging suggestion | Statement naming the returned charger, followed by one add-to-route question |
+| Vignette request | Statement that the vignette purchase is authorized, then the completed result |
+| Nearby partner place | Statement with returned benefit, followed by one purchase, booking, or route question only when relevant |
+| Weather alert | Statement with returned condition, location, and severity |
+| Tool failure | One actionable statement based on the returned error |
+| Missing booking detail | One concise question for the missing date, time, or guest count |
+
+Person C must encode this policy in Realtime instructions and response tests.
+Person A must ensure the UI does not create duplicate prompts when a voice
+question is already pending.
+
+Voice acceptance tests must verify that:
+
+1. A route request produces one acknowledgement and one final statement.
+2. A charging suggestion asks one authorization question only when adding it
+   changes the route.
+3. A clear vignette purchase request does not trigger an unnecessary second
+   confirmation question.
+4. A booking or reroute suggestion asks one explicit authorization question.
+5. Weather, telemetry, partner, price, and error responses remain statements.
+6. Suzanne does not repeat an answered question or ask rhetorical questions.
+
 ### Telemetry-first voice policy
 
 Suzanne must always use returned telemetry-backed facts for:
