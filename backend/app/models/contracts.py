@@ -215,7 +215,7 @@ class RealtimeToolConfirmChargingResponse(ContractModel):
 
 
 class RealtimeToolRerouteRequest(ContractModel):
-    poi_id: str = Field(min_length=1, max_length=200)
+    poi_id: str | list[str] = Field(min_length=1)
     route_id: str = Field(min_length=1, max_length=200)
     search_id: str = Field(min_length=1, max_length=200)
     coords: tuple[float, float] | None = None
@@ -225,6 +225,7 @@ class RealtimeToolRerouteRequest(ContractModel):
 
 class RealtimeToolRerouteResponse(ContractModel):
     route: RouteResponse
+    route_id: str | None = None
 
 
 class RealtimeToolPurchaseVignetteRequest(ContractModel):

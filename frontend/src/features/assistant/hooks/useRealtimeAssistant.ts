@@ -115,6 +115,9 @@ function compactRouteFacts(
         : `${hours} hours and ${minutes} minutes`
   }
   const chargingStop = route.chargingStop ?? route.stops.find((stop) => stop.mandatory)
+  const telemetryRequiresCharging = route.telemetry
+    ? route.stats.totalDistanceKm > route.telemetry.estimatedRangeKm
+    : false
   const unconfirmedChargingMinutes = chargingStop?.chargingDurationMinutes ?? 0
   const initialTotalDurationMinutes = Math.max(
     route.stats.drivingDurationMinutes,
@@ -166,10 +169,13 @@ function compactRouteFacts(
     travelTime: formatDuration(route.stats.drivingDurationMinutes),
     drivingDurationMinutes: Math.round(route.stats.drivingDurationMinutes),
     totalDurationMinutes: Math.round(initialTotalDurationMinutes),
-    chargingRequired: route.chargingRequired ?? Boolean(chargingStop),
-    vignetteRequired: route.routeRequirements.some(
-      (requirement) => requirement.kind === 'vignette',
+    chargingRequired: Boolean(
+      (route.sessionFacts?.chargingPlanConfirmed ? false : route.chargingRequired ?? Boolean(chargingStop))
+      || (!route.sessionFacts?.chargingPlanConfirmed && telemetryRequiresCharging),
     ),
+    vignetteRequired: route.sessionFacts?.remainingRequirements?.some(
+      (requirement) => requirement.kind === 'vignette',
+    ) ?? route.routeRequirements.some((requirement) => requirement.kind === 'vignette'),
     ...(route.opportunities?.length
       ? {
           opportunities: route.opportunities.map((opportunity) => ({
@@ -190,11 +196,6 @@ function compactRouteFacts(
     ...(partnerFacts.length > 0 ? { partnerFacts } : {}),
     ...(compactChargingPlan ? { chargingPlan: compactChargingPlan } : {}),
     ...(route.sessionFacts ? { sessionFacts: route.sessionFacts } : {}),
-    ...(route.telemetry
-      ? {
-          telemetry: route.telemetry,
-        }
-      : {}),
     ...(route.alerts.length
       ? {
           alerts: route.alerts.map((alert) => ({
@@ -250,7 +251,7 @@ function compactPoiFacts(
     id: stop.id,
     name: stop.name,
     category: stop.category,
-    ...(stop.rating !== undefined ? { rating: stop.rating } : {}),
+    ...(typeof stop.rating === 'number' ? { rating: stop.rating } : {}),
     ...(stop.userReviewCount !== undefined
       ? { userReviewCount: stop.userReviewCount }
       : {}),
@@ -374,6 +375,7 @@ export function useRealtimeAssistant() {
   const [booking, setBooking] = useState<BookingState | null>(null)
   const [driving, setDriving] = useState<DrivingState | null>(null)
   const [chargingStopConfirmed, setChargingStopConfirmed] = useState(false)
+  const [chargingStopFocus, setChargingStopFocus] = useState<StopPinpoint | null>(null)
   const [successFeedback, setSuccessFeedback] = useState<SuccessFeedback | null>(null)
   const [selectedBookingPoi, setSelectedBookingPoi] = useState<StopPinpoint | null>(null)
   const [telemetry, setTelemetry] = useState<RealtimeTelemetry>({})
@@ -439,6 +441,7 @@ export function useRealtimeAssistant() {
     }
     setSuccessFeedback(null)
     pendingRouteRef.current = null
+    setChargingStopFocus(null)
     assistantTranscriptRef.current = ''
     channelRef.current?.close()
     channelRef.current = null
@@ -506,6 +509,7 @@ export function useRealtimeAssistant() {
         setAmenitySearchContext(null)
         setAmenitySearchState('IDLE')
         setSelectedPoi(null)
+        setChargingStopFocus(null)
         setPoiActionState('IDLE')
         setError(
           result.results.length === 0
@@ -554,6 +558,11 @@ export function useRealtimeAssistant() {
             : createRouteResponse(result.route, activePriorityRef.current),
         )
         setChargingStopConfirmed(true)
+        setChargingStopFocus(
+          result.route.chargingStop
+            ?? result.route.stops.find((stop) => stop.category === 'charging')
+            ?? null,
+        )
         setAmenityResults(result.results)
         setPoiResults([])
         setSelectedPoi(null)
@@ -598,6 +607,14 @@ export function useRealtimeAssistant() {
                 : undefined,
               sessionFacts: result.sessionFacts ?? result.route.sessionFacts,
               nearbyAmenities: result.results.map(compactAmenityFacts),
+              nearbyPartnerFacts: result.results
+                .filter((amenity) => amenity.partner?.verified && amenity.partner.benefit)
+                .map((amenity) => ({
+                  placeName: amenity.name,
+                  brand: amenity.partner?.name,
+                  benefit: amenity.partner?.benefit,
+                  verified: true,
+                })),
             }),
           },
         })
@@ -605,7 +622,7 @@ export function useRealtimeAssistant() {
           type: 'response.create',
           response: {
             instructions:
-              'Confirm that the returned charging stop was added, state its returned charging duration, and always mention every verified charging partner benefit in chargingPartnerFacts. Then summarize nearby amenities and explicitly mention any nearby amenity with a verified partner benefit, including the brand and benefit. Do not invent amenities or claim the route was replanned.',
+              'Say the station name once, then its returned charging time and any route time added. If it has a verified partner benefit, say: "They are a verified partner of ours offering [benefit]." Do not repeat the station name, network name, verification, or benefit. Mention nearby amenities only briefly and never claim the route was replanned.',
           },
         })
         return
@@ -689,7 +706,11 @@ export function useRealtimeAssistant() {
             instructions:
               event.name === 'return_to_main_route'
                 ? 'Confirm that the full route view has been restored. Keep it to one short sentence and do not claim that a new route was planned.'
-                : 'Acknowledge the successful action clearly and briefly, then state its result. Never leave the driver without a spoken response.',
+                : event.name === 'purchase_vignette'
+                  ? 'Say that the vignette is handled and the details were sent to the phone app. Never speak the transaction ID, requirement ID, or any internal identifier.'
+                  : event.name === 'book_hotel_room' || event.name === 'book_restaurant_table'
+                    ? 'Say that the booking was completed and the details were sent to the phone app. Never speak the booking ID, result ID, route ID, or any internal identifier.'
+                    : 'Acknowledge the successful action clearly and briefly, then state only the useful returned result. Never speak internal IDs or reference codes.',
           },
         })
         return
@@ -763,7 +784,31 @@ export function useRealtimeAssistant() {
         )
         setPoiResults([])
         setSelectedPoi(null)
+        const reroutedChargingStop = result.route.stops.find((stop) => stop.category === 'charging')
+        setChargingStopConfirmed(Boolean(reroutedChargingStop))
+        setChargingStopFocus(reroutedChargingStop ?? null)
         setPoiActionState('REROUTE_SUCCESS')
+        let reroutedAmenities: StopPinpoint[] = []
+        if (reroutedChargingStop && result.routeId) {
+          const amenityResult = await searchStopAmenitiesWithTool(
+            JSON.stringify({
+              stopId: reroutedChargingStop.id,
+              routeId: result.routeId,
+            }),
+            toolController.signal,
+          )
+          if (isSessionCurrent(generation) && requestId === toolRequestIdRef.current) {
+            reroutedAmenities = amenityResult.results
+            setAmenityResults(amenityResult.results)
+            setAmenitySearchContext({
+              selectedStopName: amenityResult.selectedStopName,
+              radiusMeters: amenityResult.radiusMeters,
+              routeId: amenityResult.routeId,
+              searchId: amenityResult.searchId ?? null,
+            })
+            setAmenitySearchState(amenityResult.results.length ? 'SUCCESS' : 'EMPTY')
+          }
+        }
         pendingRouteRef.current = {
           route: result.route,
           priority: activePriorityRef.current,
@@ -773,14 +818,21 @@ export function useRealtimeAssistant() {
           item: {
             type: 'function_call_output',
             call_id: event.call_id,
-            output: JSON.stringify(compactRouteFacts(result.route)),
+            output: JSON.stringify({
+              ...compactRouteFacts(result.route, {
+                ...(result.routeId ? { routeId: result.routeId } : {}),
+              }),
+              ...(reroutedAmenities.length
+                ? { nearbyAmenities: reroutedAmenities.map(compactAmenityFacts) }
+                : {}),
+            }),
           },
         })
         sendEvent({
           type: 'response.create',
           response: {
             instructions:
-              'Acknowledge that the route change completed, then briefly state the returned route facts. Never leave the driver without a spoken response.',
+              'Acknowledge that the selected place or places were added in one route change, then briefly state the returned route facts. Never leave the driver without a spoken response.',
           },
         })
         return
@@ -799,6 +851,7 @@ export function useRealtimeAssistant() {
       setBooking(null)
       setDriving(null)
       setChargingStopConfirmed(false)
+      setChargingStopFocus(null)
       setSelectedBookingPoi(null)
       const routePriority = getRoutePriority(event.arguments)
       activePriorityRef.current = routePriority
@@ -826,8 +879,8 @@ export function useRealtimeAssistant() {
       sendEvent({
         type: 'response.create',
         response: {
-          instructions:
-              'State the returned travelTime, vignette requirement, weather alerts, telemetry facts, and charging question exactly once. Do not repeat the planning acknowledgement, and do not name or time a charging station before confirmation.',
+            instructions:
+              'Reply in exactly one natural sentence using this shape: "Okay, your route to [destination] will take [travelTime] and require [only the returned vignette and charging requirements]; would you like me to help with that?" Mention only returned requirements, omit the final question when none require action, never mention telemetry, weather, opportunities, or a charger name before confirmation, and do not repeat the acknowledgement.',
         },
       })
     } catch (toolError) {
@@ -1167,6 +1220,7 @@ export function useRealtimeAssistant() {
     booking,
     driving,
     chargingStopConfirmed,
+    chargingStopFocus,
     selectedBookingPoi,
     telemetry,
     successFeedback,

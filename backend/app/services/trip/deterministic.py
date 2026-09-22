@@ -7,14 +7,14 @@ from ...models.fixtures import Partner
 from .ports import ChargingCandidate, POICandidate
 
 
-POI_MAX_RESULTS = 2
-ATTRACTION_MAX_RESULTS = 5
+POI_MAX_RESULTS = 3
+ATTRACTION_MAX_RESULTS = 3
 POI_CORRIDOR_RADIUS_KM = 7.5
 POI_ORIGIN_EXCLUSION_KM = 10.0
 POI_DESTINATION_EXCLUSION_KM = 10.0
 STOP_AMENITY_RADIUS_KM = 0.5
 STOP_AMENITY_MAX_RESULTS = 4
-POI_DIVERSITY_DISTANCE_KM = 15.0
+POI_DIVERSITY_DISTANCE_KM = 8.0
 POI_COORDINATE_TOLERANCE = 0.01
 DEFAULT_CHARGING_POWER_KW = 50.0
 MIN_CHARGER_PROGRESS_KM = 20.0
@@ -242,9 +242,6 @@ def select_chargers_iteratively(
             candidate.stop.id,
         ),
     )
-    progress_values = [candidate.distance_from_origin_km for candidate in ordered]
-    if len(progress_values) != len(set(progress_values)):
-        return None
     charged_range_km = max_charged_range_km or vehicle_range_km
     initial_safe_leg_km = max(0.0, vehicle_range_km - safety_buffer_km)
     charged_safe_leg_km = max(0.0, charged_range_km - safety_buffer_km)
@@ -266,6 +263,7 @@ def select_chargers_iteratively(
             reachable,
             key=lambda item: (
                 item.distance_from_origin_km or 0,
+                item.charging_power_kw or 0,
                 0 if item.stop.partner else 1,
                 item.distance_from_route_km,
                 item.stop.id,

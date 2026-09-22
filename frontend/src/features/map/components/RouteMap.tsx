@@ -72,6 +72,27 @@ function routeHeading(path: google.maps.LatLngLiteral[]) {
   return (Math.atan2(longitude, north) * 180 / Math.PI + 360) % 360
 }
 
+const overviewMapStyles: google.maps.MapTypeStyle[] = [
+  {
+    featureType: 'landscape.man_made',
+    elementType: 'geometry',
+    stylers: [{ visibility: 'on' }],
+  },
+]
+
+const drivingMapStyles: google.maps.MapTypeStyle[] = [
+  {
+    featureType: 'building',
+    elementType: 'geometry',
+    stylers: [{ visibility: 'off' }],
+  },
+  {
+    featureType: 'landscape.man_made',
+    elementType: 'geometry',
+    stylers: [{ visibility: 'off' }],
+  },
+]
+
 if (browserKey) {
   setOptions({
     key: browserKey,
@@ -84,6 +105,7 @@ interface RouteMapProps {
   poiResults?: StopPinpoint[]
   amenityResults?: StopPinpoint[]
   amenityFocusName?: string | null
+  focusStop?: Pick<StopPinpoint, 'id' | 'name' | 'coords'> | null
   drivingActive?: boolean
   showChargingStop?: boolean
   routePriority?: RoutePriority
@@ -96,6 +118,7 @@ export function RouteMap({
   poiResults = [],
   amenityResults = [],
   amenityFocusName = null,
+  focusStop = null,
   drivingActive = false,
   showChargingStop = true,
   routePriority = 'BALANCED',
@@ -264,7 +287,7 @@ export function RouteMap({
         const map = new Map(mapElementRef.current, {
           center: path[0],
           zoom: route ? 7 : 17,
-          tilt: 25,
+          tilt: drivingActive ? 67.5 : 0,
           heading: 0,
           mapId: mapId || undefined,
           colorScheme: google.maps.ColorScheme.DARK,
@@ -381,6 +404,7 @@ export function RouteMap({
     elementType: 'labels',
     stylers: [{ visibility: 'off' }],
   },
+  ...(drivingActive ? drivingMapStyles : overviewMapStyles),
 ],
         })
         mapRef.current = map
@@ -392,7 +416,14 @@ export function RouteMap({
         }
 
         if (route) {
-          map.fitBounds(bounds, 48)
+          if (drivingActive) {
+            map.setCenter(path[0])
+            map.setZoom(18)
+            map.setTilt(67.5)
+            map.setHeading(routeHeading(path))
+          } else {
+            map.fitBounds(bounds, 48)
+          }
         }
 
         if (route) {
@@ -409,14 +440,24 @@ export function RouteMap({
           map,
           position: path[0],
           title: route?.origin ?? 'Current vehicle position',
-          icon: {
-            path: google.maps.SymbolPath.CIRCLE,
-            scale: 8,
-            fillColor: '#1677ff',
-            fillOpacity: 1,
-            strokeColor: '#ffffff',
-            strokeWeight: 3,
-          },
+          icon: drivingActive
+            ? {
+                path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+                scale: 7,
+                rotation: routeHeading(path),
+                fillColor: '#61e4c1',
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 2,
+              }
+            : {
+                path: google.maps.SymbolPath.CIRCLE,
+                scale: 8,
+                fillColor: '#1677ff',
+                fillOpacity: 1,
+                strokeColor: '#ffffff',
+                strokeWeight: 3,
+              },
           zIndex: 3,
         })
 
@@ -486,10 +527,30 @@ export function RouteMap({
       durationOverlayRef.current = null
       setMapReady(false)
     }
-  }, [route, routePriority, showChargingStop])
+  }, [drivingActive, route, routePriority, showChargingStop])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || !route) {
+      return
+    }
+
+    if (drivingActive) {
+      const path = toGooglePath(route.geometry)
+      mapRef.current.setTilt(67.5)
+      mapRef.current.panTo(path[0])
+      mapRef.current.setHeading(routeHeading(path))
+      mapRef.current.setZoom(18)
+      return
+    }
+
+    if (focusStop) {
+      mapRef.current.panTo({
+        lat: focusStop.coords[1],
+        lng: focusStop.coords[0],
+      })
+      mapRef.current.setTilt(0)
+      mapRef.current.setHeading(0)
+      mapRef.current.setZoom(16)
       return
     }
 
@@ -507,25 +568,19 @@ export function RouteMap({
         lat: selectedStop.coords[1],
         lng: selectedStop.coords[0],
       })
-      mapRef.current.setTilt(25)
+      mapRef.current.setTilt(0)
       mapRef.current.setHeading(0)
-      mapRef.current.setZoom(16)
+      mapRef.current.setZoom(15)
       return
     }
 
     const path = toGooglePath(route.geometry)
     const bounds = new google.maps.LatLngBounds()
     path.forEach((point) => bounds.extend(point))
-    mapRef.current.setTilt(drivingActive ? 67.5 : 25)
-    if (drivingActive) {
-      mapRef.current.panTo(path[0])
-      mapRef.current.setHeading(routeHeading(path))
-      mapRef.current.setZoom(18)
-    } else {
-      mapRef.current.setHeading(0)
-      mapRef.current.fitBounds(bounds, 48)
-    }
-  }, [amenityFocusName, drivingActive, mapReady, route])
+    mapRef.current.setTilt(25)
+    mapRef.current.setHeading(0)
+    mapRef.current.fitBounds(bounds, 48)
+  }, [amenityFocusName, drivingActive, focusStop, mapReady, route])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) {

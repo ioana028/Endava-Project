@@ -13,7 +13,7 @@ from .integrations.openai.realtime import (
     OpenAIRealtimeProvider,
     RealtimeSessionProvider,
 )
-from .integrations.weather.provider import OfflineWeatherProvider
+from .integrations.weather.provider import OfflineWeatherProvider, OpenMeteoWeatherProvider
 from .models.contracts import (
     HealthResponse,
     ProviderHealthResponse,
@@ -81,7 +81,11 @@ def create_app(
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["Content-Type"],
     )
-    weather_provider = OfflineWeatherProvider()
+    weather_provider = (
+        OpenMeteoWeatherProvider(settings.weather_timeout_seconds)
+        if settings.weather_provider == "open-meteo" and settings.weather_enabled
+        else OfflineWeatherProvider()
+    )
     application.state.settings = settings
     application.state.route_service = route_service
     application.state.wallet_service = wallet_service
@@ -108,7 +112,8 @@ def create_app(
         scenic_capability = bool(settings.google_server_api_key)
         weather_provider_name = settings.weather_provider or "offline"
         weather_ready = settings.weather_enabled and (
-            weather_provider_name == "offline" or bool(settings.weather_api_key)
+            weather_provider_name in {"offline", "open-meteo"}
+            or bool(settings.weather_api_key)
         )
         return ProviderHealthResponse(
             status="ok",

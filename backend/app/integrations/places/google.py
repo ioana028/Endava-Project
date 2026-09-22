@@ -20,7 +20,7 @@ class GooglePlacesProvider:
         "hotel": "hotels",
         "restaurant": "restaurants",
         "food": "restaurants, fast food, McDonald's, KFC, and places to eat",
-        "attraction": "tourist attractions and interesting places to see",
+        "attraction": "tourist attractions, landmarks, monuments, points of interest, and things to see",
         "charging": "electric vehicle charging stations",
         "coffee": "coffee shops and cafes",
         "rest": "rest areas and service areas",
@@ -65,6 +65,17 @@ class GooglePlacesProvider:
         query = self._CATEGORY_QUERIES[normalized]
         if preference:
             query = f"{preference} {query}"
+        search_along_route = normalized == "attraction" and location == "route"
+        queries = (
+            (
+                query,
+                "landmarks and monuments",
+                "tourist attractions",
+                "things to see and points of interest",
+            )
+            if search_along_route
+            else (query,)
+        )
         radius = (
             self._search_radius_meters
             if location == "route"
@@ -78,16 +89,27 @@ class GooglePlacesProvider:
 
         try:
             async with httpx.AsyncClient(timeout=self._timeout_seconds) as client:
-                for longitude, latitude in self._search_points(
-                    route, location, near_coords
-                ):
-                    request_count += 1
-                    response = await client.post(
+                search_points = (
+                    (route_geometry[0],)
+                    if search_along_route
+                    else self._search_points(route, location, near_coords)
+                )
+                for query_text in queries:
+                    for longitude, latitude in search_points:
+                        request_count += 1
+                        response = await client.post(
                         PLACES_SEARCH_URL,
                         json={
-                            "textQuery": query,
+                            "textQuery": query_text,
                             "languageCode": "en",
-                            "maxResultCount": 20 if location == "stop" else 10,
+                            "maxResultCount": 20 if location == "stop" or normalized == "attraction" else 10,
+                            **({
+                                "searchAlongRouteParameters": {
+                                    "polyline": {
+                                        "encodedPolyline": self._encode_polyline(route_geometry)
+                                    }
+                                }
+                            } if search_along_route else {
                             "locationBias": {
                                 "circle": {
                                     "center": {
@@ -96,28 +118,28 @@ class GooglePlacesProvider:
                                     },
                                     "radius": radius,
                                 }
-                            },
+                            }}),
                         },
                         headers={
                             "X-Goog-Api-Key": self._api_key,
                             "X-Goog-FieldMask": (
                                 "places.id,places.displayName,places.location,places.types,"
-                                "places.rating,places.userRatingCount,places.editorialSummary,places.formattedAddress,"
+                                "places.rating,places.userRatingCount,places.editorialSummary,places.formattedAddress,places.photos,"
                                 "places.evChargeOptions"
                             ),
                         },
                     )
-                    response.raise_for_status()
-                    for place in response.json().get("places", []):
-                        stop = self._to_stop(
-                            place,
-                            normalized,
-                            route,
-                            location,
-                            near_coords,
-                        )
-                        if stop is not None:
-                            results[stop.id] = stop
+                        response.raise_for_status()
+                        for place in response.json().get("places", []):
+                            stop = self._to_stop(
+                                place,
+                                normalized,
+                                route,
+                                location,
+                                near_coords,
+                            )
+                            if stop is not None:
+                                results[stop.id] = stop
         except (httpx.HTTPError, AttributeError, ValueError, TypeError) as error:
             LOGGER.warning(
                 "google_places_search_failed category=%s samples=%d failure_code=%s latency_ms=%d",
@@ -146,9 +168,9 @@ class GooglePlacesProvider:
     async def search_charging(
         self, route: ProviderRoute, max_distance_km: float
     ) -> tuple[ChargingCandidate, ...]:
-        del max_distance_km
         started_at = monotonic()
         stops = await self.search("charging", location="route", route=route)
+        route_distance_km = route.distance_meters / 1000
         candidates = tuple(
             ChargingCandidate(
                 stop=stop,
@@ -162,6 +184,10 @@ class GooglePlacesProvider:
                 charging_duration_minutes=stop.charging_duration_minutes,
             )
             for stop in stops
+            if 0 < route_progress_km(stop.coords, tuple(route.geometry)) <= min(
+                max_distance_km,
+                route_distance_km,
+            )
         )
         LOGGER.info(
             "charging_lookup_ms=%d candidate_count=%d route_distance_km=%s",
@@ -202,7 +228,10 @@ class GooglePlacesProvider:
             if self._distance_to_point_km(coords, near_coords) > self._nearby_search_radius_meters / 1000:
                 return None
         else:
-            corridor_radius_km = max(self._search_radius_meters / 1000, 7.5)
+            corridor_radius_km = max(
+                self._search_radius_meters / 1000,
+                20.0 if category == "attraction" else 7.5,
+            )
             if route_distance_km > corridor_radius_km:
                 return None
         rating = place.get("rating")
@@ -216,6 +245,12 @@ class GooglePlacesProvider:
         if not self._supports_requested_category(category, types):
             return None
         factual_types = self._factual_types(types)
+        photos = place.get("photos") or []
+        photo_reference = (
+            photos[0].get("name")
+            if isinstance(photos, list) and photos and isinstance(photos[0], dict)
+            else None
+        )
         charging_power_kw = self._charging_power_kw(place)
         tag = str(summary.get("text") or address or "Google Maps place")
         if factual_types:
@@ -228,6 +263,11 @@ class GooglePlacesProvider:
             rating=float(rating) if rating is not None else None,
             user_review_count=user_review_count,
             tag=tag,
+            details=str(summary.get("text")) if summary.get("text") else None,
+            photo_reference=str(photo_reference) if photo_reference else None,
+            keywords=factual_types[:3],
+            provider="Google Places",
+            source="provider",
             amenities=factual_types,
             charging_power_kw=charging_power_kw,
             detour_minutes=round(route_distance_km, 1),
@@ -303,6 +343,27 @@ class GooglePlacesProvider:
                 )
             )
         return tuple(dict.fromkeys(samples))
+
+    @staticmethod
+    def _encode_polyline(geometry: tuple[tuple[float, float], ...]) -> str:
+        encoded: list[str] = []
+        previous_latitude = 0
+        previous_longitude = 0
+        for longitude, latitude in geometry:
+            latitude_value = round(latitude * 100000)
+            longitude_value = round(longitude * 100000)
+            for value in (
+                latitude_value - previous_latitude,
+                longitude_value - previous_longitude,
+            ):
+                shifted = ~(value << 1) if value < 0 else value << 1
+                while shifted >= 0x20:
+                    encoded.append(chr((0x20 | (shifted & 0x1F)) + 63))
+                    shifted >>= 5
+                encoded.append(chr(shifted + 63))
+            previous_latitude = latitude_value
+            previous_longitude = longitude_value
+        return "".join(encoded)
 
     @staticmethod
     def _haversine_km(

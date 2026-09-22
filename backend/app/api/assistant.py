@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ..core.errors import APIError
+from ..integrations.weather.provider import summarize_route_weather
 from ..models.contracts import (
     AssistantIntent,
     RealtimeSessionResponse,
@@ -76,12 +77,12 @@ def _validate_response(model: type[Any], result: Any) -> Any:
     return model.model_validate(result)
 
 
-def _attach_telemetry(request: Request, route: Any) -> Any:
+async def _attach_route_facts(request: Request, route: Any) -> Any:
     fixtures = getattr(request.app.state, "fixtures", None)
     if fixtures is None or not hasattr(route, "model_copy"):
         return route
     vehicle = fixtures.telemetry
-    return route.model_copy(
+    updated_route = route.model_copy(
         update={
             "telemetry": {
                 "battery_percent": vehicle.battery_percent,
@@ -91,6 +92,20 @@ def _attach_telemetry(request: Request, route: Any) -> Any:
             }
         }
     )
+    weather_provider = getattr(request.app.state, "weather_provider", None)
+    if weather_provider is not None:
+        snapshot = await weather_provider.get_route_weather(
+            route_points=tuple(route.geometry),
+            location=route.destination,
+        )
+        weather_summary = summarize_route_weather(snapshot)
+        weather_alerts = {
+            (weather_summary.location_name, weather_summary.message): weather_summary
+        } if weather_summary is not None else {}
+        updated_route = updated_route.model_copy(
+            update={"alerts": [*route.alerts, *weather_alerts.values()]}
+        )
+    return updated_route
 
 
 @router.post(
@@ -116,7 +131,7 @@ async def realtime_plan_route(
     route = await request.app.state.route_service.plan(
         AssistantIntent(destination=payload.destination, priority=payload.priority)
     )
-    route = _attach_telemetry(request, route)
+    route = await _attach_route_facts(request, route)
     return RealtimeToolRouteResponse(
         route=route,
         route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
@@ -209,7 +224,7 @@ async def realtime_confirm_charging_stop(
         confirmation=payload.confirmation,
     )
     return RealtimeToolConfirmChargingResponse(
-        route=_attach_telemetry(request, result["route"]),
+        route=await _attach_route_facts(request, result["route"]),
         selected_stop_name=result["selected_stop_name"],
         results=result.get("results", []),
         charging_plan=result.get("charging_plan"),
@@ -243,7 +258,10 @@ async def realtime_reroute_through_poi(
         coords=payload.coords,
         priority=payload.priority,
     )
-    return RealtimeToolRerouteResponse(route=_attach_telemetry(request, route))
+    return RealtimeToolRerouteResponse(
+        route=await _attach_route_facts(request, route),
+        route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
+    )
 
 
 @router.post(

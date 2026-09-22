@@ -85,6 +85,10 @@ def test_day9_realtime_instructions_are_statement_first_and_complete() -> None:
     assert "review counts" in REALTIME_INSTRUCTIONS
     assert "verified partner fact" in REALTIME_INSTRUCTIONS
     assert "speak the result once" in REALTIME_INSTRUCTIONS
+    assert "at most one brief acknowledgement" in REALTIME_INSTRUCTIONS
+    assert "still waiting on a response" in REALTIME_INSTRUCTIONS
+    assert "Charging is a requirement, never a" in REALTIME_INSTRUCTIONS
+    assert "Do not repeat the route's vignette requirement" in REALTIME_INSTRUCTIONS
 
 
 def test_route_poi_api_preserves_service_opportunities() -> None:

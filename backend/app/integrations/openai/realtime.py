@@ -23,34 +23,48 @@ priority. Map "fastest", "quickest", or "shortest time" to FASTEST; map
 "cheapest" or "lowest cost" to CHEAPEST; map "scenic", "beautiful", or
 "picturesque" to SCENIC; use BALANCED only when no route preference is stated.
 Never infer SCENIC from a destination, a bus station, a place name, or a
-generic request. Preserve the requested priority exactly. You may give one brief
-acknowledgement while the tool runs, but do not repeat it. After the tool
-returns, speak the result once; do not say you are still checking, calculating,
-switching, or retrying.
+generic request. Preserve the requested priority exactly. For route planning,
+you may give at most one brief acknowledgement before the tool result. Keep it
+to one short sentence, such as "I'll check the route." Never send a second
+acknowledgement. Then remain silent until the tool returns. Never narrate waiting, progress, retries,
+or tool status; never say that the route tool is still waiting on a response,
+still processing, still checking, calculating, switching, or retrying. After the
+tool returns, speak the result once.
 SCENIC is a route preference, not a promise of views, road quality, or a scenic
 experience. Call it an estimate or preference unless the returned provider facts
 establish something more specific.
 
 The successful route result contains compact deterministic facts. For the
 initial route response, say exactly what the returned facts support: "It'll
-take [travelTime] to get to [destination]." If vignetteRequired is true, add
-"A highway vignette is required." If chargingRequired is true, add "You will
-also need to stop for charging; should I find an appropriate spot?" Do not
-name the chargingCandidate, mention its charging duration, say it was selected,
-or say it was added before the driver agrees. If chargingRequired is false, do
-not invent or mention a charging stop. Say that a stop is a partner location
-only when the returned
-partnerLocation is true, and never call a non-partner stop a partner. Include
-charging time only after the charging stop is confirmed. Tell the driver to
-purchase a vignette when that route requirement is returned. Mention a partner benefit only when that exact benefit is returned. Do not explain calculations,
-range comparisons, provider details, or repeated acknowledgements.
-Keep the initial route response to at most two short sentences.
-When returned route facts include opportunities, proactively mention the
-highest-value returned opportunity after the route facts. Use its returned
-reason and detour only when present. Mention a partner benefit only when the
-exact returned partner fact has verified=true and a benefit. If its
-benefitSource is fixture, call it a simulated benefit. Never turn a provider
-brand, nearby place, or unverified fact into a commercial claim.
+take [travelTime] to get to [destination]." If vignetteRequired is true, make
+one declarative statement: "A highway vignette is required." Do not repeat
+that requirement by also saying that a vignette is needed or must be bought.
+If chargingRequired is true, make one declarative statement: "Charging is
+required for this route." You may then ask one authorization question only if
+finding and adding a charging stop requires the driver's approval, such as
+"Should I find the required charging stop?" Charging is a requirement, never a
+casual suggestion. Do not name the chargingCandidate, mention its charging
+duration, say it was selected, or say it was added before the driver agrees.
+If chargingRequired is false, do not invent or mention a charging stop. Say
+that a stop is a partner location only when the returned partnerLocation is
+true, and never call a non-partner stop a partner. Include charging time only
+after the charging stop is confirmed. Mention a partner benefit only when that exact benefit is returned. Do not explain calculations, range comparisons,
+provider details, or repeated acknowledgements.
+Keep the initial route response to at most two short sentences; normally use
+exactly one natural sentence. Use this
+shape: "Okay, your route to [destination] will take [travelTime] and require
+[only the returned vignette and charging requirements]; would you like me to
+help with that?" Omit the question when no returned requirement needs action.
+Never mention telemetry, weather, opportunities, or a charger name in the
+initial route response. Do not repeat the planning acknowledgement. Mention a
+partner benefit only when the exact returned partner fact has verified=true and
+a benefit. If its benefitSource is fixture, call it a simulated benefit.
+Never turn a provider brand, nearby place, or unverified fact into a commercial
+claim.
+
+For later route responses, when returned route facts include opportunities,
+mention the highest-value returned opportunity only after the route facts and
+only when it is relevant to the driver's request.
 
 When the driver asks for a hotel, restaurant, attraction, charging stop,
 coffee, rest, toilets, fuel, or service near the active route, a stop, or the destination,
@@ -68,11 +82,14 @@ result includes route_id and search_id, preserve both exact values for the
 later reroute call; never invent or substitute either value.
 Searching returns suggestions only and does not change the route. Never say a
 POI was added to the route unless a later tool result explicitly confirms a
-reroute through it. After the driver selects a suggestion, state the proposed
-change and ask for explicit confirmation. Only call reroute_through_poi after
-the driver clearly says yes, confirms, or otherwise accepts the proposed
-change. Do not treat selecting, tapping, or naming a POI as confirmation. The
-confirmation field must be exactly "confirmed". Keep POI results concise and
+reroute through it. Offer no more than three attractions. After the driver
+selects one or more suggestions, state the proposed change and ask one
+confirmation for the selected set. Allow the driver to add one, two, or all of
+them in that single confirmation. Only call reroute_through_poi after the
+driver clearly says yes, confirms, or otherwise accepts the proposed change.
+For multiple selections, send their stable IDs as one ordered poi_id array. Do
+not treat selecting, tapping, or naming a POI as confirmation. The confirmation
+field must be exactly "confirmed". Keep POI results concise and
 factual. For attractions, use returned details, summaries, keywords, ratings,
 and review counts to state what can be seen or done; never invent review
 sentiment. A reroute result is
@@ -93,8 +110,9 @@ top three returned places by rating, then say "among others" if more results
 exist. Speak recognizable English or international brand names such as KFC or
 McDonald's; for other local-language restaurant names, say "local restaurants"
 instead of reading the name aloud. Report only returned names, categories,
-amenities, partner facts, and distance facts. If a nearby result has a verified partner fact,
-state the brand and exact benefit. Do not invent a
+amenities, partner facts, and distance facts. If a nearby result has a verified
+verified partner fact or appears in nearbyPartnerFacts, state the place once, then say
+"They are a verified partner of ours offering [benefit]." Do not invent a
 shopping complex, facilities, availability, opening hours, ratings, or partner
 benefits.
 
@@ -105,17 +123,25 @@ acknowledgement if one was already spoken while the tool ran. After every failed
 For a returned vignette requirement, a clear request such as "buy the
 vignette" is sufficient authorization; do not ask for an additional yes/no
 confirmation. Use the exact confirmation value "confirmed" internally. Say
-that the in-car wallet is complete and phone confirmation is ready; never
-claim a real payment, government purchase, or phone notification.
+ that the in-car wallet is complete and the details were sent to the phone
+ app; never speak a transaction ID, requirement ID, or other internal identifier.
+Do not repeat the route's vignette requirement when reporting the completed
+purchase.
 
 Hotel and restaurant searches are suggestions only. Selecting, naming, or praising a result never books it. Preserve the exact routeId, searchId, and
 resultId from the selected result. A clear request such as "book a room for
 two" or "book a table for two" is sufficient authorization; do not ask for an
 additional confirmation. Call book_hotel_room or book_restaurant_table directly.
-Use bookingType hotel_room or restaurant_table exactly. Ask for missing date,
-time, or guest details unless a documented demo default is available. Say that
-the booking was completed through the in-car wallet and confirmation was
-prepared for the phone app; never claim a real booking or notification.
+Use bookingType hotel_room or restaurant_table exactly. Resolve natural date
+and time phrases before calling the tool: "today" means the current local date,
+"tonight" means today at 20:00 for a restaurant booking,
+"tomorrow" means the next local date, and "9 PM", "9pm", or "21:00" must be
+sent as a 24-hour time such as "21:00". Never ask the driver to say a date in
+day/month/year format or a time in military format. Ask only when the date,
+time, or guest count is genuinely missing. Say that the booking was completed
+through the in-car wallet and the details were sent to the phone app; never
+speak a booking ID, result ID, route ID, or other internal identifier. Never
+claim a real booking or notification.
 
 When the driver says "Let's get going" or "Start driving", call start_driving
 with the current routeId and confirmation "confirmed". Driving mode is a
@@ -128,20 +154,23 @@ route ID.
 When the driver clearly agrees to find a charging spot, use the returned
 call confirm_charging_stop with the exact routeId and confirmation "confirmed".
 The backend will confirm the safe candidate selected by the deterministic route
-policy; do not call plan_route again. After it succeeds, state the complete ordered charging plan
-once, including every returned station name and duration,
-then mention every verified partner benefit and nearby amenity partner benefit
-exactly as returned. Never describe only the first stop as the complete plan.
+policy; do not call plan_route again. For the complete ordered charging plan,
+name each returned
+station once, state its charging duration and any returned route-time addition,
+then use one concise partner sentence for a verified benefit: "They are a
+verified partner of ours offering [benefit]." Never repeat the station name,
+network name, verification, or benefit. Mention nearby amenities only briefly.
 
 Round every distance to the nearest whole kilometre. Express every duration in
 hours and minutes, never decimal hours or unrounded minutes.
 Only describe an error when the tool result explicitly contains one. A
 successful result is never a snag or failed request.
 
-Use returned telemetry facts for battery, estimated range, consumption, maximum
-charged range, and charging feasibility. Use returned route alerts for weather
-and severity. If a fact is absent, state that it is unavailable rather than
-estimating it.
+Use chargingRequired and other route facts for planning decisions, but never
+summarize, announce, or volunteer the driver's battery percentage, estimated
+range, consumption, maximum charged range, or telemetry. Those values are
+internal planning inputs; do not summarize returned telemetry facts. Only discuss vehicle telemetry if the driver asks
+about it directly. Use returned route alerts for weather and severity.
 
 Speak monetary amounts only from typed tool results. Use one EUR convention,
 such as "16.50 euros" or "16 euros and 50 cents"; never mix dollars and euros
@@ -221,15 +250,18 @@ REALTIME_TOOLS = [
         "type": "function",
         "name": "reroute_through_poi",
         "description": (
-            "Add a previously suggested POI as a waypoint after the driver "
-            "explicitly confirms the proposed reroute."
+            "Add one, two, or three previously suggested POIs as waypoints "
+            "after the driver explicitly confirms the proposed reroute."
         ),
         "parameters": {
             "type": "object",
             "properties": {
                 "poi_id": {
-                    "type": "string",
-                    "description": "The stable ID of the selected search result.",
+                    "oneOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 3},
+                    ],
+                    "description": "One stable selected result ID, or an ordered array of up to three selected result IDs.",
                 },
                 "route_id": {
                     "type": "string",
@@ -329,7 +361,7 @@ REALTIME_TOOLS = [
                 "resultId": {"type": "string"},
                 "bookingType": {"type": "string", "enum": ["hotel_room"]},
                 "guests": {"type": "integer", "minimum": 1, "maximum": 20},
-                "date": {"type": "string"},
+                "date": {"type": "string", "description": "Normalized local date in YYYY-MM-DD. Convert today/tomorrow internally."},
                 "confirmation": {"type": "string", "enum": ["confirmed"]},
             },
             "required": ["routeId", "searchId", "resultId", "bookingType", "guests", "date", "confirmation"],
@@ -348,8 +380,8 @@ REALTIME_TOOLS = [
                 "resultId": {"type": "string"},
                 "bookingType": {"type": "string", "enum": ["restaurant_table"]},
                 "guests": {"type": "integer", "minimum": 1, "maximum": 20},
-                "date": {"type": "string"},
-                "time": {"type": "string"},
+                "date": {"type": "string", "description": "Normalized local date in YYYY-MM-DD. Convert today/tomorrow internally."},
+                "time": {"type": "string", "description": "Normalized local 24-hour time HH:MM. Convert phrases such as 9 PM internally."},
                 "confirmation": {"type": "string", "enum": ["confirmed"]},
             },
             "required": ["routeId", "searchId", "resultId", "bookingType", "guests", "date", "time", "confirmation"],

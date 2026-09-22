@@ -25,10 +25,10 @@ export function PoiResults({
           <p className="eyebrow">Along your route</p>
           <h2>Suggested stops</h2>
         </div>
-        <span className="result-count">{Math.min(results.length, 2)} found</span>
+        <span className="result-count">{Math.min(results.length, 3)} found</span>
       </div>
       <div className="poi-list">
-        {results.slice(0, 2).map((result) => {
+        {results.slice(0, 3).map((result) => {
           const selected = result.id === selectedPoiId
           const partnerBenefit = result.partner?.benefit ?? result.partnerBenefit
           const partnerScope = result.partner?.benefitScope
@@ -49,6 +49,8 @@ export function PoiResults({
               </span>
               <strong>{result.name}</strong>
               <span className="poi-tag">{result.tag}</span>
+              {result.details && <span className="poi-details">{result.details}</span>}
+              {result.keywords?.length ? <span className="poi-amenities">{result.keywords.slice(0, 3).join(' · ')}</span> : null}
               {result.partner?.name && (
                 <span className="partner-label">
                   Partner location · {result.partner.name}
