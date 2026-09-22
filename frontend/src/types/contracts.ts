@@ -44,6 +44,10 @@ export interface StopPinpoint {
   userReviewCount?: number;
   tag: string;                     // e.g., "Fast Charger · 250kW" or "Italian Dining"
   details?: string | null;
+  photoReference?: string | null;
+  keywords?: string[];
+  provider?: string | null;
+  source?: string | null;
   amenities?: string[];
   distanceMeters?: number;
   detourMinutes: number;
@@ -68,6 +72,14 @@ export interface PartnerFact {
   benefitScope?: string | null;
   benefitSource: 'fixture' | 'configured' | 'provider';
   verified: boolean;
+}
+
+export interface TelemetryNarrationFacts {
+  batteryPercent: number;
+  estimatedRangeKm: number;
+  maxChargedRangeKm: number;
+  consumptionRateKwh: number;
+  chargingFeasible?: boolean | null;
 }
 
 export interface RouteOpportunity {
@@ -137,6 +149,7 @@ export interface RouteResponse {
   opportunities?: RouteOpportunity[];
   chargingPlan?: ChargingPlan | null;
   sessionFacts?: RouteSessionFacts | null;
+  telemetry?: TelemetryNarrationFacts | null;
 }
 
 export interface RoutePoiResponse {
