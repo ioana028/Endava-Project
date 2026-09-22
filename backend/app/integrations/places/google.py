@@ -51,13 +51,15 @@ class GooglePlacesProvider:
         category: str,
         location: str | None = None,
         preference: str | None = None,
-        route: ProviderRoute | None = None,
+        route: ProviderRoute | tuple[tuple[float, float], ...] | None = None,
         near_coords: tuple[float, float] | None = None,
     ) -> list[StopPinpoint]:
         normalized = self._normalize_category(category)
         if not self._api_key:
             raise JourneyProviderError("Google Places is not configured")
-        if route is None or len(route.geometry) < 2:
+
+        route_geometry = self._route_geometry(route)
+        if route_geometry is None or len(route_geometry) < 2:
             return []
 
         query = self._CATEGORY_QUERIES[normalized]
@@ -173,14 +175,17 @@ class GooglePlacesProvider:
         self,
         place: dict[str, object],
         category: str,
-        route: ProviderRoute,
+        route: ProviderRoute | tuple[tuple[float, float], ...],
         location: str | None = None,
         near_coords: tuple[float, float] | None = None,
     ) -> StopPinpoint | None:
         try:
             place_id = str(place["id"])
             display_name = place["displayName"]
-            name = str(display_name["text"])
+            if isinstance(display_name, dict):
+                name = str(display_name.get("text") or place_id)
+            else:
+                name = str(display_name)
             place_location = place["location"]
             coords = (
                 float(place_location["longitude"]),
@@ -189,7 +194,10 @@ class GooglePlacesProvider:
         except (KeyError, TypeError, ValueError):
             return None
 
-        route_distance_km = self._route_distance_km(coords, route.geometry)
+        route_geometry = self._route_geometry(route)
+        if route_geometry is None:
+            return None
+        route_distance_km = self._route_distance_km(coords, route_geometry)
         if location == "stop" and near_coords is not None:
             if self._distance_to_point_km(coords, near_coords) > self._nearby_search_radius_meters / 1000:
                 return None
@@ -238,15 +246,16 @@ class GooglePlacesProvider:
 
     def _search_points(
         self,
-        route: ProviderRoute,
+        route: ProviderRoute | tuple[tuple[float, float], ...],
         location: str | None,
         near_coords: tuple[float, float] | None = None,
     ) -> tuple[tuple[float, float], ...]:
         if location == "stop" and near_coords is not None:
             return (near_coords,)
-        geometry = route.geometry
+
+        geometry = self._route_geometry(route) or ()
         if location == "destination":
-            return (geometry[-1],)
+            return (geometry[-1],) if geometry else ()
         return self._distance_samples(geometry)
 
     def _distance_samples(
@@ -354,10 +363,26 @@ class GooglePlacesProvider:
             return "malformed_response"
         return "request_failed"
 
+    @staticmethod
+    def _route_geometry(
+        route: ProviderRoute | tuple[tuple[float, float], ...] | None,
+    ) -> tuple[tuple[float, float], ...] | None:
+        if route is None:
+            return None
+        if isinstance(route, ProviderRoute):
+            return route.geometry
+        if isinstance(route, tuple) and all(
+            isinstance(point, tuple) and len(point) == 2 for point in route
+        ):
+            return route
+        return None
+
     @classmethod
     def _route_distance_km(
         cls, point: tuple[float, float], geometry: tuple[tuple[float, float], ...]
     ) -> float:
+        if len(geometry) < 2:
+            return 0.0
         return min(
             cls._distance_to_segment_km(point, start, end)
             for start, end in zip(geometry, geometry[1:])

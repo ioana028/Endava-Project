@@ -19,6 +19,7 @@ from .models.contracts import (
     ProviderHealthResponse,
     VehicleTelemetryResponse,
 )
+from .models.fixtures import Fixtures, VehicleState
 from .services.trip.service import RouteService
 from .services.commerce.service import CommerceService
 from .services.wallet.service import WalletService
@@ -58,9 +59,27 @@ def create_app(
     wallet_service = WalletService()
     commerce_service = CommerceService(route_service, wallet_service)
 
+    def safe_load_fixtures() -> Fixtures:
+        try:
+            return fixture_repository.load()
+        except (RuntimeError, OSError, ValueError, TypeError):
+            return Fixtures(
+                telemetry=VehicleState(
+                    vehicle_id="offline-demo",
+                    propulsion="BEV",
+                    battery_percent=42.0,
+                    estimated_range_km=95.0,
+                    max_charged_range_km=0.0,
+                    consumption_rate_kwh=0.16,
+                    tyres="SUMMER",
+                    odometer_km=0.0,
+                ),
+                partners=(),
+            )
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.fixtures = fixture_repository.load()
+        app.state.fixtures = safe_load_fixtures()
         yield
 
     application = FastAPI(title="Suzanne Backend", version="0.1.0", lifespan=lifespan)
@@ -98,7 +117,7 @@ def create_app(
             or (provider_mode == "auto" and settings.google_server_api_key)
             else "offline"
         )
-        partner_records = fixture_repository.load().partners
+        partner_records = tuple(getattr(application.state, "fixtures", safe_load_fixtures()).partners)
         scenic_capability = bool(settings.google_server_api_key) or (
             resolved_places_provider == "offline"
         )
@@ -118,7 +137,7 @@ def create_app(
 
     @application.get("/api/vehicle/telemetry", response_model=VehicleTelemetryResponse)
     async def vehicle_telemetry() -> VehicleTelemetryResponse:
-        telemetry = fixture_repository.load().telemetry
+        telemetry = safe_load_fixtures().telemetry
         return VehicleTelemetryResponse.model_validate(telemetry.model_dump())
 
     return application
