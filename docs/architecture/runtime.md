@@ -29,7 +29,7 @@ Copy `.env.example` to `.env` at the repository root. Current variables are:
 | `OPENAI_REALTIME_MODEL` | Realtime voice model, normally `gpt-realtime-2.1-mini` |
 | `OPENAI_REALTIME_SECRET_SECONDS` | Lifetime of browser Realtime client secrets, normally `300` |
 | `GOOGLE_SERVER_API_KEY` | Backend-only Google Routes, Geocoding, and later Places credential |
-| `PLACES_PROVIDER` | `auto`, `google`, or explicit `offline` provider selection |
+| `PLACES_PROVIDER` | Compatibility setting; live POIs always use Google Places |
 | `GOOGLE_PLACES_TIMEOUT_SECONDS` | Google Places request timeout |
 | `GOOGLE_PLACES_ROUTE_SEARCH_RADIUS_KM` | Route-corridor radius in kilometers, default 7.5 |
 | `GOOGLE_PLACES_ROUTE_SEARCH_RADIUS_METERS` | Route-corridor radius in meters, default 7500 |

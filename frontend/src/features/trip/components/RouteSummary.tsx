@@ -1,8 +1,7 @@
-import type { RoutePriority, RouteResponse } from '../../../types/contracts'
+import type { RouteResponse } from '../../../types/contracts'
 
 interface RouteSummaryProps {
   route: RouteResponse
-  priority?: RoutePriority
   showChargingStop?: boolean
 }
 
@@ -14,15 +13,17 @@ function formatDuration(totalMinutes: number) {
   return hours === 0 ? `${minutes} min` : `${hours} h ${minutes} min`
 }
 
+function formatEur(amount: number) {
+  return `${amount.toFixed(2)} EUR`
+}
+
 export function RouteSummary({
   route,
-  priority = 'BALANCED',
   showChargingStop = true,
 }: RouteSummaryProps) {
   const stopCount = route.stops.filter(
     (stop) => showChargingStop || stop.category !== 'charging',
   ).length
-
   return (
     <section className="route-summary" aria-live="polite">
       <div className="trip-details-heading">
@@ -30,11 +31,7 @@ export function RouteSummary({
           <p className="eyebrow">Trip details</p>
           <h2>{route.destination}</h2>
         </div>
-        <span className="trip-status">{priority} · ROUTE ACTIVE</span>
       </div>
-      <p className="route-endpoints">
-        {route.origin} to {route.destination}
-      </p>
       <div className="trip-metrics">
         <div className="trip-metric">
           <span>Driving time</span>
@@ -50,7 +47,7 @@ export function RouteSummary({
         </div>
         <div className="trip-metric trip-cost-metric">
           <span>Total cost</span>
-          <strong>{route.stats.totalPriceEur.toFixed(2)} EUR</strong>
+          <strong>{formatEur(route.stats.totalPriceEur)}</strong>
         </div>
       </div>
     </section>

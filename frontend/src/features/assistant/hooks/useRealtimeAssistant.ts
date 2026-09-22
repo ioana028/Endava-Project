@@ -78,6 +78,10 @@ export interface SuccessFeedback {
   reference: string
 }
 
+export function formatEurAmount(amountEur: number): string {
+  return `${amountEur.toFixed(2)} euros`
+}
+
 function createRouteResponse(
   route: RouteResponse,
   priority: AssistantResponse['intent']['priority'],
@@ -114,15 +118,20 @@ function compactRouteFacts(
     route.stats.drivingDurationMinutes,
     route.stats.totalDurationMinutes - unconfirmedChargingMinutes,
   )
-  const partnerBenefits = route.stops
-    .map((stop) => ({
-      name: stop.partner?.name,
-      benefit: stop.partner?.benefit ?? stop.partnerBenefit,
-    }))
+  const partnerFacts = route.stops
+    .map((stop) => stop.partner)
     .filter(
-      (entry): entry is { name: string; benefit: string } =>
-        Boolean(entry.name && entry.benefit),
+      (partner): partner is NonNullable<StopPinpoint['partner']> =>
+        Boolean(partner?.name && partner.verified && partner.benefit),
     )
+    .map((partner) => ({
+      partnerId: partner.id,
+      brand: partner.name,
+      benefit: partner.benefit,
+      ...(partner.benefitScope ? { benefitScope: partner.benefitScope } : {}),
+      ...(partner.benefitSource ? { benefitSource: partner.benefitSource } : {}),
+      verified: true,
+    }))
 
   return {
     status: 'success',
@@ -135,7 +144,26 @@ function compactRouteFacts(
     vignetteRequired: route.routeRequirements.some(
       (requirement) => requirement.kind === 'vignette',
     ),
-    ...(partnerBenefits.length > 0 ? { partnerBenefits } : {}),
+    ...(route.opportunities?.length
+      ? {
+          opportunities: route.opportunities.map((opportunity) => ({
+            id: opportunity.id,
+            type: opportunity.type,
+            ...(opportunity.stopId ? { stopId: opportunity.stopId } : {}),
+            ...(opportunity.resultId ? { resultId: opportunity.resultId } : {}),
+            reason: opportunity.reason,
+            detourMinutes: opportunity.detourMinutes,
+            requiresRouteConfirmation: opportunity.requiresRouteConfirmation,
+            status: opportunity.status,
+            ...(opportunity.partnerFact?.verified
+              ? { partnerFact: opportunity.partnerFact }
+              : {}),
+          })),
+        }
+      : {}),
+    ...(partnerFacts.length > 0 ? { partnerFacts } : {}),
+    ...(route.chargingPlan ? { chargingPlan: route.chargingPlan } : {}),
+    ...(route.sessionFacts ? { sessionFacts: route.sessionFacts } : {}),
     ...(route.borderCrossings.length > 0
       ? {
           borderCrossings: route.borderCrossings.map(
@@ -162,7 +190,20 @@ function compactPoiFacts(
   stop: StopPinpoint,
   context: { routeId?: string | null; searchId?: string | null },
 ) {
-  const partnerBenefit = stop.partner?.benefit ?? stop.partnerBenefit
+  const partnerFact = stop.partner?.verified && stop.partner.benefit
+    ? {
+        partnerId: stop.partner.id,
+        brand: stop.partner.name,
+        benefit: stop.partner.benefit,
+        ...(stop.partner.benefitScope
+          ? { benefitScope: stop.partner.benefitScope }
+          : {}),
+        ...(stop.partner.benefitSource
+          ? { benefitSource: stop.partner.benefitSource }
+          : {}),
+        verified: true,
+      }
+    : null
 
   return {
     id: stop.id,
@@ -173,19 +214,31 @@ function compactPoiFacts(
       ? { userReviewCount: stop.userReviewCount }
       : {}),
     ...(stop.tag ? { tag: stop.tag } : {}),
+    ...(stop.details ? { details: stop.details } : {}),
     ...(stop.amenities?.length ? { amenities: stop.amenities } : {}),
     ...(stop.distanceMeters !== undefined ? { distanceMeters: stop.distanceMeters } : {}),
     detourMinutes: stop.detourMinutes,
-    ...(stop.partner?.id ? { partnerId: stop.partner.id } : {}),
-    ...(stop.partner?.name ? { partnerName: stop.partner.name } : {}),
-    ...(partnerBenefit ? { partnerBenefit } : {}),
+    ...(partnerFact ? { partnerFact } : {}),
     ...(context.routeId ? { routeId: context.routeId } : {}),
     ...(context.searchId ? { searchId: context.searchId } : {}),
   }
 }
 
 function compactAmenityFacts(stop: StopPinpoint) {
-  const partnerBenefit = stop.partner?.benefit ?? stop.partnerBenefit
+  const partnerFact = stop.partner?.verified && stop.partner.benefit
+    ? {
+        partnerId: stop.partner.id,
+        brand: stop.partner.name,
+        benefit: stop.partner.benefit,
+        ...(stop.partner.benefitScope
+          ? { benefitScope: stop.partner.benefitScope }
+          : {}),
+        ...(stop.partner.benefitSource
+          ? { benefitSource: stop.partner.benefitSource }
+          : {}),
+        verified: true,
+      }
+    : null
 
   return {
     id: stop.id,
@@ -196,7 +249,8 @@ function compactAmenityFacts(stop: StopPinpoint) {
       ? { distanceMeters: stop.distanceMeters }
       : {}),
     ...(stop.partner?.name ? { providerBrand: stop.partner.name } : {}),
-    ...(partnerBenefit ? { partnerBenefit } : {}),
+    ...(stop.partnerBenefit ? { partnerBenefit: stop.partnerBenefit } : {}),
+    ...(partnerFact ? { partnerFact } : {}),
   }
 }
 
@@ -411,6 +465,9 @@ export function useRealtimeAssistant() {
             call_id: event.call_id,
             output: JSON.stringify({
               status: 'success',
+              ...(result.opportunities?.length
+                ? { opportunities: result.opportunities }
+                : {}),
               results: result.results.map((stop) =>
                 compactPoiFacts(stop, result),
               ),
@@ -421,7 +478,7 @@ export function useRealtimeAssistant() {
           type: 'response.create',
           response: {
             instructions:
-              'Acknowledge that the place search completed, then give the returned results briefly. Never leave the driver without a spoken response.',
+              'Acknowledge that the place search completed, then give the returned results briefly. For attractions, mention what can be seen or done from details or tag, and include the rating and review count when returned. Use only returned facts and never invent review content. Never leave the driver without a spoken response.',
           },
         })
         return
@@ -462,7 +519,18 @@ export function useRealtimeAssistant() {
             output: JSON.stringify({
               status: 'success',
               chargingStopAdded: result.selectedStopName,
-              chargingDurationMinutes: result.route.chargingStop?.chargingDurationMinutes,
+              chargingPartnerFacts: result.route.stops
+                .filter((stop) => stop.category === 'charging' && stop.partner?.benefit)
+                .map((stop) => ({
+                  stopName: stop.name,
+                  brand: stop.partner?.name,
+                  benefit: stop.partner?.benefit ?? stop.partnerBenefit,
+                  benefitScope: stop.partner?.benefitScope,
+                  benefitSource: stop.partner?.benefitSource,
+                  verified: stop.partner?.verified ?? false,
+                })),
+              chargingPlan: result.chargingPlan ?? result.route.chargingPlan,
+              sessionFacts: result.sessionFacts ?? result.route.sessionFacts,
               nearbyAmenities: result.results.map(compactAmenityFacts),
             }),
           },
@@ -471,7 +539,7 @@ export function useRealtimeAssistant() {
           type: 'response.create',
           response: {
             instructions:
-              'Confirm that the returned charging stop was added, state its returned charging duration, and summarize the nearby amenities. Do not invent amenities or claim the route was replanned.',
+              'Confirm that the returned charging stop was added, state its returned charging duration, and always mention every verified charging partner benefit in chargingPartnerFacts. Then summarize nearby amenities and explicitly mention any nearby amenity with a verified partner benefit, including the brand and benefit. Do not invent amenities or claim the route was replanned.',
           },
         })
         return
@@ -539,7 +607,14 @@ export function useRealtimeAssistant() {
           item: {
             type: 'function_call_output',
             call_id: event.call_id,
-            output: JSON.stringify(result),
+            output: JSON.stringify({
+              ...result,
+              ...(event.name === 'purchase_vignette' &&
+              'amountEur' in result &&
+              typeof result.amountEur === 'number'
+                ? { amountSpoken: formatEurAmount(result.amountEur) }
+                : {}),
+            }),
           },
         })
         sendEvent({
@@ -589,6 +664,9 @@ export function useRealtimeAssistant() {
               status: result.results.length ? 'success' : 'empty',
               selectedStopName: result.selectedStopName,
               radiusMeters: result.radiusMeters,
+              ...(result.opportunities?.length
+                ? { opportunities: result.opportunities }
+                : {}),
               results: result.results.map(compactAmenityFacts),
             }),
           },

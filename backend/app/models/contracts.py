@@ -45,6 +45,7 @@ class StopPinpoint(ContractModel):
     rating: float | None = None
     user_review_count: int | None = Field(default=None, ge=0)
     tag: str = ""
+    details: str | None = None
     amenities: tuple[str, ...] = ()
     charging_power_kw: float | None = Field(default=None, ge=0)
     detour_minutes: float = Field(ge=0, default=0)
@@ -59,6 +60,38 @@ class PartnerEnrichment(ContractModel):
     id: str
     name: str
     benefit: str | None = None
+    benefit_scope: str | None = None
+    benefit_source: Literal["fixture", "configured", "provider"] | None = None
+    verified: bool = False
+    status: Literal["suggested", "confirmed", "completed"] = "suggested"
+
+
+class PartnerFact(ContractModel):
+    partner_id: str
+    brand: str
+    benefit: str | None = None
+    benefit_scope: str | None = None
+    benefit_source: Literal["fixture", "configured", "provider"]
+    verified: bool
+
+
+class RouteOpportunity(ContractModel):
+    id: str
+    type: Literal["charging", "hotel", "restaurant", "amenity", "partner"]
+    stop_id: str | None = None
+    result_id: str | None = None
+    partner_fact: PartnerFact | None = None
+    reason: str = Field(min_length=1)
+    detour_minutes: float = Field(ge=0, default=0)
+    requires_route_confirmation: bool = False
+    status: Literal["suggested", "confirmed", "completed"] = "suggested"
+
+
+class ChargingPlan(ContractModel):
+    stops: list[StopPinpoint] = Field(default_factory=list)
+    complete: bool = False
+    total_charging_minutes: float = Field(ge=0, default=0)
+    confirmed: bool = False
 
 
 class BorderCrossing(ContractModel):
@@ -72,6 +105,13 @@ class RouteRequirement(ContractModel):
     country: str
     kind: Literal["toll", "vignette"]
     mandatory: bool = True
+
+
+class RouteSessionFacts(ContractModel):
+    charging_plan_confirmed: bool = False
+    confirmed_charging_stop_ids: list[str] = Field(default_factory=list)
+    purchased_vignette_requirement_ids: list[str] = Field(default_factory=list)
+    remaining_requirements: list[RouteRequirement] = Field(default_factory=list)
 
 
 class TripStats(ContractModel):
@@ -99,6 +139,9 @@ class RouteResponse(ContractModel):
     route_requirements: list[RouteRequirement] = Field(default_factory=list)
     charging_stop: StopPinpoint | None = None
     charging_required: bool = False
+    opportunities: list[RouteOpportunity] = Field(default_factory=list)
+    charging_plan: ChargingPlan | None = None
+    session_facts: RouteSessionFacts | None = None
 
 
 class RealtimeToolRouteRequest(ContractModel):
@@ -120,6 +163,7 @@ class RealtimeToolSearchRoutePoiRequest(ContractModel):
 
 class RealtimeToolSearchRoutePoiResponse(ContractModel):
     results: list[StopPinpoint] = Field(default_factory=list)
+    opportunities: list[RouteOpportunity] = Field(default_factory=list)
     route_id: str | None = None
     search_id: str | None = None
 
@@ -134,6 +178,7 @@ class RealtimeToolSearchStopAmenitiesRequest(ContractModel):
 class RealtimeToolSearchStopAmenitiesResponse(ContractModel):
     selected_stop_name: str = Field(min_length=1)
     results: list[StopPinpoint] = Field(default_factory=list, max_length=4)
+    opportunities: list[RouteOpportunity] | None = None
     radius_meters: int = Field(default=500, ge=500, le=500)
     route_id: str
     search_id: str | None = None
@@ -149,6 +194,8 @@ class RealtimeToolConfirmChargingResponse(ContractModel):
     route: RouteResponse
     selected_stop_name: str
     results: list[StopPinpoint] = Field(default_factory=list, max_length=4)
+    charging_plan: ChargingPlan | None = None
+    session_facts: RouteSessionFacts | None = None
     radius_meters: int = Field(default=500, ge=500, le=500)
     route_id: str
     search_id: str | None = None
@@ -182,6 +229,7 @@ class RealtimeToolPurchaseVignetteResponse(ContractModel):
     phone_confirmation_status: Literal["pending", "sent", "failed"]
     amount_eur: float = Field(ge=0)
     currency: Literal["EUR"]
+    session_facts: RouteSessionFacts | None = None
 
 
 class RealtimeToolBookingRequest(ContractModel):

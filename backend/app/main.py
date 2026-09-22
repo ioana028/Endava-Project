@@ -9,7 +9,6 @@ from .core.fixture_repository import FixtureRepository
 from .core.settings import Settings
 from .integrations.google_maps.routing import GoogleMapsRoutingProvider
 from .integrations.places.google import GooglePlacesProvider
-from .integrations.places.provider import OfflinePlacesProvider
 from .integrations.openai.realtime import (
     OpenAIRealtimeProvider,
     RealtimeSessionProvider,
@@ -19,6 +18,7 @@ from .models.contracts import (
     ProviderHealthResponse,
     VehicleTelemetryResponse,
 )
+from .models.fixtures import Fixtures, VehicleState
 from .services.trip.service import RouteService
 from .services.commerce.service import CommerceService
 from .services.wallet.service import WalletService
@@ -32,35 +32,44 @@ def create_app(
     fixture_repository = FixtureRepository(
         settings.telemetry_path, settings.partners_path
     )
-    places_provider = (
-        GooglePlacesProvider(
-            settings.google_server_api_key,
-            timeout_seconds=settings.google_places_timeout_seconds,
-            search_radius_meters=settings.google_places_route_search_radius_meters,
-            nearby_search_radius_meters=settings.google_places_nearby_search_radius_meters,
-            sample_interval_km=settings.google_places_sample_interval_km,
-            max_search_points=settings.google_places_max_search_points,
-        )
-        if settings.places_provider == "google"
-        or (settings.google_server_api_key and settings.places_provider == "auto")
-        else OfflinePlacesProvider(fixture_repository, settings.places_path)
+    places_provider = GooglePlacesProvider(
+        settings.google_server_api_key,
+        timeout_seconds=settings.google_places_timeout_seconds,
+        search_radius_meters=settings.google_places_route_search_radius_meters,
+        nearby_search_radius_meters=settings.google_places_nearby_search_radius_meters,
+        sample_interval_km=settings.google_places_sample_interval_km,
+        max_search_points=settings.google_places_max_search_points,
     )
     route_service = route_service or RouteService(
         GoogleMapsRoutingProvider(settings.google_server_api_key),
         fixture_repository,
         places_provider=places_provider,
-        charging_provider=(
-            places_provider
-            if isinstance(places_provider, GooglePlacesProvider)
-            else None
-        ),
+        charging_provider=places_provider,
     )
     wallet_service = WalletService()
     commerce_service = CommerceService(route_service, wallet_service)
 
+    def safe_load_fixtures() -> Fixtures:
+        try:
+            return fixture_repository.load()
+        except (RuntimeError, OSError, ValueError, TypeError):
+            return Fixtures(
+                telemetry=VehicleState(
+                    vehicle_id="offline-demo",
+                    propulsion="BEV",
+                    battery_percent=42.0,
+                    estimated_range_km=95.0,
+                    max_charged_range_km=0.0,
+                    consumption_rate_kwh=0.16,
+                    tyres="SUMMER",
+                    odometer_km=0.0,
+                ),
+                partners=(),
+            )
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        app.state.fixtures = fixture_repository.load()
+        app.state.fixtures = safe_load_fixtures()
         yield
 
     application = FastAPI(title="Suzanne Backend", version="0.1.0", lifespan=lifespan)
@@ -91,17 +100,9 @@ def create_app(
 
     @application.get("/health/config", response_model=ProviderHealthResponse)
     async def provider_health() -> ProviderHealthResponse:
-        provider_mode = settings.places_provider
-        resolved_places_provider = (
-            "google"
-            if provider_mode == "google"
-            or (provider_mode == "auto" and settings.google_server_api_key)
-            else "offline"
-        )
-        partner_records = fixture_repository.load().partners
-        scenic_capability = bool(settings.google_server_api_key) or (
-            resolved_places_provider == "offline"
-        )
+        resolved_places_provider = "google"
+        partner_records = tuple(getattr(application.state, "fixtures", safe_load_fixtures()).partners)
+        scenic_capability = bool(settings.google_server_api_key)
         return ProviderHealthResponse(
             status="ok",
             environment=settings.environment,
@@ -118,7 +119,7 @@ def create_app(
 
     @application.get("/api/vehicle/telemetry", response_model=VehicleTelemetryResponse)
     async def vehicle_telemetry() -> VehicleTelemetryResponse:
-        telemetry = fixture_repository.load().telemetry
+        telemetry = safe_load_fixtures().telemetry
         return VehicleTelemetryResponse.model_validate(telemetry.model_dump())
 
     return application

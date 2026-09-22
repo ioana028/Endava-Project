@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from ...core.fixture_repository import FixtureRepository
-from ...models.contracts import StopPinpoint
+from ...models.contracts import PartnerEnrichment, StopPinpoint
 from ...services.trip.ports import ProviderRoute
 
 
@@ -169,7 +169,9 @@ class LocalPlacesProvider:
                     category=item["category"],
                     coords=item["coords"],
                     rating=item["rating"],
+                    user_review_count=item.get("user_review_count"),
                     tag=item["tag"],
+                    details=item.get("details"),
                     detour_minutes=item["detour_minutes"],
                 )
             )
@@ -193,6 +195,8 @@ class LocalPlacesProvider:
             keyword in tag_lower for keyword in ("discount", "rate", "benefit")
         ):
             partner_benefit = tag
+        if partner_benefit is None:
+            partner_benefit = partner.benefit
 
         return StopPinpoint(
             id=partner.id,
@@ -202,6 +206,14 @@ class LocalPlacesProvider:
             rating=partner.rating,
             tag=tag,
             detour_minutes=float(partner.detour_minutes),
+            partner=PartnerEnrichment(
+                id=partner.id,
+                name=partner.brand or partner.name,
+                benefit=partner.benefit,
+                benefit_scope=partner.benefit_scope,
+                benefit_source=partner.benefit_source,
+                verified=partner.verified and partner.benefit is not None,
+            ),
             partner_benefit=partner_benefit,
         )
 

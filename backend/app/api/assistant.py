@@ -3,6 +3,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 
 from ..core.errors import APIError
 from ..models.contracts import (
@@ -120,6 +121,7 @@ async def realtime_search_route_poi(
     )
     return RealtimeToolSearchRoutePoiResponse(
         results=results,
+        opportunities=[],
         route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
         search_id=_active_context_id(request.app.state.route_service, "active_search_id"),
     )
@@ -147,13 +149,18 @@ async def realtime_search_stop_amenities(
         search_id=payload.search_id,
         categories=payload.categories,
     )
-    return RealtimeToolSearchStopAmenitiesResponse(
+    response = RealtimeToolSearchStopAmenitiesResponse(
         selected_stop_name=result["selected_stop_name"],
         results=result.get("results", []),
+        opportunities=result.get("opportunities"),
         radius_meters=result.get("radius_meters", 500),
         route_id=payload.route_id,
         search_id=payload.search_id,
     )
+    response_payload = response.model_dump(by_alias=True, exclude_none=False)
+    if not response.opportunities:
+        response_payload.pop("opportunities", None)
+    return JSONResponse(response_payload)
 
 
 @router.post(
@@ -181,6 +188,8 @@ async def realtime_confirm_charging_stop(
         route=result["route"],
         selected_stop_name=result["selected_stop_name"],
         results=result.get("results", []),
+        charging_plan=result.get("charging_plan"),
+        session_facts=result.get("session_facts"),
         radius_meters=result.get("radius_meters", 500),
         route_id=result["route_id"],
         search_id=result.get("search_id"),

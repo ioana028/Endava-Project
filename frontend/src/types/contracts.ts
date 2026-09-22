@@ -43,6 +43,7 @@ export interface StopPinpoint {
   rating?: number;
   userReviewCount?: number;
   tag: string;                     // e.g., "Fast Charger · 250kW" or "Italian Dining"
+  details?: string | null;
   amenities?: string[];
   distanceMeters?: number;
   detourMinutes: number;
@@ -52,8 +53,47 @@ export interface StopPinpoint {
     id: string;
     name: string;
     benefit?: string | null;
+    benefitScope?: string | null;
+    benefitSource?: 'fixture' | 'configured' | 'provider' | null;
+    verified?: boolean;
+    status?: 'suggested' | 'confirmed' | 'completed';
   } | null;
   partnerBenefit?: string | null;
+}
+
+export interface PartnerFact {
+  partnerId: string;
+  brand: string;
+  benefit?: string | null;
+  benefitScope?: string | null;
+  benefitSource: 'fixture' | 'configured' | 'provider';
+  verified: boolean;
+}
+
+export interface RouteOpportunity {
+  id: string;
+  type: 'charging' | 'hotel' | 'restaurant' | 'amenity' | 'partner';
+  stopId?: string | null;
+  resultId?: string | null;
+  partnerFact?: PartnerFact | null;
+  reason: string;
+  detourMinutes: number;
+  requiresRouteConfirmation: boolean;
+  status: 'suggested' | 'confirmed' | 'completed';
+}
+
+export interface ChargingPlan {
+  stops: StopPinpoint[];
+  complete: boolean;
+  totalChargingMinutes: number;
+  confirmed: boolean;
+}
+
+export interface RouteSessionFacts {
+  chargingPlanConfirmed: boolean;
+  confirmedChargingStopIds: string[];
+  purchasedVignetteRequirementIds: string[];
+  remainingRequirements: RouteRequirement[];
 }
 
 export interface RouteAlert {
@@ -94,10 +134,14 @@ export interface RouteResponse {
   chargingRequired?: boolean;
   borderCrossings: BorderCrossing[];
   routeRequirements: RouteRequirement[];
+  opportunities?: RouteOpportunity[];
+  chargingPlan?: ChargingPlan | null;
+  sessionFacts?: RouteSessionFacts | null;
 }
 
 export interface RoutePoiResponse {
   results: StopPinpoint[];
+  opportunities?: RouteOpportunity[];
   routeId?: string | null;
   searchId?: string | null;
 }
@@ -105,6 +149,7 @@ export interface RoutePoiResponse {
 export interface StopAmenitiesResponse {
   selectedStopName: string;
   results: StopPinpoint[];
+  opportunities?: RouteOpportunity[];
   radiusMeters: number;
   routeId: string;
   searchId?: string | null;
@@ -112,6 +157,8 @@ export interface StopAmenitiesResponse {
 
 export interface ConfirmChargingStopResponse extends StopAmenitiesResponse {
   route: RouteResponse;
+  chargingPlan?: ChargingPlan | null;
+  sessionFacts?: RouteSessionFacts | null;
 }
 
 export interface PurchaseVignetteRequest {
@@ -129,6 +176,7 @@ export interface PurchaseVignetteResponse {
   phoneConfirmationStatus: 'pending' | 'sent' | 'failed';
   amountEur: number;
   currency: 'EUR';
+  sessionFacts?: RouteSessionFacts | null;
 }
 
 export type BookingType = 'hotel_room' | 'restaurant_table';

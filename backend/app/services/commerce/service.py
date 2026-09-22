@@ -24,12 +24,17 @@ class CommerceService:
             raise APIError(422, "STALE_REQUIREMENT", "The vignette requirement is no longer current.")
         if requirement.kind != "vignette":
             raise APIError(422, "INVALID_REQUIREMENT", "The selected requirement is not a vignette.")
-        return await self._wallet.process_purchase(
+        transaction = await self._wallet.process_purchase(
             route_id=route_id,
             requirement_id=requirement_id,
             request_key=request_key,
             amount_eur=vignette_amount_eur(requirement_id),
         )
+        if transaction.status.value in {"completed", "duplicate"}:
+            mark_purchased = getattr(self._route_service, "mark_vignette_purchased", None)
+            if mark_purchased is not None:
+                mark_purchased(requirement_id)
+        return transaction
 
     async def book(
         self,

@@ -153,10 +153,7 @@ def _matches_search_scope(
         return False
     route_length_km = sum(distance_km(start, end) for start, end in zip(geometry, geometry[1:]))
     progress_km = route_progress_km(point, geometry)
-    return (
-        progress_km >= POI_ORIGIN_EXCLUSION_KM
-        and progress_km <= route_length_km - POI_DESTINATION_EXCLUSION_KM
-    )
+    return progress_km >= POI_ORIGIN_EXCLUSION_KM and progress_km <= route_length_km - POI_DESTINATION_EXCLUSION_KM
 
 
 def select_stop_amenities(
@@ -363,34 +360,37 @@ def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpo
     partner_list = tuple(partners)
     normalized_stop_name = _normalize_partner_name(stop.name)
 
-    partner = next((item for item in partner_list if item.id == stop.id), None)
+    partner = next(
+        (item for item in partner_list if item.id == stop.id and item.enabled),
+        None,
+    )
     if partner is None:
-        partner = next(
-            (
-                item
-                for item in partner_list
-                if item.category == stop.category
-                and _normalize_partner_name(item.name) == _normalize_partner_name(stop.name)
-            ),
-            None,
-        )
+        exact_matches = [
+            item
+            for item in partner_list
+            if item.enabled
+            and _partner_matches_category(item, stop.category)
+            and _normalize_partner_name(item.name) == normalized_stop_name
+        ]
+        partner = exact_matches[0] if len(exact_matches) == 1 else None
     if partner is None:
-        for item in partner_list:
-            for provider_brand in (item.brand, *tuple(item.provider_brands or ())):
-                normalized_brand = _normalize_partner_name(provider_brand)
-                if (
-                    item.category == stop.category
-                    and normalized_brand
-                    and (
-                        normalized_stop_name == normalized_brand
-                        or normalized_stop_name.startswith(f"{normalized_brand} ")
-                    )
-                ):
-                    partner = item
-                    break
-            if partner is not None:
-                partner = item
-                break
+        brand_matches = [
+            item
+            for item in partner_list
+            if item.enabled
+            and _partner_matches_category(item, stop.category)
+            and any(
+                normalized_stop_name == normalized_brand
+                or normalized_stop_name.startswith(f"{normalized_brand} ")
+                for normalized_brand in (
+                    _normalize_partner_name(item.brand),
+                    *(_normalize_partner_name(value) for value in item.brand_aliases),
+                    *(_normalize_partner_name(value) for value in item.provider_brands),
+                )
+                if normalized_brand
+            )
+        ]
+        partner = brand_matches[0] if len(brand_matches) == 1 else None
     if partner is None:
         return stop
 
@@ -405,11 +405,25 @@ def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpo
     return stop.model_copy(
         update={
             "partner": PartnerEnrichment(
-                id=partner.id, name=partner.name, benefit=benefit
+                id=partner.id,
+                name=partner.name,
+                benefit=benefit,
+                benefit_scope=partner.benefit_scope,
+                benefit_source=partner.benefit_source,
+                verified=partner.verified and benefit is not None,
             ),
             "partner_benefit": benefit,
         }
     )
+
+
+def _category_is_eligible(partner: Partner, category: str) -> bool:
+    categories = tuple(partner.categories or ())
+    return not categories or category in categories
+
+
+def _partner_matches_category(partner: Partner, category: str) -> bool:
+    return partner.category == category or _category_is_eligible(partner, category)
 
 
 def _has_concrete_benefit(benefit: str) -> bool:

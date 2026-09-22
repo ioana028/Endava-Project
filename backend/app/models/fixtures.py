@@ -18,7 +18,7 @@ class VehicleState(ContractModel):
 
 class Partner(ContractModel):
     id: str
-    kind: Literal["location", "network"] = "location"
+    kind: Literal["brand", "location", "network"] = "location"
     name: str
     brand: str | None = None
     category: Literal[
@@ -30,8 +30,13 @@ class Partner(ContractModel):
     rating: float | None = Field(default=None, ge=0, le=5)
     tag: str = ""
     benefit: str | None = None
+    benefit_scope: Literal["brand-wide", "location", "none"] = "none"
+    eligible_locations: tuple[str, ...] = ()
     amenities: tuple[str, ...] = ()
+    brand_aliases: tuple[str, ...] = ()
     provider_brands: tuple[str, ...] = ()
+    benefit_source: Literal["fixture", "configured", "provider"] = "fixture"
+    verified: bool = True
     enabled: bool = True
     detour_minutes: int = Field(default=0, ge=0)
     charging_duration_minutes: float = Field(ge=0, default=0)
