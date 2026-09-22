@@ -46,6 +46,10 @@ class StopPinpoint(ContractModel):
     user_review_count: int | None = Field(default=None, ge=0)
     tag: str = ""
     details: str | None = None
+    photo_reference: str | None = None
+    keywords: tuple[str, ...] = ()
+    provider: str | None = None
+    source: str | None = None
     amenities: tuple[str, ...] = ()
     charging_power_kw: float | None = Field(default=None, ge=0)
     detour_minutes: float = Field(ge=0, default=0)
@@ -121,6 +125,14 @@ class TripStats(ContractModel):
     total_price_eur: float = Field(ge=0, default=0)
 
 
+class TelemetryNarrationFacts(ContractModel):
+    battery_percent: float = Field(ge=0, le=100)
+    estimated_range_km: float = Field(ge=0)
+    max_charged_range_km: float = Field(ge=0)
+    consumption_rate_kwh: float = Field(gt=0)
+    charging_feasible: bool | None = None
+
+
 class RouteAlert(ContractModel):
     type: Literal["WEATHER", "TRAFFIC", "TOLL", "VEHICLE"]
     location_name: str | None = None
@@ -142,6 +154,7 @@ class RouteResponse(ContractModel):
     opportunities: list[RouteOpportunity] = Field(default_factory=list)
     charging_plan: ChargingPlan | None = None
     session_facts: RouteSessionFacts | None = None
+    telemetry: TelemetryNarrationFacts | None = None
 
 
 class RealtimeToolRouteRequest(ContractModel):

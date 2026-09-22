@@ -76,6 +76,23 @@ def _validate_response(model: type[Any], result: Any) -> Any:
     return model.model_validate(result)
 
 
+def _attach_telemetry(request: Request, route: Any) -> Any:
+    fixtures = getattr(request.app.state, "fixtures", None)
+    if fixtures is None or not hasattr(route, "model_copy"):
+        return route
+    vehicle = fixtures.telemetry
+    return route.model_copy(
+        update={
+            "telemetry": {
+                "battery_percent": vehicle.battery_percent,
+                "estimated_range_km": vehicle.estimated_range_km,
+                "max_charged_range_km": vehicle.max_charged_range_km,
+                "consumption_rate_kwh": vehicle.consumption_rate_kwh,
+            }
+        }
+    )
+
+
 @router.post(
     "/realtime/session",
     response_model=RealtimeSessionResponse,
@@ -99,6 +116,7 @@ async def realtime_plan_route(
     route = await request.app.state.route_service.plan(
         AssistantIntent(destination=payload.destination, priority=payload.priority)
     )
+    route = _attach_telemetry(request, route)
     return RealtimeToolRouteResponse(
         route=route,
         route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
@@ -114,14 +132,20 @@ async def realtime_search_route_poi(
     payload: RealtimeToolSearchRoutePoiRequest,
     request: Request,
 ) -> RealtimeToolSearchRoutePoiResponse:
-    results = await request.app.state.route_service.search_route_poi(
+    result = await request.app.state.route_service.search_route_poi(
         category=payload.category,
         location=payload.location,
         preference=payload.preference,
     )
+    opportunities = []
+    if isinstance(result, dict):
+        results = result.get("results", [])
+        opportunities = result.get("opportunities", [])
+    else:
+        results = result
     return RealtimeToolSearchRoutePoiResponse(
         results=results,
-        opportunities=[],
+        opportunities=opportunities,
         route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
         search_id=_active_context_id(request.app.state.route_service, "active_search_id"),
     )
@@ -185,7 +209,7 @@ async def realtime_confirm_charging_stop(
         confirmation=payload.confirmation,
     )
     return RealtimeToolConfirmChargingResponse(
-        route=result["route"],
+        route=_attach_telemetry(request, result["route"]),
         selected_stop_name=result["selected_stop_name"],
         results=result.get("results", []),
         charging_plan=result.get("charging_plan"),
@@ -219,7 +243,7 @@ async def realtime_reroute_through_poi(
         coords=payload.coords,
         priority=payload.priority,
     )
-    return RealtimeToolRerouteResponse(route=route)
+    return RealtimeToolRerouteResponse(route=_attach_telemetry(request, route))
 
 
 @router.post(
