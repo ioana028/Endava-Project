@@ -8,8 +8,13 @@ _COUNTRY_NAMES = {
     "AUSTRIA": "Austria",
     "HU": "Hungary",
     "HUNGARY": "Hungary",
+    "CZ": "Czechia",
+    "CZECHIA": "Czechia",
+    "CZECHREPUBLIC": "Czechia",
     "SK": "Slovakia",
     "SLOVAKIA": "Slovakia",
+    "SI": "Slovenia",
+    "SLOVENIA": "Slovenia",
 }
 
 
