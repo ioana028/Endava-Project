@@ -26,7 +26,6 @@ from ...models.contracts import (
 from .country_rules import derive_requirements, detect_border_crossings
 from .deterministic import (
     DEFAULT_CHARGING_POWER_KW,
-    MIN_CHARGER_PROGRESS_KM,
     POI_COORDINATE_TOLERANCE,
     enrich_partner,
     estimate_charging_duration_minutes,
@@ -81,6 +80,9 @@ class RouteService:
         self._active_stops: list[StopPinpoint] = []
         self._pending_charging_stops: list[StopPinpoint] = []
         self._active_search_results: dict[str, StopPinpoint] = {}
+        self._session_generation = 0
+        self._route_session: dict[str, object] = {}
+        self._confirmed_charging_response: dict[str, object] | None = None
 
     @property
     def active_route_id(self) -> str | None:
@@ -93,6 +95,33 @@ class RouteService:
     @property
     def active_search_results(self) -> dict[str, StopPinpoint]:
         return dict(self._active_search_results)
+
+    @property
+    def route_session_facts(self) -> dict[str, object]:
+        if not self._active_route_id or not self._route_session:
+            return {
+                "route_id": self._active_route_id,
+                "session_generation": self._session_generation,
+                "charging_plan_confirmed": False,
+                "confirmed_charging_stop_ids": [],
+                "purchased_vignette_requirement_ids": [],
+                "completed_partner_opportunity_ids": [],
+            }
+        return {
+            "route_id": self._active_route_id,
+            "session_generation": self._session_generation,
+            **self._route_session,
+        }
+
+    def mark_vignette_purchased(self, requirement_id: str) -> None:
+        if not self._route_session or requirement_id in self._route_session["purchased_vignette_requirement_ids"]:
+            return
+        self._route_session["purchased_vignette_requirement_ids"].append(requirement_id)
+
+    def mark_partner_opportunity_completed(self, opportunity_id: str) -> None:
+        if not self._route_session or opportunity_id in self._route_session["completed_partner_opportunity_ids"]:
+            return
+        self._route_session["completed_partner_opportunity_ids"].append(opportunity_id)
 
     @property
     def active_route_requirements(self) -> tuple[RouteRequirement, ...]:
@@ -138,6 +167,20 @@ class RouteService:
             "charging_required": (
                 next_stop is not None and next_stop.category == "charging"
             ) or bool(self._pending_charging_stops),
+            "charging_plan_status": (
+                "confirmed"
+                if self._route_session.get("charging_plan_confirmed")
+                else "pending"
+                if self._pending_charging_stops
+                else "none"
+            ),
+            "pending_charging_stop_ids": [
+                stop.id for stop in self._pending_charging_stops
+            ],
+            "confirmed_charging_stop_ids": list(
+                self._route_session.get("confirmed_charging_stop_ids", [])
+            ),
+            "route_session": self.route_session_facts,
         }
 
     def start_driving(
@@ -233,33 +276,11 @@ class RouteService:
                         "NO_SUITABLE_CHARGER",
                         "No suitable charging stop was found for this route.",
                     )
-                legacy_candidate = next(
-                    iter(
-                        sorted(
-                            (
-                                candidate
-                                for candidate in enriched_candidates
-                                if candidate.compatible
-                                and candidate.available
-                                and candidate.distance_from_origin_km is not None
-                                and MIN_CHARGER_PROGRESS_KM
-                                <= candidate.distance_from_origin_km
-                                <= reachable_distance_km
-                            ),
-                            key=lambda candidate: candidate.distance_from_origin_km or 0,
-                            reverse=True,
-                        )
-                    ),
-                    None,
+                raise APIError(
+                    422,
+                    "NO_SAFE_CHARGING_PLAN",
+                    "No safe sequence of compatible charging stops was found for this route.",
                 )
-                if legacy_candidate is not None:
-                    selected_candidates = [legacy_candidate]
-                else:
-                    raise APIError(
-                        422,
-                        "NO_SAFE_CHARGING_PLAN",
-                        "No safe sequence of compatible charging stops was found for this route.",
-                    )
 
             for candidate in selected_candidates:
                 charger_progress_km = candidate.distance_from_origin_km or 0
@@ -285,6 +306,14 @@ class RouteService:
         )
         self._active_provider_route = provider_route
         self._active_route_id = uuid4().hex
+        self._session_generation += 1
+        self._route_session = {
+            "charging_plan_confirmed": False,
+            "confirmed_charging_stop_ids": [],
+            "purchased_vignette_requirement_ids": [],
+            "completed_partner_opportunity_ids": [],
+        }
+        self._confirmed_charging_response = None
         self._active_search_id = None
         self._active_origin = origin
         self._active_destination = destination
@@ -438,9 +467,13 @@ class RouteService:
     async def confirm_charging_stop(
         self, route_id: str, stop_id: str | None = None, confirmation: str = "confirmed"
     ) -> dict[str, object]:
-        del confirmation
+        if confirmation != "confirmed":
+            raise APIError(422, "CONFIRMATION_REQUIRED", "Charging confirmation is required.")
         if self._active_provider_route is None or route_id != self._active_route_id:
             raise APIError(409, "STALE_ROUTE", "The selected route is no longer current.")
+
+        if not self._pending_charging_stops and self._confirmed_charging_response is not None:
+            return self._confirmed_charging_response
 
         stop = next(
             (
@@ -486,22 +519,36 @@ class RouteService:
         self._active_provider_route = provider_route
         self._active_stops = list(self._pending_charging_stops)
         self._pending_charging_stops = []
+        self._route_session["charging_plan_confirmed"] = True
+        self._route_session["confirmed_charging_stop_ids"] = [
+            item.id for item in self._active_stops
+        ]
 
         amenity_search = await self.search_stop_amenities(
             stop_id=stop.id,
             route_id=route_id,
             search_id=None,
         )
+        amenities_by_stop = {stop.id: amenity_search}
+        for confirmed_stop in self._active_stops[1:]:
+            amenities_by_stop[confirmed_stop.id] = await self.search_stop_amenities(
+                stop_id=confirmed_stop.id,
+                route_id=route_id,
+                search_id=None,
+            )
         route = self._build_route_response(
             self._active_provider_route,
             self._active_origin,
             self._active_destination,
             self._active_stops,
         )
-        return {
+        response = {
             "route": route,
             **amenity_search,
+            "amenities_by_stop": amenities_by_stop,
         }
+        self._confirmed_charging_response = response
+        return response
 
     async def reroute_through_poi(
         self,
