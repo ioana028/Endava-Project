@@ -31,6 +31,10 @@ export function PoiResults({
         {results.slice(0, 2).map((result) => {
           const selected = result.id === selectedPoiId
           const partnerBenefit = result.partner?.benefit ?? result.partnerBenefit
+          const partnerScope = result.partner?.benefitScope
+          const partnerVerified = result.partner?.verified
+          const partnerSource = result.partner?.benefitSource
+          const partnerStatus = result.partner?.status ?? 'suggested'
           return (
             <button
               className={`poi-card${selected ? ' poi-card-selected' : ''}`}
@@ -46,10 +50,28 @@ export function PoiResults({
               <strong>{result.name}</strong>
               <span className="poi-tag">{result.tag}</span>
               {result.partner?.name && (
-                <span className="partner-label">Partner location · {result.partner.name}</span>
+                <span className="partner-label">
+                  Partner location · {result.partner.name}
+                  {partnerVerified ? ' · verified' : ' · unverified'}
+                </span>
               )}
               {partnerBenefit && (
                 <span className="partner-benefit">{partnerBenefit}</span>
+              )}
+              {partnerBenefit && (
+                <span className="partner-meta">
+                  {partnerScope ?? 'scope unavailable'}
+                  {partnerSource ? ` · ${partnerSource} offer` : ''}
+                </span>
+              )}
+              {result.partner?.name && (
+                <span className={`partner-state partner-state-${partnerStatus}`}>
+                  {partnerStatus === 'suggested'
+                    ? 'Recommendation'
+                    : partnerStatus === 'confirmed'
+                      ? 'Added to route'
+                      : 'Completed'}
+                </span>
               )}
               {result.amenities && result.amenities.length > 0 && (
                 <span className="poi-amenities">

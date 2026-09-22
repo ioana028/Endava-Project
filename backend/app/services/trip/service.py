@@ -16,7 +16,9 @@ from ...models.contracts import (
     AssistantIntent,
     BorderCrossing,
     Coordinates,
+    PartnerFact,
     RouteAlert,
+    RouteOpportunity,
     RouteRequirement,
     RoutePriority,
     RouteResponse,
@@ -38,6 +40,7 @@ from .deterministic import (
 )
 from .fixture_providers import FixtureChargingProvider
 from .ports import (
+    ChargingCandidate,
     ChargingProvider,
     GeocodedPlace,
     InvalidDestinationError,
@@ -50,6 +53,7 @@ from .ports import (
 DEFAULT_ORIGIN = "Vienna, Austria"
 CHARGING_PRICE_EUR_PER_KWH = 0.45
 HUNGARIAN_VIGNETTE_PRICE_EUR = 16.50
+PARTNER_ALTERNATIVE_WINDOW_KM = 20.0
 LOGGER = logging.getLogger(__name__)
 
 
@@ -282,6 +286,11 @@ class RouteService:
                     "No safe sequence of compatible charging stops was found for this route.",
                 )
 
+            partner_opportunities = self._nearby_partner_opportunities(
+                enriched_candidates,
+                selected_candidates,
+            )
+
             for candidate in selected_candidates:
                 charger_progress_km = candidate.distance_from_origin_km or 0
                 charging_duration_minutes = estimate_charging_duration_minutes(
@@ -302,7 +311,12 @@ class RouteService:
                 )
 
         route_response = self._build_route_response(
-            provider_route, origin, destination, stops, include_charging=False
+            provider_route,
+            origin,
+            destination,
+            stops,
+            include_charging=False,
+            opportunities=partner_opportunities if initial_distance_km > safe_distance_km else [],
         )
         self._active_provider_route = provider_route
         self._active_route_id = uuid4().hex
@@ -452,7 +466,10 @@ class RouteService:
                 "The place search service is unavailable.",
             ) from error
 
-        unique_results = {result.id: result for result in results}
+        unique_results = {
+            result.id: enrich_partner(result, self._fixture_repository.fixtures.partners)
+            for result in results
+        }
         return {
             "selected_stop_name": stop.name,
             "results": sorted(
@@ -649,6 +666,7 @@ class RouteService:
         destination: GeocodedPlace,
         stops: list[StopPinpoint],
         include_charging: bool = True,
+        opportunities: list[RouteOpportunity] | None = None,
     ) -> RouteResponse:
         charging_required = any(stop.category == "charging" for stop in stops)
         response_stops = stops if include_charging else [
@@ -712,7 +730,65 @@ class RouteService:
             border_crossings=border_crossings,
             route_requirements=route_requirements,
             charging_required=charging_required,
+            opportunities=opportunities or [],
         )
+
+    @staticmethod
+    def _nearby_partner_opportunities(
+        candidates: tuple[ChargingCandidate, ...],
+        selected_candidates: list[ChargingCandidate],
+    ) -> list[RouteOpportunity]:
+        selected_ids = {candidate.stop.id for candidate in selected_candidates}
+        selected_progress = tuple(
+            candidate.distance_from_origin_km
+            for candidate in selected_candidates
+            if candidate.distance_from_origin_km is not None
+        )
+        alternatives = [
+            candidate
+            for candidate in candidates
+            if candidate.stop.id not in selected_ids
+            and candidate.stop.partner is not None
+            and candidate.stop.partner_benefit
+            and candidate.stop.partner.verified
+            and candidate.distance_from_origin_km is not None
+            and any(
+                abs(candidate.distance_from_origin_km - progress)
+                <= PARTNER_ALTERNATIVE_WINDOW_KM
+                for progress in selected_progress
+            )
+        ]
+        alternatives.sort(
+            key=lambda candidate: (
+                min(
+                    abs(candidate.distance_from_origin_km - progress)
+                    for progress in selected_progress
+                ),
+                candidate.stop.detour_minutes,
+                candidate.stop.id,
+            )
+        )
+        return [
+            RouteOpportunity(
+                id=f"partner-opportunity-{candidate.stop.id}",
+                type="charging",
+                stop_id=candidate.stop.id,
+                partner_fact=PartnerFact(
+                    partner_id=candidate.stop.partner.id,
+                    brand=candidate.stop.partner.name,
+                    benefit=candidate.stop.partner.benefit,
+                    benefit_scope=candidate.stop.partner.benefit_scope,
+                    benefit_source=candidate.stop.partner.benefit_source or "fixture",
+                    verified=True,
+                ),
+                reason=(
+                    f"Nearby partner alternative: {candidate.stop.partner.benefit}"
+                ),
+                detour_minutes=candidate.stop.detour_minutes,
+                requires_route_confirmation=True,
+            )
+            for candidate in alternatives[:1]
+        ]
 
     def _safe_distance_km(self) -> float:
         return max(

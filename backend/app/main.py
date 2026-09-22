@@ -9,7 +9,6 @@ from .core.fixture_repository import FixtureRepository
 from .core.settings import Settings
 from .integrations.google_maps.routing import GoogleMapsRoutingProvider
 from .integrations.places.google import GooglePlacesProvider
-from .integrations.places.provider import OfflinePlacesProvider
 from .integrations.openai.realtime import (
     OpenAIRealtimeProvider,
     RealtimeSessionProvider,
@@ -33,28 +32,19 @@ def create_app(
     fixture_repository = FixtureRepository(
         settings.telemetry_path, settings.partners_path
     )
-    places_provider = (
-        GooglePlacesProvider(
-            settings.google_server_api_key,
-            timeout_seconds=settings.google_places_timeout_seconds,
-            search_radius_meters=settings.google_places_route_search_radius_meters,
-            nearby_search_radius_meters=settings.google_places_nearby_search_radius_meters,
-            sample_interval_km=settings.google_places_sample_interval_km,
-            max_search_points=settings.google_places_max_search_points,
-        )
-        if settings.places_provider == "google"
-        or (settings.google_server_api_key and settings.places_provider == "auto")
-        else OfflinePlacesProvider(fixture_repository, settings.places_path)
+    places_provider = GooglePlacesProvider(
+        settings.google_server_api_key,
+        timeout_seconds=settings.google_places_timeout_seconds,
+        search_radius_meters=settings.google_places_route_search_radius_meters,
+        nearby_search_radius_meters=settings.google_places_nearby_search_radius_meters,
+        sample_interval_km=settings.google_places_sample_interval_km,
+        max_search_points=settings.google_places_max_search_points,
     )
     route_service = route_service or RouteService(
         GoogleMapsRoutingProvider(settings.google_server_api_key),
         fixture_repository,
         places_provider=places_provider,
-        charging_provider=(
-            places_provider
-            if isinstance(places_provider, GooglePlacesProvider)
-            else None
-        ),
+        charging_provider=places_provider,
     )
     wallet_service = WalletService()
     commerce_service = CommerceService(route_service, wallet_service)
@@ -110,17 +100,9 @@ def create_app(
 
     @application.get("/health/config", response_model=ProviderHealthResponse)
     async def provider_health() -> ProviderHealthResponse:
-        provider_mode = settings.places_provider
-        resolved_places_provider = (
-            "google"
-            if provider_mode == "google"
-            or (provider_mode == "auto" and settings.google_server_api_key)
-            else "offline"
-        )
+        resolved_places_provider = "google"
         partner_records = tuple(getattr(application.state, "fixtures", safe_load_fixtures()).partners)
-        scenic_capability = bool(settings.google_server_api_key) or (
-            resolved_places_provider == "offline"
-        )
+        scenic_capability = bool(settings.google_server_api_key)
         return ProviderHealthResponse(
             status="ok",
             environment=settings.environment,

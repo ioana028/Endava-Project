@@ -16,7 +16,7 @@ class FixtureRepository:
         try:
             telemetry = VehicleState.model_validate(self._read_json(self._telemetry_path))
             partners = tuple(
-                Partner.model_validate(item)
+                Partner.model_validate(self._normalize_partner(item))
                 for item in self._read_json(self._partners_path)
             )
         except (OSError, json.JSONDecodeError, ValidationError, TypeError) as exc:
@@ -24,6 +24,40 @@ class FixtureRepository:
 
         self._fixtures = Fixtures(telemetry=telemetry, partners=partners)
         return self._fixtures
+
+    @staticmethod
+    def _normalize_partner(item: object) -> object:
+        if not isinstance(item, dict):
+            return item
+
+        normalized = dict(item)
+        coordinates = normalized.get("coords")
+        kind = normalized.get("kind")
+        if kind is None:
+            normalized["kind"] = "location" if coordinates is not None else "brand"
+        elif kind == "network":
+            # Preserve the legacy provider-facing name while treating it as a brand record.
+            normalized["kind"] = "brand"
+
+        brand = normalized.get("brand") or normalized.get("name") or ""
+        provider_brands = tuple(normalized.get("providerBrands") or ())
+        normalized["brandAliases"] = tuple(
+            dict.fromkeys(
+                (*tuple(normalized.get("brandAliases") or ()), brand, *provider_brands)
+            )
+        )
+        normalized["providerBrands"] = provider_brands
+        normalized.setdefault(
+            "benefitScope",
+            "brand-wide" if normalized["kind"] == "brand" else "location",
+        )
+        normalized.setdefault(
+            "eligibleLocations",
+            ("all-matched-locations",) if normalized["kind"] == "brand" else (),
+        )
+        normalized.setdefault("benefitSource", "fixture")
+        normalized.setdefault("verified", True)
+        return normalized
 
     @property
     def fixtures(self) -> Fixtures:

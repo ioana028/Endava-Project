@@ -153,10 +153,7 @@ def _matches_search_scope(
         return False
     route_length_km = sum(distance_km(start, end) for start, end in zip(geometry, geometry[1:]))
     progress_km = route_progress_km(point, geometry)
-    return (
-        progress_km >= POI_ORIGIN_EXCLUSION_KM
-        and progress_km <= route_length_km - POI_DESTINATION_EXCLUSION_KM
-    )
+    return progress_km >= POI_ORIGIN_EXCLUSION_KM and progress_km <= route_length_km - POI_DESTINATION_EXCLUSION_KM
 
 
 def select_stop_amenities(
@@ -387,6 +384,7 @@ def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpo
                 or normalized_stop_name.startswith(f"{normalized_brand} ")
                 for normalized_brand in (
                     _normalize_partner_name(item.brand),
+                    *(_normalize_partner_name(value) for value in item.brand_aliases),
                     *(_normalize_partner_name(value) for value in item.provider_brands),
                 )
                 if normalized_brand
@@ -407,7 +405,12 @@ def enrich_partner(stop: StopPinpoint, partners: Iterable[Partner]) -> StopPinpo
     return stop.model_copy(
         update={
             "partner": PartnerEnrichment(
-                id=partner.id, name=partner.name, benefit=benefit
+                id=partner.id,
+                name=partner.name,
+                benefit=benefit,
+                benefit_scope=partner.benefit_scope,
+                benefit_source=partner.benefit_source,
+                verified=partner.verified and benefit is not None,
             ),
             "partner_benefit": benefit,
         }

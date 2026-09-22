@@ -86,13 +86,22 @@ function App() {
                       <div>
                         <strong>{amenity.name}</strong>
                         {amenity.partner?.name && (
-                          <small className="partner-label">Partner location · {amenity.partner.name}</small>
+                          <small className="partner-label">
+                            Partner location · {amenity.partner.name}
+                            {amenity.partner.verified ? ' · verified' : ' · unverified'}
+                          </small>
                         )}
                       </div>
                       <span>
                         {amenity.category} {amenity.distanceMeters ? `· ${Math.round(amenity.distanceMeters)} m` : ''}
                         {(amenity.partner?.benefit ?? amenity.partnerBenefit) && (
-                          <small className="partner-benefit">{amenity.partner?.benefit ?? amenity.partnerBenefit}</small>
+                          <>
+                            <small className="partner-benefit">{amenity.partner?.benefit ?? amenity.partnerBenefit}</small>
+                            <small className="partner-meta">
+                              {amenity.partner?.benefitScope ?? 'scope unavailable'}
+                              {amenity.partner?.benefitSource ? ` · ${amenity.partner.benefitSource} offer` : ''}
+                            </small>
+                          </>
                         )}
                       </span>
                     </li>
@@ -112,6 +121,9 @@ function App() {
                 <h1>{assistant.successFeedback.label}</h1>
                 <strong>Confirmation ready</strong>
                 <span>Reference: {assistant.successFeedback.reference}</span>
+                {assistant.successFeedback.action === 'purchase' && assistant.purchase && (
+                  <span>Amount: {assistant.purchase.amountEur.toFixed(2)} EUR</span>
+                )}
               </div>
             ) : (
               <>
@@ -149,7 +161,6 @@ function App() {
               <section className="cockpit-card cost-panel utility-panel">
                 <RouteSummary
                   route={route}
-                  priority={assistant.response?.intent.priority}
                   showChargingStop={assistant.chargingStopConfirmed || Boolean(assistant.driving?.active)}
                 />
               </section>

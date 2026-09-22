@@ -13,7 +13,7 @@ Suzanne: The scenic option is an estimate based on the returned route data; I ca
 
 `SCENIC` is preserved exactly in the `plan_route` tool request. Suzanne may
 call the result scenic only when the returned facts support that description.
-Provider or offline fallback limitations must not be hidden, and scenic mode
+Provider availability limitations must not be hidden, and scenic mode
 must never be described as a guaranteed view, landscape, or road condition.
 
 ## Partner discovery

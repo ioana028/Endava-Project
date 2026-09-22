@@ -45,6 +45,7 @@ class StopPinpoint(ContractModel):
     rating: float | None = None
     user_review_count: int | None = Field(default=None, ge=0)
     tag: str = ""
+    details: str | None = None
     amenities: tuple[str, ...] = ()
     charging_power_kw: float | None = Field(default=None, ge=0)
     detour_minutes: float = Field(ge=0, default=0)
@@ -177,7 +178,7 @@ class RealtimeToolSearchStopAmenitiesRequest(ContractModel):
 class RealtimeToolSearchStopAmenitiesResponse(ContractModel):
     selected_stop_name: str = Field(min_length=1)
     results: list[StopPinpoint] = Field(default_factory=list, max_length=4)
-    opportunities: list[RouteOpportunity] = Field(default_factory=list)
+    opportunities: list[RouteOpportunity] | None = None
     radius_meters: int = Field(default=500, ge=500, le=500)
     route_id: str
     search_id: str | None = None

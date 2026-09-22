@@ -1,7 +1,12 @@
-from backend.app.models.contracts import RoutePriority, StopPinpoint
+from pathlib import Path
+
+from backend.app.models.contracts import PartnerEnrichment, RoutePriority, StopPinpoint
+from backend.app.core.fixture_repository import FixtureRepository
 from backend.app.models.fixtures import Partner
 from backend.app.services.recommendation.poi import rank_partner_opportunities
 from backend.app.services.trip.deterministic import enrich_partner
+from backend.app.services.trip.ports import ChargingCandidate
+from backend.app.services.trip.service import RouteService
 
 
 def test_brand_match_is_exact_and_applies_to_all_matching_locations() -> None:
@@ -192,3 +197,66 @@ def test_opportunity_ranking_honors_fastest_priority() -> None:
     )
 
     assert [item.stop.id for item in opportunities] == ["near", "far"]
+
+
+def test_day8_partner_fixture_boundary_normalizes_legacy_records() -> None:
+    repository = FixtureRepository(
+        telemetry_path=Path("data/vehicles/telemetry.json"),
+        partners_path=Path("data/partners/partners.json"),
+    )
+
+    partners = repository.load().partners
+
+    assert partners
+    assert all(partner.kind in {"brand", "location"} for partner in partners)
+    assert all(partner.benefit_scope in {"brand-wide", "location", "none"} for partner in partners)
+    assert all(partner.benefit_source == "fixture" for partner in partners)
+    assert all(partner.verified for partner in partners)
+    assert all(partner.brand_aliases for partner in partners)
+    assert all(
+        partner.coords is not None
+        for partner in partners
+        if partner.kind == "location"
+    )
+
+
+def test_nearby_partner_charger_is_offered_as_a_second_choice() -> None:
+    selected = ChargingCandidate(
+        stop=StopPinpoint(
+            id="charger-selected",
+            name="Fast Charger",
+            category="charging",
+            coords=(17.0, 48.0),
+        ),
+        distance_from_origin_km=100,
+    )
+    partner = ChargingCandidate(
+        stop=StopPinpoint(
+            id="charger-partner",
+            name="Shell Recharge Nearby",
+            category="charging",
+            coords=(17.1, 48.0),
+            partner=PartnerEnrichment(
+                id="shell-brand",
+                name="Shell",
+                benefit="10% off charging costs",
+                benefit_scope="brand-wide",
+                benefit_source="fixture",
+                verified=True,
+            ),
+            partner_benefit="10% off charging costs",
+        ),
+        distance_from_origin_km=112,
+        distance_from_route_km=0.4,
+    )
+
+    opportunities = RouteService._nearby_partner_opportunities(
+        (selected, partner),
+        [selected],
+    )
+
+    assert len(opportunities) == 1
+    assert opportunities[0].stop_id == "charger-partner"
+    assert opportunities[0].partner_fact is not None
+    assert opportunities[0].partner_fact.brand == "Shell"
+    assert opportunities[0].requires_route_confirmation is True

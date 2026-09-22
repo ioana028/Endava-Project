@@ -43,6 +43,7 @@ export interface StopPinpoint {
   rating?: number;
   userReviewCount?: number;
   tag: string;                     // e.g., "Fast Charger · 250kW" or "Italian Dining"
+  details?: string | null;
   amenities?: string[];
   distanceMeters?: number;
   detourMinutes: number;

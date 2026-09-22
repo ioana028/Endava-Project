@@ -18,12 +18,25 @@
     "detour_minutes": 3
   },
   {
+    "id": "attraction-motorway-lookout",
+    "name": "Danube Panorama Lookout",
+    "category": "attraction",
+    "coords": [18.2305, 47.9002],
+    "rating": 4.7,
+    "user_review_count": 86,
+    "tag": "Riverside viewpoint and walking trail",
+    "details": "A panoramic Danube viewpoint with a short riverside trail and photo spots.",
+    "detour_minutes": 5
+  },
+  {
     "id": "attraction-riverfront",
     "name": "Riverfront Walk",
     "category": "attraction",
     "coords": [19.0438, 47.5000],
     "rating": 4.4,
     "tag": "Offline fixture: scenic attraction near the destination",
+    "details": "A riverside walk with views of the Danube, historic bridges, and sunset viewpoints.",
+    "user_review_count": 128,
     "detour_minutes": 4
   },
   {

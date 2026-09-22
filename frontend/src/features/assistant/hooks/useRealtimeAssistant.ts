@@ -214,6 +214,7 @@ function compactPoiFacts(
       ? { userReviewCount: stop.userReviewCount }
       : {}),
     ...(stop.tag ? { tag: stop.tag } : {}),
+    ...(stop.details ? { details: stop.details } : {}),
     ...(stop.amenities?.length ? { amenities: stop.amenities } : {}),
     ...(stop.distanceMeters !== undefined ? { distanceMeters: stop.distanceMeters } : {}),
     detourMinutes: stop.detourMinutes,
@@ -248,6 +249,7 @@ function compactAmenityFacts(stop: StopPinpoint) {
       ? { distanceMeters: stop.distanceMeters }
       : {}),
     ...(stop.partner?.name ? { providerBrand: stop.partner.name } : {}),
+    ...(stop.partnerBenefit ? { partnerBenefit: stop.partnerBenefit } : {}),
     ...(partnerFact ? { partnerFact } : {}),
   }
 }
@@ -476,7 +478,7 @@ export function useRealtimeAssistant() {
           type: 'response.create',
           response: {
             instructions:
-              'Acknowledge that the place search completed, then give the returned results briefly. Never leave the driver without a spoken response.',
+              'Acknowledge that the place search completed, then give the returned results briefly. For attractions, mention what can be seen or done from details or tag, and include the rating and review count when returned. Use only returned facts and never invent review content. Never leave the driver without a spoken response.',
           },
         })
         return
@@ -517,6 +519,16 @@ export function useRealtimeAssistant() {
             output: JSON.stringify({
               status: 'success',
               chargingStopAdded: result.selectedStopName,
+              chargingPartnerFacts: result.route.stops
+                .filter((stop) => stop.category === 'charging' && stop.partner?.benefit)
+                .map((stop) => ({
+                  stopName: stop.name,
+                  brand: stop.partner?.name,
+                  benefit: stop.partner?.benefit ?? stop.partnerBenefit,
+                  benefitScope: stop.partner?.benefitScope,
+                  benefitSource: stop.partner?.benefitSource,
+                  verified: stop.partner?.verified ?? false,
+                })),
               chargingPlan: result.chargingPlan ?? result.route.chargingPlan,
               sessionFacts: result.sessionFacts ?? result.route.sessionFacts,
               nearbyAmenities: result.results.map(compactAmenityFacts),
@@ -527,7 +539,7 @@ export function useRealtimeAssistant() {
           type: 'response.create',
           response: {
             instructions:
-              'Confirm that the returned charging stop was added, state its returned charging duration, and summarize the nearby amenities. Do not invent amenities or claim the route was replanned.',
+              'Confirm that the returned charging stop was added, state its returned charging duration, and always mention every verified charging partner benefit in chargingPartnerFacts. Then summarize nearby amenities and explicitly mention any nearby amenity with a verified partner benefit, including the brand and benefit. Do not invent amenities or claim the route was replanned.',
           },
         })
         return

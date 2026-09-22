@@ -3,13 +3,16 @@
 Day 5 supports explicit provider selection through the repository root `.env`.
 Copy `.env.example` to `.env` before starting the stack.
 
-## Provider modes
+## Provider mode
 
-- `PLACES_PROVIDER=offline` uses deterministic fixtures and never calls Google.
-- `PLACES_PROVIDER=google` requires `GOOGLE_SERVER_API_KEY` and uses Google
-  Routes, Geocoding, and Places adapters.
-- `PLACES_PROVIDER=auto` selects Google when the server key is present and
-  otherwise falls back to offline fixtures.
+The runtime always uses Google Routes, Geocoding, and Places adapters for live
+route POIs, attractions, charging, and nearby amenities. A valid
+`GOOGLE_SERVER_API_KEY` is required. Missing credentials or provider failures
+return a stable provider-unavailable error; the runtime does not fall back to
+offline POI fixtures.
+
+`PLACES_PROVIDER` is retained as a compatibility setting but no longer selects
+an offline runtime provider.
 
 The browser map uses `VITE_GOOGLE_MAPS_BROWSER_KEY`. Keep this key restricted by
 HTTP referrer. `OPENAI_API_KEY` and `GOOGLE_SERVER_API_KEY` remain backend-only.
@@ -38,5 +41,4 @@ With valid local credentials, verify:
    the active route.
 6. Suzanne reports only facts returned by the provider-backed backend tools.
 
-Automated tests use offline fixtures or mocked provider responses and never call
-Google or OpenAI.
+Automated tests use mocked provider responses and never call Google or OpenAI.
