@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -9,8 +10,11 @@ DEFAULT_ROUTE_COUNTRY_RULES_PATH = PROJECT_ROOT / "data" / "routes" / "route_cou
 
 DEFAULT_ROUTE_COUNTRY_RULES: dict[str, Any] = {
     "country_aliases": {
-        "Austria": ["Austria", "Vienna"],
-        "Hungary": ["Hungary", "Budapest"],
+        "Austria": ["AT", "Austria", "Vienna"],
+        "Hungary": ["HU", "Hungary", "Budapest"],
+        "Czechia": ["CZ", "Czech Republic", "Prague"],
+        "Slovakia": ["SK", "Slovakia", "Bratislava"],
+        "Slovenia": ["SI", "Slovenia", "Ljubljana"],
     },
     "border_crossings": [
         {
@@ -18,7 +22,19 @@ DEFAULT_ROUTE_COUNTRY_RULES: dict[str, Any] = {
             "from_country": "Austria",
             "to_country": "Hungary",
             "route_requirements": ["Hungarian motorway vignette"],
-        }
+        },
+        {
+            "id": "Czechia-Slovakia",
+            "from_country": "Czechia",
+            "to_country": "Slovakia",
+            "route_requirements": ["Slovak motorway vignette"],
+        },
+        {
+            "id": "Slovakia-Slovenia",
+            "from_country": "Slovakia",
+            "to_country": "Slovenia",
+            "route_requirements": ["Slovenian vignette"],
+        },
     ],
 }
 
@@ -107,8 +123,24 @@ def _normalize_country_text(value: str) -> str:
 
 def _contains_country(text: str, country: str, aliases: dict[str, list[str]] | None = None) -> bool:
     aliases = aliases or {}
-    possible_values = [country.casefold()]
+    candidate_values = [country.casefold()]
     for alias in aliases.get(country, []):
-        possible_values.append(alias.casefold())
+        if isinstance(alias, str):
+            candidate_values.append(alias.casefold())
 
-    return any(value in text for value in possible_values)
+    for value in candidate_values:
+        value_tokens = _tokenize(value)
+        if not value_tokens:
+            continue
+        text_tokens = _tokenize(text)
+        if len(value_tokens) == 1:
+            if value_tokens[0] in text_tokens:
+                return True
+        else:
+            if " ".join(value_tokens) in " ".join(text_tokens):
+                return True
+    return False
+
+
+def _tokenize(value: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", value.casefold())

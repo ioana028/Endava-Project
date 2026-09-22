@@ -320,6 +320,8 @@ class ProviderHealthResponse(ContractModel):
     google_routes_configured: bool
     google_places_configured: bool
     places_provider: str
+    weather_provider: str = "offline"
+    weather_configured: bool = False
     scenic_capability: bool = False
     partner_enrichment_ready: bool = False
 

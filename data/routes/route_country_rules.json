@@ -1,4 +1,11 @@
 {
+  "country_aliases": {
+    "Austria": ["AT", "Austria", "Vienna"],
+    "Hungary": ["HU", "Hungary", "Budapest"],
+    "Czechia": ["CZ", "Czech Republic", "Prague"],
+    "Slovakia": ["SK", "Slovakia", "Bratislava"],
+    "Slovenia": ["SI", "Slovenia", "Ljubljana"]
+  },
   "border_crossings": [
     {
       "id": "Austria-Hungary",
@@ -6,6 +13,22 @@
       "to_country": "Hungary",
       "route_requirements": [
         "Hungarian motorway vignette"
+      ]
+    },
+    {
+      "id": "Czechia-Slovakia",
+      "from_country": "Czechia",
+      "to_country": "Slovakia",
+      "route_requirements": [
+        "Slovak motorway vignette"
+      ]
+    },
+    {
+      "id": "Slovakia-Slovenia",
+      "from_country": "Slovakia",
+      "to_country": "Slovenia",
+      "route_requirements": [
+        "Slovenian vignette"
       ]
     }
   ]
