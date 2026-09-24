@@ -32,6 +32,7 @@ from .country_rules import derive_requirements, detect_border_crossings
 from .deterministic import (
     DEFAULT_CHARGING_POWER_KW,
     POI_COORDINATE_TOLERANCE,
+    distance_to_route_km,
     enrich_partner,
     estimate_charging_duration_minutes,
     estimate_eta_minutes,
@@ -58,7 +59,8 @@ DEFAULT_ORIGIN = "Vienna, Austria"
 CHARGING_PRICE_EUR_PER_KWH = 0.45
 HUNGARIAN_VIGNETTE_PRICE_EUR = 16.50
 PARTNER_ALTERNATIVE_WINDOW_KM = 20.0
-MAX_GOOGLE_DIRECTION_CHECKS = 12
+MAX_GOOGLE_DIRECTION_CHECKS = 6
+DEFAULT_AMENITY_CATEGORIES = ("food", "coffee", "rest")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -287,7 +289,7 @@ class RouteService:
                 origin,
                 destination,
                 intent.priority,
-                charging_search_distance_km,
+                safe_distance_km,
                 initial_distance_km,
                 reachable_distance_km,
                 max_charged_range_km,
@@ -425,8 +427,19 @@ class RouteService:
                 stop=enrich_partner(candidate.stop, self._fixture_repository.fixtures.partners),
                 compatible=candidate.compatible,
                 available=candidate.available,
-                distance_from_route_km=candidate.distance_from_route_km,
-                distance_from_origin_km=candidate.distance_from_origin_km,
+                distance_from_route_km=(
+                    candidate.distance_from_route_km
+                    if candidate.distance_from_route_km > 0
+                    else distance_to_route_km(
+                        candidate.stop.coords,
+                        tuple(provider_route.geometry),
+                    )
+                ),
+                distance_from_origin_km=(
+                    candidate.distance_from_origin_km
+                    if candidate.distance_from_origin_km is not None
+                    else candidate.distance_from_route_km
+                ),
                 charging_power_kw=candidate.charging_power_kw,
                 charging_duration_minutes=candidate.charging_duration_minutes,
             )
@@ -622,15 +635,13 @@ class RouteService:
         if stop is None or stop.category != "charging":
             raise APIError(409, "STALE_STOP", "The selected charging stop is no longer current.")
 
-        requested_categories = categories or (
-            "food", "coffee", "rest", "service", "shopping"
-        )
+        requested_categories = categories or DEFAULT_AMENITY_CATEGORIES
         results: list[StopPinpoint] = []
         try:
             expanded_categories = tuple(
                 expanded
                 for category in requested_categories
-                for expanded in (("food", "restaurant") if category == "food" else (category,))
+                for expanded in (category,)
             )
             category_results = await asyncio.gather(*(
                 self._places_provider.search(

@@ -101,6 +101,45 @@ def test_places_samples_by_distance_and_deduplicates_provider_ids(monkeypatch: p
     assert FakePlacesClient.calls[0]["headers"]["X-Goog-FieldMask"].startswith("places.id")
 
 
+def test_repeated_places_search_is_coalesced(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakePlacesClient.calls = []
+    FakePlacesClient.responses = [FakeResponse({"places": [place()]})]
+    monkeypatch.setattr(
+        "backend.app.integrations.places.google.httpx.AsyncClient", FakePlacesClient
+    )
+
+    provider = GooglePlacesProvider("test-key", max_search_points=2)
+    first = asyncio.run(provider.search("coffee", location="stop", route=route(), near_coords=(16.05, 48.001)))
+    second = asyncio.run(provider.search("coffee", location="stop", route=route(), near_coords=(16.05, 48.001)))
+
+    assert [item.id for item in first] == [item.id for item in second]
+    assert len(FakePlacesClient.calls) == 1
+
+
+def test_repeated_route_request_is_coalesced(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeRoutingClient.calls = []
+    FakeRoutingClient.response = FakeResponse({
+        "routes": [{
+            "distanceMeters": 1000,
+            "duration": "60s",
+            "polyline": {"geoJsonLinestring": {"coordinates": [[16.0, 48.0], [16.1, 48.0]]}},
+            "travelAdvisory": {"tollInfo": {}},
+        }]
+    })
+    monkeypatch.setattr(
+        "backend.app.integrations.google_maps.routing.httpx.AsyncClient", FakeRoutingClient
+    )
+
+    provider = GoogleMapsRoutingProvider("test-key")
+    origin = GeocodedPlace("Vienna", Coordinates(lng=16.0, lat=48.0))
+    destination = GeocodedPlace("Budapest", Coordinates(lng=19.0, lat=47.5))
+    first = asyncio.run(provider.route(origin, destination, RoutePriority.FASTEST))
+    second = asyncio.run(provider.route(origin, destination, RoutePriority.FASTEST))
+
+    assert first == second
+    assert len(FakeRoutingClient.calls) == 1
+
+
 def test_places_stop_search_uses_stop_center_and_structured_amenities(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
