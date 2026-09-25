@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 import math
+import hashlib
 from time import monotonic
 
 import httpx
 
 from ...models.contracts import StopPinpoint
+from ...core.async_cache import AsyncTTLCache
 from ...services.trip.deterministic import distance_to_route_km, route_progress_km
 from ...services.trip.ports import ChargingCandidate, JourneyProviderError, ProviderRoute
 
@@ -44,7 +46,8 @@ class GooglePlacesProvider:
         self._search_radius_meters = float(search_radius_meters)
         self._nearby_search_radius_meters = float(nearby_search_radius_meters)
         self._sample_interval_km = sample_interval_km
-        self._max_search_points = max(2, max_search_points)
+        self._max_search_points = min(4, max(2, max_search_points))
+        self._search_cache = AsyncTTLCache[tuple[object, ...], tuple[StopPinpoint, ...]](300, 256)
 
     async def search(
         self,
@@ -54,6 +57,27 @@ class GooglePlacesProvider:
         route: ProviderRoute | tuple[tuple[float, float], ...] | None = None,
         near_coords: tuple[float, float] | None = None,
     ) -> list[StopPinpoint]:
+        key = (
+            self._normalize_category(category),
+            (location or "").strip().casefold(),
+            (preference or "").strip().casefold(),
+            near_coords,
+            self._geometry_key(route),
+        )
+        results = await self._search_cache.get_or_create(
+            key,
+            lambda: self._search_uncached(category, location, preference, route, near_coords),
+        )
+        return list(results)
+
+    async def _search_uncached(
+        self,
+        category: str,
+        location: str | None = None,
+        preference: str | None = None,
+        route: ProviderRoute | tuple[tuple[float, float], ...] | None = None,
+        near_coords: tuple[float, float] | None = None,
+    ) -> tuple[StopPinpoint, ...]:
         normalized = self._normalize_category(category)
         if not self._api_key:
             raise JourneyProviderError("Google Places is not configured")
@@ -122,11 +146,7 @@ class GooglePlacesProvider:
                         },
                         headers={
                             "X-Goog-Api-Key": self._api_key,
-                            "X-Goog-FieldMask": (
-                                "places.id,places.displayName,places.location,places.types,"
-                                "places.rating,places.userRatingCount,places.editorialSummary,places.formattedAddress,places.photos,"
-                                "places.evChargeOptions"
-                            ),
+                            "X-Goog-FieldMask": self._field_mask(normalized),
                         },
                     )
                         response.raise_for_status()
@@ -160,10 +180,31 @@ class GooglePlacesProvider:
         )
 
         result_limit = 50 if normalized == "charging" else 10
-        return sorted(
+        return tuple(sorted(
             results.values(),
             key=lambda stop: (stop.detour_minutes, -(stop.rating or 0), stop.name),
-        )[:result_limit]
+        )[:result_limit])
+
+    @staticmethod
+    def _geometry_key(
+        route: ProviderRoute | tuple[tuple[float, float], ...] | None,
+    ) -> str | None:
+        geometry = GooglePlacesProvider._route_geometry(route)
+        if geometry is None:
+            return None
+        payload = repr(tuple((round(lng, 5), round(lat, 5)) for lng, lat in geometry))
+        return hashlib.sha256(payload.encode("ascii")).hexdigest()
+
+    @staticmethod
+    def _field_mask(category: str) -> str:
+        fields = ["places.id", "places.displayName", "places.location", "places.types"]
+        if category == "charging":
+            fields.append("places.evChargeOptions")
+        elif category == "attraction":
+            fields.extend(("places.rating", "places.userRatingCount", "places.formattedAddress"))
+        else:
+            fields.extend(("places.rating", "places.userRatingCount", "places.formattedAddress"))
+        return ",".join(fields)
 
     async def search_charging(
         self, route: ProviderRoute, max_distance_km: float
