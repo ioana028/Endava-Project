@@ -12,6 +12,9 @@ class VehicleState(ContractModel):
     estimated_range_km: float = Field(ge=0)
     max_charged_range_km: float = Field(default=0, ge=0)
     consumption_rate_kwh: float = Field(gt=0)
+    connector_types: tuple[str, ...] = ("CCS",)
+    max_charging_power_kw: float = Field(default=150, ge=0)
+    battery_capacity_kwh: float = Field(default=35.5, gt=0)
     tyres: Literal["SUMMER", "WINTER", "ALL_SEASON"]
     odometer_km: float = Field(ge=0)
 

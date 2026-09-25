@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.assistant import router as assistant_router
 from .core.errors import register_error_handlers
 from .core.fixture_repository import FixtureRepository
+from .core.request_budget import RequestBudget
 from .core.settings import Settings
 from .integrations.google_maps.routing import GoogleMapsRoutingProvider
 from .integrations.places.google import GooglePlacesProvider
@@ -44,6 +45,7 @@ def create_app(
     route_service = route_service or RouteService(
         GoogleMapsRoutingProvider(settings.google_server_api_key),
         fixture_repository,
+        request_budget=RequestBudget(settings.provider_request_budget),
         places_provider=places_provider,
         charging_provider=places_provider,
     )

@@ -67,7 +67,14 @@ def _validate_response(model: type[Any], result: Any) -> Any:
     if is_dataclass(result):
         result = asdict(result)
     if isinstance(result, dict) and "booking_id" in result and "status" not in result:
-        result["status"] = "completed"
+        wallet_status = result.get("wallet_status")
+        result["status"] = (
+            "duplicate"
+            if wallet_status == "duplicate"
+            else "completed"
+            if wallet_status == "completed"
+            else "failed"
+        )
     if isinstance(result, dict):
         result = {
             field_name: result[field_name]
@@ -134,6 +141,7 @@ async def realtime_plan_route(
     route = await _attach_route_facts(request, route)
     return RealtimeToolRouteResponse(
         route=route,
+        session_id=_active_context_id(request.app.state.route_service, "session_id"),
         route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
         search_id=_active_context_id(request.app.state.route_service, "active_search_id"),
     )
@@ -161,6 +169,7 @@ async def realtime_search_route_poi(
     return RealtimeToolSearchRoutePoiResponse(
         results=results,
         opportunities=opportunities,
+        session_id=_active_context_id(request.app.state.route_service, "session_id"),
         route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
         search_id=_active_context_id(request.app.state.route_service, "active_search_id"),
     )
@@ -229,6 +238,7 @@ async def realtime_confirm_charging_stop(
         results=result.get("results", []),
         charging_plan=result.get("charging_plan"),
         session_facts=result.get("session_facts"),
+        session_id=_active_context_id(request.app.state.route_service, "session_id"),
         radius_meters=result.get("radius_meters", 500),
         route_id=result["route_id"],
         search_id=result.get("search_id"),
@@ -260,6 +270,7 @@ async def realtime_reroute_through_poi(
     )
     return RealtimeToolRerouteResponse(
         route=await _attach_route_facts(request, route),
+        session_id=_active_context_id(request.app.state.route_service, "session_id"),
         route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
     )
 
@@ -278,7 +289,10 @@ async def realtime_purchase_vignette(
         "purchase_vignette",
         **payload.model_dump(),
     )
-    return _validate_response(RealtimeToolPurchaseVignetteResponse, result)
+    response = _validate_response(RealtimeToolPurchaseVignetteResponse, result)
+    return response.model_copy(
+        update={"session_id": _active_context_id(request.app.state.route_service, "session_id")}
+    )
 
 
 @router.post(
@@ -297,7 +311,10 @@ async def realtime_book_hotel_room(
         "book_hotel_room",
         **payload.model_dump(),
     )
-    return _validate_response(RealtimeToolBookingResponse, result)
+    response = _validate_response(RealtimeToolBookingResponse, result)
+    return response.model_copy(
+        update={"session_id": _active_context_id(request.app.state.route_service, "session_id")}
+    )
 
 
 @router.post(
@@ -320,7 +337,10 @@ async def realtime_book_restaurant_table(
         "book_restaurant_table",
         **payload.model_dump(),
     )
-    return _validate_response(RealtimeToolBookingResponse, result)
+    response = _validate_response(RealtimeToolBookingResponse, result)
+    return response.model_copy(
+        update={"session_id": _active_context_id(request.app.state.route_service, "session_id")}
+    )
 
 
 @router.post(
@@ -337,7 +357,10 @@ async def realtime_start_driving(
         "start_driving",
         **payload.model_dump(),
     )
-    return _validate_response(RealtimeToolStartDrivingResponse, result)
+    response = _validate_response(RealtimeToolStartDrivingResponse, result)
+    return response.model_copy(
+        update={"session_id": _active_context_id(request.app.state.route_service, "session_id")}
+    )
 
 
 @router.post(
@@ -354,4 +377,7 @@ async def realtime_return_to_main_route(
         "return_to_main_route",
         **payload.model_dump(),
     )
-    return _validate_response(RealtimeToolReturnToMainRouteResponse, result)
+    response = _validate_response(RealtimeToolReturnToMainRouteResponse, result)
+    return response.model_copy(
+        update={"session_id": _active_context_id(request.app.state.route_service, "session_id")}
+    )

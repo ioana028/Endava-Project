@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { StopPinpoint } from '../../../types/contracts'
 import type { PoiActionState } from '../hooks/useRealtimeAssistant'
 
@@ -14,6 +15,8 @@ export function PoiResults({
   actionState = 'IDLE',
   onSelect,
 }: PoiResultsProps) {
+  const [visibleCount, setVisibleCount] = useState(3)
+
   if (results.length === 0) {
     return null
   }
@@ -25,10 +28,10 @@ export function PoiResults({
           <p className="eyebrow">Along your route</p>
           <h2>Suggested stops</h2>
         </div>
-        <span className="result-count">{Math.min(results.length, 3)} found</span>
+        <span className="result-count">{results.length} found</span>
       </div>
       <div className="poi-list">
-        {results.slice(0, 3).map((result) => {
+        {results.slice(0, visibleCount).map((result) => {
           const selected = result.id === selectedPoiId
           const partnerBenefit = result.partner?.benefit ?? result.partnerBenefit
           const partnerScope = result.partner?.benefitScope
@@ -80,12 +83,23 @@ export function PoiResults({
                   {result.amenities.join(' · ')}
                 </span>
               )}
-              <span className="poi-detour">+{Math.round(result.detourMinutes)} min detour</span>
+              {result.estimatedDrivingDetourMinutes !== undefined && (
+                <span className="poi-detour">+{Math.round(result.estimatedDrivingDetourMinutes)} min detour</span>
+              )}
               {selected && <span className="poi-selected-label">Selected for voice confirmation</span>}
             </button>
           )
         })}
       </div>
+      {visibleCount < results.length && (
+        <button
+          className="poi-reveal-more"
+          type="button"
+          onClick={() => setVisibleCount((count) => Math.min(count + 3, results.length))}
+        >
+          Show more cached results
+        </button>
+      )}
       {actionState === 'CONFIRMATION_PENDING' && (
         <p className="poi-action-message" role="status">
           Say yes to Suzanne to add the selected stop to your route.

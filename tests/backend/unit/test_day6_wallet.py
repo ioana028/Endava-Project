@@ -1,10 +1,14 @@
 import asyncio
+from datetime import date, timedelta
 
 import pytest
 
 from backend.app.core.errors import APIError
 from backend.app.services.wallet.models import PhoneConfirmationStatus, WalletStatus
 from backend.app.services.wallet.service import WalletService
+
+
+BOOKING_DATE = (date.today() + timedelta(days=1)).isoformat()
 
 
 def test_wallet_purchase_is_idempotent() -> None:
@@ -79,7 +83,7 @@ def test_booking_requires_guests_and_restaurant_time() -> None:
         asyncio.run(
             wallet.process_booking(
                 route_id="route-1", search_id="search-1", result_id="hotel-1",
-                booking_type="hotel_room", guests=0, booking_date="2026-09-17",
+                booking_type="hotel_room", guests=0, booking_date=BOOKING_DATE,
             )
         )
     assert guest_error.value.code == "INVALID_GUEST_COUNT"
@@ -88,7 +92,7 @@ def test_booking_requires_guests_and_restaurant_time() -> None:
         asyncio.run(
             wallet.process_booking(
                 route_id="route-1", search_id="search-1", result_id="restaurant-1",
-                booking_type="restaurant_table", guests=2, booking_date="2026-09-17",
+                booking_type="restaurant_table", guests=2, booking_date=BOOKING_DATE,
             )
         )
     assert time_error.value.code == "MISSING_BOOKING_TIME"
@@ -98,9 +102,27 @@ def test_hotel_booking_preserves_guest_count() -> None:
     booking = asyncio.run(
         WalletService().process_booking(
             route_id="route-1", search_id="search-1", result_id="hotel-1",
-            booking_type="hotel_room", guests=2, booking_date="2026-09-17",
+            booking_type="hotel_room", guests=2, booking_date=BOOKING_DATE,
         )
     )
 
     assert booking.guests == 2
     assert booking.wallet_status == WalletStatus.COMPLETED
+
+
+def test_wallet_rejects_past_booking_date() -> None:
+    wallet = WalletService(today=lambda: date(2026, 9, 25))
+
+    with pytest.raises(APIError) as error:
+        asyncio.run(
+            wallet.process_booking(
+                route_id="route-1",
+                search_id="search-1",
+                result_id="hotel-1",
+                booking_type="hotel_room",
+                guests=2,
+                booking_date="2026-09-24",
+            )
+        )
+
+    assert error.value.code == "PAST_BOOKING_DATE"

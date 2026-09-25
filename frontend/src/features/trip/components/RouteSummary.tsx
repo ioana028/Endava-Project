@@ -29,7 +29,10 @@ export function RouteSummary({
       <div className="trip-details-heading">
         <div>
           <p className="eyebrow">Trip details</p>
-          <h2>{route.destination}</h2>
+          <h2>{route.origin} to {route.destination}</h2>
+          {route.countries.length > 0 && (
+            <p className="route-countries">{route.countries.join(' · ')}</p>
+          )}
         </div>
       </div>
       <div className="trip-metrics">
@@ -50,6 +53,21 @@ export function RouteSummary({
           <strong>{formatEur(route.stats.totalPriceEur)}</strong>
         </div>
       </div>
+      {route.chargingOptions.length > 0 && (
+        <div className="charging-options" aria-label="Charging options">
+          <p className="eyebrow">Charging options</p>
+          {route.chargingOptions.map((option) => (
+            <div className="charging-option" key={option.stop.id}>
+              <strong>#{option.optionNumber} {option.stop.name}</strong>
+              <span>
+                {Math.round(option.stop.chargingDurationMinutes ?? 0)} min charging
+                {' · '}
+                {option.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   )
 }

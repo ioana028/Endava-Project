@@ -1,5 +1,6 @@
 import asyncio
 import inspect
+import re
 from datetime import datetime, timedelta
 import logging
 from time import monotonic
@@ -7,6 +8,7 @@ from uuid import uuid4
 
 from ...core.errors import APIError
 from ...core.fixture_repository import FixtureRepository
+from ...core.request_budget import RequestBudget
 from ...core.route_country_rules import (
     derive_route_requirements,
     detect_border_crossings as detect_rule_crossings,
@@ -16,6 +18,7 @@ from ...integrations.places.provider import LocalPlacesProvider
 from ...models.contracts import (
     AssistantIntent,
     BorderCrossing,
+    ChargingOption,
     ChargingPlan,
     Coordinates,
     PartnerFact,
@@ -24,6 +27,7 @@ from ...models.contracts import (
     RouteRequirement,
     RoutePriority,
     RouteResponse,
+    RouteSessionStatus,
     RouteSessionFacts,
     StopPinpoint,
     TripStats,
@@ -59,7 +63,6 @@ DEFAULT_ORIGIN = "Vienna, Austria"
 CHARGING_PRICE_EUR_PER_KWH = 0.45
 HUNGARIAN_VIGNETTE_PRICE_EUR = 16.50
 PARTNER_ALTERNATIVE_WINDOW_KM = 20.0
-MAX_GOOGLE_DIRECTION_CHECKS = 6
 DEFAULT_AMENITY_CATEGORIES = ("food", "coffee", "rest")
 LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +76,7 @@ class RouteService:
         charging_provider: ChargingProvider | None = None,
         safety_buffer_km: float = 10,
         places_provider: LocalPlacesProvider | None = None,
+        request_budget: RequestBudget | None = None,
     ) -> None:
         self._provider = provider
         self._fixture_repository = fixture_repository
@@ -82,9 +86,11 @@ class RouteService:
         self._places_provider = places_provider or LocalPlacesProvider(
             fixture_repository
         )
+        self._request_budget = request_budget or RequestBudget()
         self._telemetry = VehicleTelemetryService(fixture_repository)
         self._active_provider_route = None
         self._active_route_id: str | None = None
+        self._session_id: str | None = None
         self._active_search_id: str | None = None
         self._active_origin: GeocodedPlace | None = None
         self._active_destination: GeocodedPlace | None = None
@@ -95,9 +101,6 @@ class RouteService:
         self._session_generation = 0
         self._route_session: dict[str, object] = {}
         self._confirmed_charging_response: dict[str, object] | None = None
-        self._charging_task: asyncio.Task[None] | None = None
-        self._prepared_charging_route = None
-        self._prepared_charging_route_id: str | None = None
 
     @property
     def active_route_id(self) -> str | None:
@@ -106,6 +109,10 @@ class RouteService:
     @property
     def active_search_id(self) -> str | None:
         return self._active_search_id
+
+    @property
+    def session_id(self) -> str | None:
+        return self._session_id
 
     @property
     def active_search_results(self) -> dict[str, StopPinpoint]:
@@ -249,10 +256,20 @@ class RouteService:
 
     async def plan(self, intent: AssistantIntent) -> RouteResponse:
         started_at = monotonic()
+        self._request_budget.reset()
         try:
+            self._request_budget.consume(
+                provider="routing", method="geocode", reason="route_origin"
+            )
+            self._request_budget.consume(
+                provider="routing", method="geocode", reason="route_destination"
+            )
             origin, destination = await asyncio.gather(
                 self._provider.geocode(self._origin),
                 self._provider.geocode(intent.destination),
+            )
+            self._request_budget.consume(
+                provider="routing", method="route", reason="base_route"
             )
             provider_route = await self._provider.route(
                 origin, destination, intent.priority
@@ -282,18 +299,13 @@ class RouteService:
         charging_provider = self._charging_provider or FixtureChargingProvider(
             self._fixture_repository.fixtures.partners
         )
-        if charging_required and not self._is_google_charging_provider(charging_provider):
+        if charging_required:
             stops, partner_opportunities = await self._discover_charging_stops(
-                charging_provider,
-                provider_route,
-                origin,
-                destination,
-                intent.priority,
-                safe_distance_km,
-                initial_distance_km,
-                reachable_distance_km,
-                max_charged_range_km,
+                charging_provider, provider_route, origin, destination, intent.priority,
+                safe_distance_km, initial_distance_km, reachable_distance_km, max_charged_range_km,
             )
+        stops = stops[:2]
+        self._session_id = uuid4().hex
 
         route_response = self._build_route_response(
             provider_route,
@@ -303,6 +315,12 @@ class RouteService:
             include_charging=False,
             charging_required_override=charging_required,
             opportunities=partner_opportunities,
+            charging_options=self._charging_options(stops),
+            route_status=(
+                RouteSessionStatus.CHARGING_OPTIONS_READY
+                if stops
+                else RouteSessionStatus.ROUTE_READY
+            ),
         )
         self._active_provider_route = provider_route
         self._active_route_id = uuid4().hex
@@ -322,23 +340,6 @@ class RouteService:
         self._active_stops = []
         self._pending_charging_stops = list(stops)
         self._active_search_results = {}
-        self._prepared_charging_route = None
-        self._prepared_charging_route_id = None
-        if charging_required and self._is_google_charging_provider(charging_provider):
-            self._charging_task = asyncio.create_task(
-                self._prepare_charging_in_background(
-                    charging_provider,
-                    provider_route,
-                    origin,
-                    destination,
-                    intent.priority,
-                    charging_search_distance_km,
-                    initial_distance_km,
-                    reachable_distance_km,
-                    max_charged_range_km,
-                    self._active_route_id,
-                )
-            )
         LOGGER.info(
             "total_route_plan_ms=%d destination=%s charging_stop=%s",
             round((monotonic() - started_at) * 1000),
@@ -346,58 +347,6 @@ class RouteService:
             route_response.charging_stop.name if route_response.charging_stop else "none",
         )
         return route_response
-
-    async def _prepare_charging_in_background(
-        self,
-        charging_provider: ChargingProvider,
-        provider_route: object,
-        origin: GeocodedPlace,
-        destination: GeocodedPlace,
-        priority: RoutePriority,
-        charging_search_distance_km: float,
-        initial_distance_km: float,
-        reachable_distance_km: float,
-        max_charged_range_km: float,
-        route_id: str,
-    ) -> None:
-        try:
-            stops, opportunities = await self._discover_charging_stops(
-                charging_provider,
-                provider_route,
-                origin,
-                destination,
-                priority,
-                charging_search_distance_km,
-                initial_distance_km,
-                reachable_distance_km,
-                max_charged_range_km,
-            )
-            if route_id == self._active_route_id:
-                self._pending_charging_stops = stops
-                self._route_session["charging_opportunities"] = opportunities
-                try:
-                    waypoints = tuple(
-                        GeocodedPlace(
-                            stop.name,
-                            Coordinates(lng=stop.coords[0], lat=stop.coords[1]),
-                        )
-                        for stop in stops
-                    )
-                    prepared_route = await self._provider.route(
-                        origin,
-                        destination,
-                        priority,
-                        waypoints,
-                    )
-                    self._validate_route(prepared_route)
-                except (RoutingProviderError, OSError):
-                    LOGGER.warning("background_charging_route_failed route_id=%s", route_id)
-                else:
-                    if route_id == self._active_route_id:
-                        self._prepared_charging_route = prepared_route
-                        self._prepared_charging_route_id = route_id
-        except (APIError, JourneyProviderError, OSError):
-            LOGGER.warning("background_charging_discovery_failed route_id=%s", route_id)
 
     async def _discover_charging_stops(
         self,
@@ -412,6 +361,9 @@ class RouteService:
         max_charged_range_km: float,
     ) -> tuple[list[StopPinpoint], list[RouteOpportunity]]:
         try:
+            self._request_budget.consume(
+                provider="places", method="search_charging", reason="charging_discovery"
+            )
             candidates = await charging_provider.search_charging(
                 provider_route, charging_search_distance_km
             )
@@ -445,12 +397,31 @@ class RouteService:
             )
             for candidate in candidates
         )
-        enriched_candidates = await self._validate_google_charging_direction(
-            enriched_candidates,
-            provider_route,
-            origin,
-            destination,
-            priority,
+        if self._is_google_charging_provider(charging_provider):
+            enriched_candidates = tuple(
+                candidate
+                for candidate in enriched_candidates
+                if candidate.stop.availability is True
+            )
+        vehicle_connectors = {
+            connector.casefold() for connector in self._telemetry.connector_types
+        }
+        enriched_candidates = tuple(
+            candidate
+            for candidate in enriched_candidates
+            if candidate.compatible
+            and candidate.stop.connector_types
+            and bool(
+                vehicle_connectors.intersection(
+                    connector.casefold()
+                    for connector in candidate.stop.connector_types
+                )
+            )
+            or (
+                candidate.compatible
+                and not candidate.stop.connector_types
+                and not self._is_google_charging_provider(charging_provider)
+            )
         )
         selected_candidates = select_chargers_iteratively(
             enriched_candidates,
@@ -488,63 +459,6 @@ class RouteService:
     def _is_google_charging_provider(provider: ChargingProvider) -> bool:
         return provider.__class__.__name__ == "GooglePlacesProvider"
 
-    async def _validate_google_charging_direction(
-        self,
-        candidates: tuple[ChargingCandidate, ...],
-        base_route: object,
-        origin: GeocodedPlace,
-        destination: GeocodedPlace,
-        priority: RoutePriority,
-    ) -> tuple[ChargingCandidate, ...]:
-        if self._charging_provider is None or self._charging_provider.__class__.__name__ != "GooglePlacesProvider":
-            return candidates
-
-        route_candidates = tuple(
-            candidate
-            for candidate in candidates
-            if candidate.distance_from_origin_km is not None
-            and candidate.distance_from_origin_km > 0
-            and candidate.distance_from_origin_km < base_route.distance_meters / 1000
-        )
-        route_candidates = tuple(
-            sorted(
-                route_candidates,
-                key=lambda candidate: (
-                    candidate.distance_from_route_km,
-                    candidate.distance_from_origin_km or 0,
-                    candidate.stop.id,
-                ),
-            )[:MAX_GOOGLE_DIRECTION_CHECKS]
-        )
-        if not route_candidates:
-            return ()
-
-        async def validate(candidate: ChargingCandidate) -> ChargingCandidate | None:
-            waypoint = GeocodedPlace(
-                candidate.stop.name,
-                Coordinates(lng=candidate.stop.coords[0], lat=candidate.stop.coords[1]),
-            )
-            try:
-                waypoint_route = await self._provider.route(
-                    origin,
-                    destination,
-                    priority,
-                    (waypoint,),
-                )
-            except (RoutingProviderError, OSError):
-                return None
-
-            base_distance_km = base_route.distance_meters / 1000
-            waypoint_distance_km = waypoint_route.distance_meters / 1000
-            detour_km = waypoint_distance_km - base_distance_km
-            if detour_km > max(12.0, base_distance_km * 0.04):
-                return None
-            return candidate
-
-        validated = await asyncio.gather(*(validate(candidate) for candidate in route_candidates))
-        validated_ids = {candidate.stop.id for candidate in validated if candidate is not None}
-        return tuple(candidate for candidate in candidates if candidate.stop.id in validated_ids)
-
     async def search_route_poi(
         self,
         category: str,
@@ -571,6 +485,9 @@ class RouteService:
             search_kwargs = {
                 "route": self._active_provider_route,
             }
+            self._request_budget.consume(
+                provider="places", method="search", reason=f"poi_{category}"
+            )
             if "near_coords" in inspect.signature(self._places_provider.search).parameters:
                 search_kwargs["near_coords"] = (
                     self._active_stops[-1].coords
@@ -643,18 +560,28 @@ class RouteService:
                 for category in requested_categories
                 for expanded in (category,)
             )
-            category_results = await asyncio.gather(*(
-                self._places_provider.search(
-                    category,
-                    "stop",
-                    None,
-                    route=self._active_provider_route,
-                    near_coords=stop.coords,
+            self._request_budget.consume(
+                provider="places", method="search_batch", reason="stop_amenities"
+            )
+            batch_search = getattr(self._places_provider, "search_amenities", None)
+            if batch_search is not None:
+                results.extend(
+                    await batch_search(
+                        tuple(dict.fromkeys(expanded_categories)),
+                        "stop",
+                        route=self._active_provider_route,
+                        near_coords=stop.coords,
+                    )
                 )
-                for category in dict.fromkeys(expanded_categories)
-            ))
-            for category_result in category_results:
-                results.extend(category_result)
+            else:
+                results.extend(
+                    await self._places_provider.search(
+                        next(iter(dict.fromkeys(expanded_categories))),
+                        "stop",
+                        route=self._active_provider_route,
+                        near_coords=stop.coords,
+                    )
+                )
         except ValueError as error:
             raise APIError(
                 400,
@@ -683,6 +610,26 @@ class RouteService:
             "search_id": search_id,
         }
 
+    async def _budgeted_places_search(
+        self,
+        category: str,
+        location: str,
+        preference: str | None,
+        *,
+        route: object,
+        near_coords: tuple[float, float],
+    ) -> list[StopPinpoint]:
+        self._request_budget.consume(
+            provider="places", method="search", reason=f"amenity_{category}"
+        )
+        return await self._places_provider.search(
+            category,
+            location,
+            preference,
+            route=route,
+            near_coords=near_coords,
+        )
+
     async def confirm_charging_stop(
         self, route_id: str, stop_id: str | None = None, confirmation: str = "confirmed"
     ) -> dict[str, object]:
@@ -690,9 +637,6 @@ class RouteService:
             raise APIError(422, "CONFIRMATION_REQUIRED", "Charging confirmation is required.")
         if self._active_provider_route is None or route_id != self._active_route_id:
             raise APIError(409, "STALE_ROUTE", "The selected route is no longer current.")
-
-        if self._charging_task is not None and not self._charging_task.done():
-            await self._charging_task
 
         if not self._pending_charging_stops and self._confirmed_charging_response is not None:
             return self._confirmed_charging_response
@@ -718,7 +662,7 @@ class RouteService:
                 "The routing service cannot route through a charging stop.",
             )
 
-        pending_stops = list(self._pending_charging_stops)
+        pending_stops = [stop]
         waypoints = tuple(
             GeocodedPlace(
                 item.name,
@@ -726,28 +670,28 @@ class RouteService:
             )
             for item in pending_stops
         )
-        provider_route = (
-            self._prepared_charging_route
-            if self._prepared_charging_route_id == route_id
-            else None
-        )
-        if provider_route is None:
-            try:
-                provider_route = await self._provider.route(
-                    self._active_origin,
-                    self._active_destination,
-                    self._active_priority,
-                    waypoints,
-                )
-                self._validate_route(provider_route)
-            except (RoutingProviderError, OSError) as error:
-                raise APIError(
-                    503, "ROUTING_UNAVAILABLE", "The routing service is unavailable."
-                ) from error
+        try:
+            self._request_budget.consume(
+                provider="routing", method="route", reason="charging_confirmation"
+            )
+            provider_route = await self._provider.route(
+                self._active_origin,
+                self._active_destination,
+                self._active_priority,
+                waypoints,
+            )
+            self._validate_route(provider_route)
+        except (RoutingProviderError, OSError) as error:
+            raise APIError(
+                503, "ROUTING_UNAVAILABLE", "The routing service is unavailable."
+            ) from error
 
         self._active_provider_route = provider_route
         self._active_stops = pending_stops
         self._pending_charging_stops = []
+        self._active_route_id = uuid4().hex
+        self._active_search_id = None
+        self._active_search_results = {}
         self._route_session.setdefault("purchased_vignette_requirement_ids", [])
         self._route_session.setdefault("completed_partner_opportunity_ids", [])
         self._route_session.setdefault("completed_charging_stop_ids", [])
@@ -758,7 +702,7 @@ class RouteService:
 
         amenity_search = await self.search_stop_amenities(
             stop_id=stop.id,
-            route_id=route_id,
+            route_id=self._active_route_id,
             search_id=None,
         )
         amenities_by_stop = {stop.id: amenity_search}
@@ -773,6 +717,11 @@ class RouteService:
             self._active_origin,
             self._active_destination,
             self._active_stops,
+            charging_options=self._charging_options(
+                self._active_stops,
+                status="confirmed",
+            ),
+            route_status=RouteSessionStatus.CHARGING_CONFIRMED,
         )
         charging_plan = ChargingPlan(
             stops=list(self._active_stops),
@@ -854,6 +803,9 @@ class RouteService:
             for item in ordered_stops
         )
         try:
+            self._request_budget.consume(
+                provider="routing", method="route", reason="poi_reroute"
+            )
             provider_route = await self._provider.route(
                 self._active_origin,
                 self._active_destination,
@@ -875,6 +827,7 @@ class RouteService:
                 bool(self._pending_charging_stops)
                 or any(stop.category == "charging" for stop in ordered_stops)
             ),
+            route_status=RouteSessionStatus.REROUTING,
         )
         self._active_provider_route = provider_route
         self._active_priority = selected_priority
@@ -884,8 +837,6 @@ class RouteService:
         self._active_search_results = {}
         if any(stop.category == "charging" for stop in stops):
             self._pending_charging_stops = []
-            self._prepared_charging_route = None
-            self._prepared_charging_route_id = None
         if any(stop.category == "charging" for stop in ordered_stops):
             self._route_session["charging_plan_confirmed"] = True
             self._route_session["confirmed_charging_stop_ids"] = [
@@ -953,6 +904,8 @@ class RouteService:
         include_charging: bool = True,
         charging_required_override: bool | None = None,
         opportunities: list[RouteOpportunity] | None = None,
+        charging_options: list[ChargingOption] | None = None,
+        route_status: RouteSessionStatus = RouteSessionStatus.ROUTE_READY,
     ) -> RouteResponse:
         charging_required = (
             charging_required_override
@@ -1002,8 +955,16 @@ class RouteService:
         )
         total_price_eur = toll_price_eur + vignette_price_eur + charging_price_eur
         return RouteResponse(
+            session_id=self._session_id,
+            route_status=route_status,
             origin=origin.display_name,
+            origin_coordinates=origin.coordinates,
             destination=destination.display_name,
+            countries=self._route_countries(
+                provider_route,
+                origin.display_name,
+                destination.display_name,
+            ),
             stats=TripStats(
                 total_distance_km=distance_km,
                 driving_duration_minutes=driving_minutes,
@@ -1021,7 +982,69 @@ class RouteService:
             route_requirements=route_requirements,
             charging_required=charging_required,
             opportunities=opportunities or [],
+            charging_options=charging_options or [],
         )
+
+    @staticmethod
+    def _route_countries(
+        provider_route: object,
+        origin: str,
+        destination: str,
+    ) -> list[str]:
+        provider_countries = getattr(provider_route, "countries", ())
+        if provider_countries:
+            names = {
+                "AT": "Austria",
+                "HU": "Hungary",
+                "CZ": "Czechia",
+                "SK": "Slovakia",
+                "SI": "Slovenia",
+            }
+            return [names.get(str(country).upper(), str(country)) for country in provider_countries]
+
+        rules = load_route_country_rules()
+        aliases = rules.get("country_aliases", {})
+        origin_tokens = re.findall(r"[a-z0-9]+", origin.casefold())
+        destination_tokens = re.findall(r"[a-z0-9]+", destination.casefold())
+
+        def country_for(tokens: list[str]) -> str | None:
+            for country, country_aliases in aliases.items():
+                candidates = [country, *country_aliases]
+                for candidate in candidates:
+                    candidate_tokens = re.findall(r"[a-z0-9]+", candidate.casefold())
+                    if len(candidate_tokens) == 1 and candidate_tokens[0] in tokens:
+                        return country
+                    if len(candidate_tokens) > 1 and any(
+                        tokens[index:index + len(candidate_tokens)] == candidate_tokens
+                        for index in range(len(tokens) - len(candidate_tokens) + 1)
+                    ):
+                        return country
+            return None
+
+        countries: list[str] = []
+        origin_country = country_for(origin_tokens)
+        destination_country = country_for(destination_tokens)
+        if origin_country:
+            countries.append(origin_country)
+        crossing_ids = detect_rule_crossings(origin, destination, rules)
+        for crossing in rules.get("border_crossings", []):
+            if crossing.get("id") in crossing_ids:
+                for country in (crossing.get("from_country"), crossing.get("to_country")):
+                    if country and country not in countries:
+                        countries.append(country)
+        if destination_country and destination_country not in countries:
+            countries.append(destination_country)
+        return countries
+
+    @staticmethod
+    def _charging_options(
+        stops: list[StopPinpoint],
+        status: str = "suggested",
+    ) -> list[ChargingOption]:
+        return [
+            ChargingOption(option_number=index, stop=stop, status=status)
+            for index, stop in enumerate(stops[:2], start=1)
+        ]
 
     @staticmethod
     def _nearby_partner_opportunities(

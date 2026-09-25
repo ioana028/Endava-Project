@@ -48,6 +48,14 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
     assert kwargs["session"]["model"] == "gpt-realtime-2.1-mini"
     assert kwargs["session"]["output_modalities"] == ["audio"]
     assert kwargs["session"]["audio"]["output"]["voice"] == "marin"
+    assert kwargs["session"]["turn_detection"] == {
+        "type": "server_vad",
+        "threshold": 0.55,
+        "prefix_padding_ms": 300,
+        "silence_duration_ms": 700,
+        "create_response": True,
+        "interrupt_response": True,
+    }
     tools = kwargs["session"]["tools"]
     assert [tool["name"] for tool in tools] == [
         "plan_route",
@@ -121,6 +129,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
     confirm_tool = tools[4]
     assert confirm_tool["parameters"]["required"] == [
         "routeId",
+        "stopId",
         "confirmation",
     ]
     assert confirm_tool["parameters"]["properties"]["confirmation"]["enum"] == [

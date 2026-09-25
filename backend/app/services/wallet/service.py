@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import date
 from hashlib import sha256
@@ -16,9 +17,10 @@ from .models import (
 class WalletService:
     """In-memory wallet simulation; a browser refresh starts a new instance."""
 
-    def __init__(self) -> None:
+    def __init__(self, today: Callable[[], date] | None = None) -> None:
         self._transactions: dict[str, WalletTransaction] = {}
         self._bookings: dict[str, BookingConfirmation] = {}
+        self._today = today or date.today
 
     async def prepare_purchase(
         self, *, route_id: str, requirement_id: str, request_key: str | None = None
@@ -128,8 +130,14 @@ class WalletService:
         booking_time: str | None = None,
         request_key: str | None = None,
     ) -> BookingConfirmation:
-        booking_date = booking_date or date.today().isoformat()
-        self._validate_booking(booking_type, guests, booking_date, booking_time)
+        booking_date = booking_date or self._today().isoformat()
+        self._validate_booking(
+            booking_type,
+            guests,
+            booking_date,
+            booking_time,
+            today=self._today(),
+        )
         key = request_key or self._key(
             "booking", route_id, search_id, result_id, booking_type,
             guests, booking_date, booking_time or "",
@@ -177,16 +185,22 @@ class WalletService:
 
     @staticmethod
     def _validate_booking(
-        booking_type: str, guests: int, booking_date: str, booking_time: str | None
+        booking_type: str,
+        guests: int,
+        booking_date: str,
+        booking_time: str | None,
+        today: date,
     ) -> None:
         if booking_type not in {"hotel_room", "restaurant_table"}:
             raise APIError(422, "INVALID_BOOKING_TYPE", "The booking type is invalid.")
         if guests < 1:
             raise APIError(422, "INVALID_GUEST_COUNT", "Guest count must be at least one.")
         try:
-            date.fromisoformat(booking_date)
+            parsed_date = date.fromisoformat(booking_date)
         except ValueError as error:
             raise APIError(422, "INVALID_BOOKING_DATE", "Date must use YYYY-MM-DD format.") from error
+        if parsed_date < today:
+            raise APIError(422, "PAST_BOOKING_DATE", "The booking date must be today or later.")
         if booking_type == "restaurant_table" and not booking_time:
             raise APIError(422, "MISSING_BOOKING_TIME", "Restaurant bookings require a time.")
         if booking_time is not None and not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", booking_time):

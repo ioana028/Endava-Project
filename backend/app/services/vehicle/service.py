@@ -27,3 +27,15 @@ class VehicleTelemetryService:
     @property
     def consumption_rate_kwh(self) -> float:
         return self.current.consumption_rate_kwh
+
+    @property
+    def connector_types(self) -> tuple[str, ...]:
+        return self.current.connector_types
+
+    @property
+    def max_charging_power_kw(self) -> float:
+        return self.current.max_charging_power_kw
+
+    @property
+    def battery_capacity_kwh(self) -> float:
+        return self.current.battery_capacity_kwh

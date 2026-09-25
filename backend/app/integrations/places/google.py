@@ -70,6 +70,22 @@ class GooglePlacesProvider:
         )
         return list(results)
 
+    async def search_amenities(
+        self,
+        categories: tuple[str, ...],
+        location: str | None = None,
+        route: ProviderRoute | None = None,
+        near_coords: tuple[float, float] | None = None,
+    ) -> list[StopPinpoint]:
+        preference = ", ".join(dict.fromkeys(categories))
+        return await self.search(
+            "food",
+            location=location,
+            preference=f"{preference} amenities",
+            route=route,
+            near_coords=near_coords,
+        )
+
     async def _search_uncached(
         self,
         category: str,
@@ -311,7 +327,9 @@ class GooglePlacesProvider:
             source="provider",
             amenities=factual_types,
             charging_power_kw=charging_power_kw,
-            detour_minutes=round(route_distance_km, 1),
+            connector_types=self._charging_connector_types(place),
+            availability=self._charging_availability(place),
+            route_offset_km=round(route_distance_km, 1),
         )
 
     @staticmethod
@@ -325,6 +343,24 @@ class GooglePlacesProvider:
         ]
         return max(rates) if rates else None
 
+    @staticmethod
+    def _charging_connector_types(place: dict[str, object]) -> tuple[str, ...]:
+        options = place.get("evChargeOptions") or {}
+        connectors = options.get("connectorAggregation", []) if isinstance(options, dict) else []
+        values = {
+            str(item.get("type", "")).upper()
+            for item in connectors
+            if isinstance(item, dict) and item.get("type")
+        }
+        return tuple(sorted(values))
+
+    @staticmethod
+    def _charging_availability(place: dict[str, object]) -> bool | None:
+        options = place.get("evChargeOptions") or {}
+        if not isinstance(options, dict) or "availability" not in options:
+            return None
+        return str(options["availability"]).casefold() in {"available", "open"}
+
     def _search_points(
         self,
         route: ProviderRoute | tuple[tuple[float, float], ...],
@@ -337,7 +373,9 @@ class GooglePlacesProvider:
         geometry = self._route_geometry(route) or ()
         if location == "destination":
             return (geometry[-1],) if geometry else ()
-        return self._distance_samples(geometry)
+        if geometry:
+            return (geometry[len(geometry) // 2],)
+        return ()
 
     def _distance_samples(
         self, geometry: tuple[tuple[float, float], ...]

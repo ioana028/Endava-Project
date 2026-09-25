@@ -164,7 +164,9 @@ function compactRouteFacts(
 
   return {
     status: 'success',
+    origin: route.origin,
     destination: route.destination,
+    ...(route.countries.length > 0 ? { countries: route.countries } : {}),
     distanceKm: Math.round(route.stats.totalDistanceKm),
     travelTime: formatDuration(route.stats.drivingDurationMinutes),
     drivingDurationMinutes: Math.round(route.stats.drivingDurationMinutes),
@@ -190,6 +192,18 @@ function compactRouteFacts(
             ...(opportunity.partnerFact?.verified
               ? { partnerFact: opportunity.partnerFact }
               : {}),
+          })),
+        }
+      : {}),
+    ...(route.chargingOptions.length > 0
+      ? {
+          chargingOptions: route.chargingOptions.map((option) => ({
+            optionNumber: option.optionNumber,
+            name: option.stop.name,
+            id: option.stop.id,
+            chargingDurationMinutes: Math.round(option.stop.chargingDurationMinutes ?? 0),
+            detourMinutes: option.stop.detourMinutes,
+            status: option.status,
           })),
         }
       : {}),
@@ -263,7 +277,13 @@ function compactPoiFacts(
     ...(stop.source ? { source: stop.source } : {}),
     ...(stop.amenities?.length ? { amenities: stop.amenities } : {}),
     ...(stop.distanceMeters !== undefined ? { distanceMeters: stop.distanceMeters } : {}),
-    detourMinutes: stop.detourMinutes,
+    ...(stop.routeOffsetKm !== undefined ? { routeOffsetKm: stop.routeOffsetKm } : {}),
+    ...(stop.estimatedDrivingDetourMinutes !== undefined
+      ? { estimatedDrivingDetourMinutes: stop.estimatedDrivingDetourMinutes }
+      : {}),
+    ...(stop.estimatedDrivingDetourMinutes !== undefined
+      ? { detourMinutes: stop.estimatedDrivingDetourMinutes }
+      : {}),
     ...(partnerFact ? { partnerFact } : {}),
     ...(context.routeId ? { routeId: context.routeId } : {}),
     ...(context.searchId ? { searchId: context.searchId } : {}),
@@ -399,6 +419,7 @@ export function useRealtimeAssistant() {
   const toolRequestIdRef = useRef(0)
   const successFeedbackTimerRef = useRef<number | null>(null)
   const bookingPanelTimerRef = useRef<number | null>(null)
+  const speechStartedAtRef = useRef(0)
 
   function recordTelemetry(name: keyof RealtimeTelemetry) {
     setTelemetry((current) => ({ ...current, [name]: performance.now() }))
@@ -668,11 +689,15 @@ export function useRealtimeAssistant() {
             setBooking(null)
             bookingPanelTimerRef.current = null
           }, 5000)
-          showSuccessFeedback({
-            action: 'booking',
-            label: `${bookingResult.bookingType === 'hotel_room' ? 'Hotel room' : 'Restaurant table'} confirmed`,
-            reference: bookingResult.bookingId,
-          })
+          if (bookingResult.status === 'completed' || bookingResult.status === 'duplicate') {
+            showSuccessFeedback({
+              action: 'booking',
+              label: `${bookingResult.bookingType === 'hotel_room' ? 'Hotel room' : 'Restaurant table'} confirmed`,
+              reference: bookingResult.bookingId,
+            })
+          } else {
+            setError('The booking was not completed. Please try again.')
+          }
         } else if (event.name === 'start_driving') {
           setDriving({ ...result as StartDrivingResponse, active: true })
           showSuccessFeedback({
@@ -1034,7 +1059,11 @@ export function useRealtimeAssistant() {
         const event = JSON.parse(message.data) as Record<string, unknown>
 
         if (event.type === 'input_audio_buffer.speech_started') {
-          setState('LISTENING')
+          const now = performance.now()
+          if (now - speechStartedAtRef.current >= 350) {
+            speechStartedAtRef.current = now
+            setState('LISTENING')
+          }
         } else if (event.type === 'response.created') {
           setState('SPEAKING')
         } else if (event.type === 'response.output_audio_transcript.done') {

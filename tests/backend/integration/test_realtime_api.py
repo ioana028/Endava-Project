@@ -407,7 +407,11 @@ def test_realtime_day6_tools_return_camel_case_contracts() -> None:
     assert hotel.json()["bookingType"] == "hotel_room"
     assert restaurant.json()["bookingType"] == "restaurant_table"
     assert driving.json()["nextStop"]["name"] == "TEA Mosonmagyarovar"
-    assert returned.json() == {"status": "success", "routeId": "route-123"}
+    assert returned.json() == {
+        "status": "success",
+        "routeId": "route-123",
+        "sessionId": None,
+    }
 
 
 def test_realtime_day6_tools_require_exact_confirmation() -> None:

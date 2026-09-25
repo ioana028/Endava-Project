@@ -7,8 +7,8 @@ from ...models.fixtures import Partner
 from .ports import ChargingCandidate, POICandidate
 
 
-POI_MAX_RESULTS = 3
-ATTRACTION_MAX_RESULTS = 3
+POI_MAX_RESULTS = 10
+ATTRACTION_MAX_RESULTS = 10
 POI_CORRIDOR_RADIUS_KM = 7.5
 POI_ORIGIN_EXCLUSION_KM = 10.0
 POI_DESTINATION_EXCLUSION_KM = 10.0

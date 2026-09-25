@@ -93,8 +93,8 @@ def test_places_samples_by_distance_and_deduplicates_provider_ids(monkeypatch: p
     )
     results = asyncio.run(provider.search("fuel", route=route()))
 
-    assert len(FakePlacesClient.calls) == 3
-    assert len(results) == 2
+    assert len(FakePlacesClient.calls) == 1
+    assert len(results) == 1
     assert results[0].category == "fuel"
     assert "fuel station" in results[0].tag
     assert "cafe" in results[0].tag
@@ -185,6 +185,20 @@ def test_places_stop_search_keeps_nearby_result_off_the_route_line(
     assert [result.id for result in results] == ["places/nearby-restaurant"]
 
 
+def test_google_charging_metadata_does_not_assume_availability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    place_payload = place()
+    place_payload["evChargeOptions"] = {
+        "connectorAggregation": [{"type": "CCS", "maxChargeRateKw": 150}]
+    }
+    provider = GooglePlacesProvider("test-key")
+
+    stop = provider._to_stop(place_payload, "charging", route())
+
+    assert stop is not None
+    assert stop.connector_types == ("CCS",)
+    assert stop.availability is None
 def test_charging_search_keeps_google_chargers_for_later_route_legs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

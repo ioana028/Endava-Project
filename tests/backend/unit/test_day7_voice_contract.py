@@ -78,6 +78,7 @@ def test_day7_start_driving_preserves_current_route_id_and_returns_compact_facts
     assert response.status_code == 200
     assert response.json() == {
         "status": "active",
+        "sessionId": None,
         "routeId": "route-current",
         "remainingDistanceKm": 184,
         "remainingDurationMinutes": 161,

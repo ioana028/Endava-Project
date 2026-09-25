@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import date, timedelta
 import re
 
@@ -6,12 +7,14 @@ from ..wallet.service import WalletService
 from .catalog import vignette_amount_eur
 
 
-def normalize_booking_date(value: str | None) -> str | None:
+def normalize_booking_date(value: str | None, today: date | None = None) -> str | None:
     if value is None:
         return None
     normalized = value.strip().casefold()
-    today = date.today()
+    today = today or date.today()
     if normalized == "today":
+        return today.isoformat()
+    if normalized == "tonight":
         return today.isoformat()
     if normalized == "tomorrow":
         return (today + timedelta(days=1)).isoformat()
@@ -39,9 +42,15 @@ def normalize_booking_time(value: str | None) -> str | None:
 
 
 class CommerceService:
-    def __init__(self, route_service: object, wallet_service: WalletService) -> None:
+    def __init__(
+        self,
+        route_service: object,
+        wallet_service: WalletService,
+        today: Callable[[], date] | None = None,
+    ) -> None:
         self._route_service = route_service
         self._wallet = wallet_service
+        self._today = today or date.today
 
     async def purchase_vignette(
         self,
@@ -111,7 +120,7 @@ class CommerceService:
         return await self.book(
             route_id=route_id, search_id=search_id, result_id=result_id,
             booking_type=booking_type, guests=guests, confirmation=confirmation,
-            booking_date=normalize_booking_date(date), booking_time=normalize_booking_time(time), request_key=request_key,
+            booking_date=normalize_booking_date(date, self._today()), booking_time=normalize_booking_time(time), request_key=request_key,
         )
 
     async def book_restaurant_table(
@@ -120,7 +129,7 @@ class CommerceService:
         time: str | None = None, confirmation: str,
         request_key: str | None = None,
     ):
-        normalized_date = normalize_booking_date(date)
+        normalized_date = normalize_booking_date(date, self._today())
         normalized_time = normalize_booking_time(time)
         if normalized_time is None and date.strip().casefold() == "tonight":
             normalized_time = "20:00"

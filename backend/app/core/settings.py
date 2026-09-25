@@ -49,6 +49,9 @@ class Settings:
     google_places_max_search_points: int = int(
         os.getenv("GOOGLE_PLACES_MAX_SEARCH_POINTS", "4")
     )
+    provider_request_budget: int = int(
+        os.getenv("PROVIDER_REQUEST_BUDGET", "20")
+    )
     places_provider: str = os.getenv("PLACES_PROVIDER", "auto").strip().lower()
     weather_provider: str = os.getenv("WEATHER_PROVIDER", "offline").strip().lower()
     weather_enabled: bool = os.getenv("WEATHER_ENABLED", "true").strip().lower() not in {"0", "false", "no"}

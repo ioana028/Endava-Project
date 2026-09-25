@@ -61,6 +61,19 @@ class LocalPlacesProvider:
         )
         return candidates[:10]
 
+    async def search_amenities(
+        self,
+        categories: tuple[str, ...],
+        location: str | None = None,
+        route: ProviderRoute | None = None,
+        near_coords: tuple[float, float] | None = None,
+    ) -> list[StopPinpoint]:
+        results: dict[str, StopPinpoint] = {}
+        for category in categories:
+            for result in await self.search(category, location, route=route, near_coords=near_coords):
+                results[result.id] = result
+        return list(results.values())
+
     @staticmethod
     def _matches_search_center(
         candidate: StopPinpoint,

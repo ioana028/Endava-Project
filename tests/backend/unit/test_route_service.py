@@ -30,6 +30,7 @@ class FakeRoutingProvider:
     def __init__(self, distance_meters: float = 243_000) -> None:
         self.distance_meters = distance_meters
         self.geocoded: list[str] = []
+        self.route_calls: list[tuple[GeocodedPlace, ...]] = []
 
     async def geocode(self, place: str) -> GeocodedPlace:
         self.geocoded.append(place)
@@ -47,7 +48,8 @@ class FakeRoutingProvider:
         priority: RoutePriority,
         waypoints: tuple[GeocodedPlace, ...] | None = None,
     ) -> ProviderRoute:
-        del origin, destination, priority, waypoints
+        del origin, destination, priority
+        self.route_calls.append(tuple(waypoints or ()))
         return ProviderRoute(
             distance_meters=self.distance_meters,
             duration_seconds=9_900,
@@ -132,6 +134,8 @@ def test_route_normalizes_provider_units_and_geometry() -> None:
     assert route.charging_required is True
     assert route.charging_stop is None
     assert route.stops == []
+    assert route.countries == ["Austria", "Hungary"]
+    assert route.origin_coordinates is not None
 
 
 def test_route_within_vehicle_range_has_no_range_warning() -> None:
@@ -184,6 +188,29 @@ def test_route_beyond_vehicle_range_requires_charging_before_confirmation() -> N
     assert [item.name for item in route.route_requirements] == [
         "Hungarian motorway vignette"
     ]
+
+
+def test_charging_confirmation_routes_only_selected_option_once() -> None:
+    provider = FakeRoutingProvider(distance_meters=243_000)
+    route_service = RouteService(provider, repository())
+    route = asyncio.run(route_service.plan(intent()))
+    initial_route_id = route_service.active_route_id
+
+    assert route.charging_options
+    assert all(not waypoints for waypoints in provider.route_calls)
+
+    result = asyncio.run(
+        route_service.confirm_charging_stop(
+            initial_route_id or "",
+            stop_id=route.charging_options[0].stop.id,
+        )
+    )
+
+    assert len(provider.route_calls) == 2
+    assert len(provider.route_calls[-1]) == 1
+    assert provider.route_calls[-1][0].display_name == route.charging_options[0].stop.name
+    assert result["route_id"] != initial_route_id
+    assert result["charging_plan"].stops[0].id == route.charging_options[0].stop.id
 
 
 def test_search_route_poi_returns_generic_results_without_mutating_route() -> None:

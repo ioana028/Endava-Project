@@ -90,7 +90,7 @@ def test_route_facts_expose_pending_and_confirmed_plan_states() -> None:
     assert facts["confirmed_charging_stop_ids"] == []
 
 
-def test_confirmation_returns_amenities_for_each_confirmed_stop() -> None:
+def test_confirmation_returns_amenities_for_selected_stop_only() -> None:
     service = RouteService(RouteProvider(), repository())
     service._active_route_id = "route-1"
     service._active_provider_route = ProviderRoute(
@@ -116,10 +116,8 @@ def test_confirmation_returns_amenities_for_each_confirmed_stop() -> None:
 
     result = asyncio.run(service.confirm_charging_stop("route-1"))
 
-    assert set(result["amenities_by_stop"]) == {"charger-a", "charger-b"}
-    assert service.route_session_facts["confirmed_charging_stop_ids"] == [
-        "charger-a", "charger-b"
-    ]
+    assert set(result["amenities_by_stop"]) == {"charger-a"}
+    assert service.route_session_facts["confirmed_charging_stop_ids"] == ["charger-a"]
 
 
 def test_failed_confirmation_does_not_partially_mutate_pending_plan() -> None:
