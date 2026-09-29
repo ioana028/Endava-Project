@@ -307,7 +307,7 @@ class RouteService:
         # The deterministic selector applies the current and post-charge range
         # limits for each leg; limiting discovery to the first battery leg
         # would make long routes unable to produce a multi-stop plan.
-        charging_search_distance_km = initial_distance_km
+        charging_search_distance_km = provider_route.distance_meters / 1000
         partner_opportunities: list[RouteOpportunity] = []
         charging_provider = self._charging_provider or FixtureChargingProvider(
             self._fixture_repository.fixtures.partners
@@ -315,7 +315,8 @@ class RouteService:
         if charging_required:
             stops, partner_opportunities = await self._discover_charging_stops(
                 charging_provider, provider_route, origin, destination, intent.priority,
-                safe_distance_km, initial_distance_km, reachable_distance_km, max_charged_range_km,
+                charging_search_distance_km, initial_distance_km, safe_distance_km,
+                reachable_distance_km, max_charged_range_km,
             )
         self._session_id = uuid4().hex
 
@@ -369,12 +370,13 @@ class RouteService:
         priority: RoutePriority,
         charging_search_distance_km: float,
         initial_distance_km: float,
+        current_safe_range_km: float,
         reachable_distance_km: float,
         max_charged_range_km: float,
     ) -> tuple[list[StopPinpoint], list[RouteOpportunity]]:
         target_progress_km = self._charging_target_progress_km(
             initial_distance_km,
-            reachable_distance_km,
+            current_safe_range_km,
             max_charged_range_km,
         )
         try:
@@ -394,7 +396,7 @@ class RouteService:
             else:
                 candidates = await search_charging(
                     provider_route,
-                    charging_search_distance_km,
+                    current_safe_range_km,
                 )
         except (JourneyProviderError, OSError) as error:
             raise APIError(
@@ -498,7 +500,12 @@ class RouteService:
         while route_distance_km - progress_km > leg_range_km:
             if leg_range_km <= 0:
                 return ()
-            progress_km += leg_range_km
+            # Search slightly before the hard range boundary. Google returns
+            # places within a radius around the target, so this keeps the
+            # selected result inside the safe leg when the nearest place is
+            # a few kilometres beyond the requested point.
+            search_margin_km = 5.0 if not targets else 10.0
+            progress_km += max(0.0, leg_range_km - search_margin_km)
             targets.append(round(progress_km, 1))
             leg_range_km = charged_leg_range_km
         return tuple(targets)
@@ -512,7 +519,7 @@ class RouteService:
 
         def normalize(value: str) -> str:
             normalized = value.casefold().replace("_combo", "").replace("-", "").replace(" ", "")
-            if normalized.startswith("ccs"):
+            if "ccs" in normalized:
                 return "ccs"
             return normalized
 

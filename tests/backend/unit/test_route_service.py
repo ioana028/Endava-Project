@@ -152,9 +152,9 @@ def test_charging_targets_follow_current_then_max_safe_range() -> None:
     service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
 
     assert service._charging_target_progress_km(600, 85, 250) == (
-        85.0,
-        325.0,
-        565.0,
+        80.0,
+        310.0,
+        540.0,
     )
 
 

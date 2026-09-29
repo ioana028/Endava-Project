@@ -1069,6 +1069,26 @@ export function useRealtimeAssistant() {
       const channel = peerConnection.createDataChannel('oai-events')
       channel.onopen = () => {
         if (isSessionCurrent(generation)) {
+          channel.send(
+            JSON.stringify({
+              type: 'session.update',
+              session: {
+                type: 'realtime',
+                audio: {
+                  input: {
+                    turn_detection: {
+                      type: 'server_vad',
+                      threshold: 0.55,
+                      prefix_padding_ms: 300,
+                      silence_duration_ms: 700,
+                      create_response: true,
+                      interrupt_response: true,
+                    },
+                  },
+                },
+              },
+            }),
+          )
           recordTelemetry('dataChannelOpened')
         }
       }
