@@ -30,6 +30,7 @@ class FakeRoutingProvider:
     def __init__(self, distance_meters: float = 243_000) -> None:
         self.distance_meters = distance_meters
         self.geocoded: list[str] = []
+        self.route_calls: list[tuple[GeocodedPlace, ...]] = []
 
     async def geocode(self, place: str) -> GeocodedPlace:
         self.geocoded.append(place)
@@ -47,7 +48,8 @@ class FakeRoutingProvider:
         priority: RoutePriority,
         waypoints: tuple[GeocodedPlace, ...] | None = None,
     ) -> ProviderRoute:
-        del origin, destination, priority, waypoints
+        del origin, destination, priority
+        self.route_calls.append(tuple(waypoints or ()))
         return ProviderRoute(
             distance_meters=self.distance_meters,
             duration_seconds=9_900,
@@ -132,6 +134,8 @@ def test_route_normalizes_provider_units_and_geometry() -> None:
     assert route.charging_required is True
     assert route.charging_stop is None
     assert route.stops == []
+    assert route.countries == ["Austria", "Hungary"]
+    assert route.origin_coordinates is not None
 
 
 def test_route_within_vehicle_range_has_no_range_warning() -> None:
@@ -142,6 +146,16 @@ def test_route_within_vehicle_range_has_no_range_warning() -> None:
     )
 
     assert route.alerts == []
+
+
+def test_charging_targets_follow_current_then_max_safe_range() -> None:
+    service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
+
+    assert service._charging_target_progress_km(600, 85, 250) == (
+        80.0,
+        310.0,
+        540.0,
+    )
 
 
 def test_start_driving_returns_current_route_facts_without_replanning() -> None:
@@ -184,6 +198,70 @@ def test_route_beyond_vehicle_range_requires_charging_before_confirmation() -> N
     assert [item.name for item in route.route_requirements] == [
         "Hungarian motorway vignette"
     ]
+
+
+def test_charging_confirmation_routes_through_the_complete_ordered_plan() -> None:
+    provider = FakeRoutingProvider(distance_meters=243_000)
+    route_service = RouteService(provider, repository())
+    asyncio.run(route_service.plan(intent()))
+    initial_route_id = route_service.active_route_id
+
+    assert all(not waypoints for waypoints in provider.route_calls)
+    planned_stops = [
+        StopPinpoint(
+            id=f"charger-{index}",
+            name=f"Charging stop {index}",
+            category="charging",
+            coords=(16.5 + index * 0.3, 48.1 - index * 0.1),
+            charging_duration_minutes=20,
+        )
+        for index in range(1, 4)
+    ]
+    route_service._pending_charging_stops = planned_stops
+
+    result = asyncio.run(
+        route_service.confirm_charging_stop(initial_route_id or "")
+    )
+
+    assert len(provider.route_calls) == 2
+    assert [stop.display_name for stop in provider.route_calls[-1]] == [
+        stop.name for stop in planned_stops
+    ]
+    assert result["route_id"] != initial_route_id
+    assert [stop.id for stop in result["charging_plan"].stops] == [
+        stop.id for stop in planned_stops
+    ]
+
+
+def test_charging_confirmation_cannot_skip_the_first_required_stop() -> None:
+    provider = FakeRoutingProvider(distance_meters=243_000)
+    route_service = RouteService(provider, repository())
+    asyncio.run(route_service.plan(intent()))
+    initial_route_id = route_service.active_route_id
+    route_service._pending_charging_stops = [
+        StopPinpoint(
+            id="charger-first",
+            name="First charger",
+            category="charging",
+            coords=(16.8, 48.0),
+        ),
+        StopPinpoint(
+            id="charger-second",
+            name="Second charger",
+            category="charging",
+            coords=(17.5, 47.8),
+        ),
+    ]
+
+    with pytest.raises(APIError) as error:
+        asyncio.run(
+            route_service.confirm_charging_stop(
+                initial_route_id or "", stop_id="charger-second"
+            )
+        )
+
+    assert error.value.code == "STALE_STOP"
+    assert len(provider.route_calls) == 1
 
 
 def test_search_route_poi_returns_generic_results_without_mutating_route() -> None:
@@ -250,6 +328,35 @@ def test_search_route_poi_returns_at_most_two_diverse_results() -> None:
     results = asyncio.run(route_service.search_route_poi("attraction", "route"))
 
     assert [result.id for result in results] == ["near-a", "farther"]
+
+
+@pytest.mark.parametrize("category", ["hotel", "restaurant"])
+def test_booking_poi_search_returns_at_most_two_options(category: str) -> None:
+    class ManyBookingPlacesProvider:
+        async def search(self, requested_category, location, preference, route):
+            del location, preference, route
+            return [
+                StopPinpoint(
+                    id=f"{requested_category}-{index}",
+                    name=f"{requested_category.title()} {index}",
+                    category=requested_category,
+                    coords=(19.04, 47.50),
+                    rating=5 - index / 10,
+                )
+                for index in range(5)
+            ]
+
+    route_service = RouteService(
+        FakeRoutingProvider(distance_meters=95_000),
+        repository(),
+        places_provider=ManyBookingPlacesProvider(),
+    )
+    asyncio.run(route_service.plan(intent("Budapest")))
+
+    results = asyncio.run(route_service.search_route_poi(category, "destination"))
+
+    assert len(results) == 2
+    assert len(route_service.active_search_results) == 2
 
 
 def test_route_poi_search_uses_active_route_context_for_charging() -> None:

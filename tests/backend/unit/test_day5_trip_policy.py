@@ -102,6 +102,26 @@ def test_stop_amenities_use_500_m_radius_and_four_result_limit() -> None:
     assert {item.id for item in results} <= {"near-a", "near-b", "near-c", "near-d", "near-e"}
 
 
+def test_stop_amenities_show_a_chain_only_once() -> None:
+    center = (17.0, 47.0)
+    results = select_stop_amenities(
+        [
+            stop("mcd-parndorf", (17.001, 47.0), "food").model_copy(
+                update={"name": "McDonald's Parndorf"}
+            ),
+            stop("mcd-neusiedl", (17.002, 47.0), "food").model_copy(
+                update={"name": "McDonald’s Neusiedl"}
+            ),
+            stop("starbucks", (17.003, 47.0), "coffee").model_copy(
+                update={"name": "Starbucks"}
+            ),
+        ],
+        center,
+    )
+
+    assert [item.id for item in results] == ["mcd-parndorf", "starbucks"]
+
+
 def test_stop_amenity_search_requires_a_selected_charging_stop() -> None:
     provider = type(
         "Provider",

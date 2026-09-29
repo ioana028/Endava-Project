@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -7,6 +8,9 @@ from backend.app.core.errors import APIError
 from backend.app.models.contracts import RouteRequirement, StopPinpoint
 from backend.app.services.commerce.service import CommerceService
 from backend.app.services.wallet.service import WalletService
+
+
+BOOKING_DATE = (date.today() + timedelta(days=1)).isoformat()
 
 
 class RouteContext:
@@ -85,7 +89,7 @@ def test_stale_requirement_and_search_are_rejected() -> None:
         asyncio.run(
             commerce.book(
                 route_id="route-1", search_id="old-search", result_id="hotel-1",
-                booking_type="hotel_room", guests=2, booking_date="2026-09-17",
+                booking_type="hotel_room", guests=2, booking_date=BOOKING_DATE,
                 confirmation="confirmed",
             )
         )
@@ -99,7 +103,7 @@ def test_booking_requires_explicit_confirmation_and_selected_result() -> None:
         asyncio.run(
             commerce.book(
                 route_id="route-1", search_id="search-1", result_id="hotel-1",
-                booking_type="hotel_room", guests=2, booking_date="2026-09-17",
+                booking_type="hotel_room", guests=2, booking_date=BOOKING_DATE,
                 confirmation="pending",
             )
         )
@@ -122,7 +126,7 @@ def test_booking_does_not_change_route_context() -> None:
     booking = asyncio.run(
         commerce.book(
             route_id="route-1", search_id="search-1", result_id="hotel-1",
-            booking_type="hotel_room", guests=2, booking_date="2026-09-17",
+            booking_type="hotel_room", guests=2, booking_date=BOOKING_DATE,
             confirmation="confirmed",
         )
     )
@@ -147,7 +151,7 @@ def test_restaurant_booking_is_idempotent() -> None:
         "result_id": "restaurant-1",
         "booking_type": "restaurant_table",
         "guests": 2,
-        "booking_date": "2026-09-17",
+        "booking_date": BOOKING_DATE,
         "booking_time": "19:00",
         "confirmation": "confirmed",
     }
@@ -157,3 +161,27 @@ def test_restaurant_booking_is_idempotent() -> None:
 
     assert duplicate.booking_id == first.booking_id
     assert duplicate.guests == 2
+
+
+def test_restaurant_tonight_uses_injected_local_date_and_default_time() -> None:
+    today = date(2026, 9, 25)
+    commerce = CommerceService(
+        RouteContext(),
+        WalletService(today=lambda: today),
+        today=lambda: today,
+    )
+
+    booking = asyncio.run(
+        commerce.book_restaurant_table(
+            route_id="route-1",
+            search_id="search-1",
+            result_id="restaurant-1",
+            booking_type="restaurant_table",
+            guests=2,
+            date="tonight",
+            confirmation="confirmed",
+        )
+    )
+
+    assert booking.date == "2026-09-25"
+    assert booking.time == "20:00"

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.assistant import router as assistant_router
 from .core.errors import register_error_handlers
 from .core.fixture_repository import FixtureRepository
+from .core.request_budget import RequestBudget
 from .core.settings import Settings
 from .integrations.google_maps.routing import GoogleMapsRoutingProvider
 from .integrations.places.google import GooglePlacesProvider
@@ -44,6 +45,7 @@ def create_app(
     route_service = route_service or RouteService(
         GoogleMapsRoutingProvider(settings.google_server_api_key),
         fixture_repository,
+        request_budget=RequestBudget(settings.provider_request_budget),
         places_provider=places_provider,
         charging_provider=places_provider,
     )
@@ -87,6 +89,7 @@ def create_app(
         else OfflineWeatherProvider()
     )
     application.state.settings = settings
+    application.state.fixture_repository = fixture_repository
     application.state.route_service = route_service
     application.state.wallet_service = wallet_service
     application.state.commerce_service = commerce_service
@@ -111,9 +114,8 @@ def create_app(
         partner_records = tuple(getattr(application.state, "fixtures", safe_load_fixtures()).partners)
         scenic_capability = bool(settings.google_server_api_key)
         weather_provider_name = settings.weather_provider or "offline"
-        weather_ready = settings.weather_enabled and (
-            weather_provider_name in {"offline", "open-meteo"}
-            or bool(settings.weather_api_key)
+        weather_ready = (
+            settings.weather_enabled and weather_provider_name == "open-meteo"
         )
         return ProviderHealthResponse(
             status="ok",

@@ -7,6 +7,7 @@ import type {
   RouteResponse,
   StartDrivingResponse,
   StopAmenitiesResponse,
+  VehicleContext,
 } from '../types/contracts'
 
 const API_BASE_URL =
@@ -72,8 +73,8 @@ export function getRealtimeToolErrorMessage(code: string, fallback: string): str
     DUPLICATE_BOOKING: 'That booking was already completed.',
     MISSING_REQUIREMENT: 'There is no current vignette requirement to purchase.',
     MISSING_DETAILS: 'I need the remaining booking details before I can book it.',
-    PURCHASE_UNAVAILABLE: 'I cannot complete the simulated purchase right now.',
-    BOOKING_UNAVAILABLE: 'I cannot complete the simulated booking right now.',
+    PURCHASE_UNAVAILABLE: 'I cannot complete that purchase right now.',
+    BOOKING_UNAVAILABLE: 'I cannot complete that booking right now.',
     DRIVING_UNAVAILABLE: 'I cannot start driving mode right now.',
     NOT_IN_AMENITY_VIEW: 'There is no charger-focused view to leave right now.',
     VALIDATION_ERROR: 'I could not validate that assistant request.',
@@ -102,6 +103,25 @@ export async function createRealtimeSession(): Promise<RealtimeSessionResponse> 
   }
 
   return payload
+}
+
+export async function getVehicleContextWithTool(
+  argumentsJson = '{}',
+  signal?: AbortSignal,
+): Promise<VehicleContext> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/assistant/realtime/tools/vehicle-context`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: argumentsJson,
+      signal,
+    },
+  )
+  if (!response.ok) {
+    return throwToolError(response, 'Vehicle information is unavailable.')
+  }
+  return (await response.json()) as VehicleContext
 }
 
 export async function planRouteWithTool(
@@ -227,7 +247,7 @@ export function purchaseVignetteWithTool(
   return callDay6Tool(
     'purchase-vignette',
     argumentsJson,
-    'The simulated vignette purchase could not be completed.',
+    'The vignette purchase could not be completed.',
     signal,
   )
 }
@@ -239,7 +259,7 @@ export function bookHotelRoomWithTool(
   return callDay6Tool(
     'book-hotel-room',
     argumentsJson,
-    'The simulated hotel booking could not be completed.',
+    'The hotel booking could not be completed.',
     signal,
   )
 }
@@ -251,7 +271,7 @@ export function bookRestaurantTableWithTool(
   return callDay6Tool(
     'book-restaurant-table',
     argumentsJson,
-    'The simulated restaurant booking could not be completed.',
+    'The restaurant booking could not be completed.',
     signal,
   )
 }

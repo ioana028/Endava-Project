@@ -75,7 +75,7 @@ def test_google_places_accepts_string_display_names_for_stable_provider_identity
     assert results[0].name == "Shell Recharge"
 
 
-def test_confirming_multi_stop_charging_keeps_provider_waypoints_in_order() -> None:
+def test_confirming_charging_routes_only_the_selected_provider_waypoint() -> None:
     class RecordingRoutingProvider:
         def __init__(self) -> None:
             self.waypoints = None
@@ -151,4 +151,3 @@ def test_confirming_multi_stop_charging_keeps_provider_waypoints_in_order() -> N
         "First Charger",
     ]
     assert result["route"].stops[0].name == "Second Charger"
-    assert result["route"].stops[1].name == "First Charger"

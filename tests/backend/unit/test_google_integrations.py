@@ -93,12 +93,51 @@ def test_places_samples_by_distance_and_deduplicates_provider_ids(monkeypatch: p
     )
     results = asyncio.run(provider.search("fuel", route=route()))
 
-    assert len(FakePlacesClient.calls) == 3
-    assert len(results) == 2
+    assert len(FakePlacesClient.calls) == 1
+    assert len(results) == 1
     assert results[0].category == "fuel"
     assert "fuel station" in results[0].tag
     assert "cafe" in results[0].tag
     assert FakePlacesClient.calls[0]["headers"]["X-Goog-FieldMask"].startswith("places.id")
+
+
+def test_repeated_places_search_is_coalesced(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakePlacesClient.calls = []
+    FakePlacesClient.responses = [FakeResponse({"places": [place()]})]
+    monkeypatch.setattr(
+        "backend.app.integrations.places.google.httpx.AsyncClient", FakePlacesClient
+    )
+
+    provider = GooglePlacesProvider("test-key", max_search_points=2)
+    first = asyncio.run(provider.search("coffee", location="stop", route=route(), near_coords=(16.05, 48.001)))
+    second = asyncio.run(provider.search("coffee", location="stop", route=route(), near_coords=(16.05, 48.001)))
+
+    assert [item.id for item in first] == [item.id for item in second]
+    assert len(FakePlacesClient.calls) == 1
+
+
+def test_repeated_route_request_is_coalesced(monkeypatch: pytest.MonkeyPatch) -> None:
+    FakeRoutingClient.calls = []
+    FakeRoutingClient.response = FakeResponse({
+        "routes": [{
+            "distanceMeters": 1000,
+            "duration": "60s",
+            "polyline": {"geoJsonLinestring": {"coordinates": [[16.0, 48.0], [16.1, 48.0]]}},
+            "travelAdvisory": {"tollInfo": {}},
+        }]
+    })
+    monkeypatch.setattr(
+        "backend.app.integrations.google_maps.routing.httpx.AsyncClient", FakeRoutingClient
+    )
+
+    provider = GoogleMapsRoutingProvider("test-key")
+    origin = GeocodedPlace("Vienna", Coordinates(lng=16.0, lat=48.0))
+    destination = GeocodedPlace("Budapest", Coordinates(lng=19.0, lat=47.5))
+    first = asyncio.run(provider.route(origin, destination, RoutePriority.FASTEST))
+    second = asyncio.run(provider.route(origin, destination, RoutePriority.FASTEST))
+
+    assert first == second
+    assert len(FakeRoutingClient.calls) == 1
 
 
 def test_places_stop_search_uses_stop_center_and_structured_amenities(
@@ -146,6 +185,20 @@ def test_places_stop_search_keeps_nearby_result_off_the_route_line(
     assert [result.id for result in results] == ["places/nearby-restaurant"]
 
 
+def test_google_charging_metadata_does_not_assume_availability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    place_payload = place()
+    place_payload["evChargeOptions"] = {
+        "connectorAggregation": [{"type": "CCS", "maxChargeRateKw": 150}]
+    }
+    provider = GooglePlacesProvider("test-key")
+
+    stop = provider._to_stop(place_payload, "charging", route())
+
+    assert stop is not None
+    assert stop.connector_types == ("CCS",)
+    assert stop.availability is None
 def test_charging_search_keeps_google_chargers_for_later_route_legs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -164,11 +217,15 @@ def test_charging_search_keeps_google_chargers_for_later_route_legs(
 
     candidates = asyncio.run(
         GooglePlacesProvider("test-key", max_search_points=2).search_charging(
-            route(), max_distance_km=10
+            route(), max_distance_km=10, target_progress_km=(10.0,)
         )
     )
 
     assert candidates == ()
+    assert len(FakePlacesClient.calls) == 1
+    request = FakePlacesClient.calls[0]["json"]
+    assert "locationBias" in request
+    assert request["locationBias"]["circle"]["radius"] == 7500.0
 
 
 def test_places_timeout_is_translated_to_provider_error(monkeypatch: pytest.MonkeyPatch) -> None:

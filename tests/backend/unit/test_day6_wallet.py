@@ -1,10 +1,14 @@
 import asyncio
+from datetime import date, timedelta
 
 import pytest
 
 from backend.app.core.errors import APIError
-from backend.app.services.wallet.models import PhoneConfirmationStatus, WalletStatus
+from backend.app.services.wallet.models import WalletStatus
 from backend.app.services.wallet.service import WalletService
+
+
+BOOKING_DATE = (date.today() + timedelta(days=1)).isoformat()
 
 
 def test_wallet_purchase_is_idempotent() -> None:
@@ -26,30 +30,24 @@ def test_wallet_purchase_is_idempotent() -> None:
     assert duplicate.status == WalletStatus.DUPLICATE
 
 
-def test_phone_confirmation_can_be_sent_for_transaction() -> None:
+def test_wallet_confirmation_does_not_claim_phone_delivery() -> None:
     wallet = WalletService()
     transaction = asyncio.run(
         wallet.process_purchase(route_id="route-1", requirement_id="req-1")
     )
 
-    updated = asyncio.run(wallet.send_phone_confirmation(transaction.transaction_id))
+    assert transaction.wallet_status == WalletStatus.COMPLETED
+    assert not hasattr(transaction, "phone_confirmation_status")
 
-    assert updated.phone_confirmation_status == PhoneConfirmationStatus.SENT
 
-
-def test_declined_purchase_and_failed_phone_confirmation_are_simulated() -> None:
+def test_declined_purchase_is_recorded_without_phone_delivery_state() -> None:
     wallet = WalletService()
     declined = asyncio.run(
         wallet.decline_purchase(route_id="route-1", requirement_id="req-1")
     )
-    transaction = asyncio.run(
-        wallet.process_purchase(route_id="route-2", requirement_id="req-2")
-    )
-    failed = asyncio.run(wallet.fail_phone_confirmation(transaction.transaction_id))
 
     assert declined.wallet_status == WalletStatus.DECLINED
-    assert declined.phone_confirmation_status == PhoneConfirmationStatus.FAILED
-    assert failed.phone_confirmation_status == PhoneConfirmationStatus.FAILED
+    assert not hasattr(declined, "phone_confirmation_status")
 
 
 def test_wallet_purchase_transitions_from_processing_to_completed() -> None:
@@ -69,7 +67,7 @@ def test_wallet_can_prepare_purchase_in_ready_state() -> None:
     )
 
     assert transaction.wallet_status == WalletStatus.READY
-    assert transaction.phone_confirmation_status == PhoneConfirmationStatus.PENDING
+    assert not hasattr(transaction, "phone_confirmation_status")
 
 
 def test_booking_requires_guests_and_restaurant_time() -> None:
@@ -79,7 +77,7 @@ def test_booking_requires_guests_and_restaurant_time() -> None:
         asyncio.run(
             wallet.process_booking(
                 route_id="route-1", search_id="search-1", result_id="hotel-1",
-                booking_type="hotel_room", guests=0, booking_date="2026-09-17",
+                booking_type="hotel_room", guests=0, booking_date=BOOKING_DATE,
             )
         )
     assert guest_error.value.code == "INVALID_GUEST_COUNT"
@@ -88,7 +86,7 @@ def test_booking_requires_guests_and_restaurant_time() -> None:
         asyncio.run(
             wallet.process_booking(
                 route_id="route-1", search_id="search-1", result_id="restaurant-1",
-                booking_type="restaurant_table", guests=2, booking_date="2026-09-17",
+                booking_type="restaurant_table", guests=2, booking_date=BOOKING_DATE,
             )
         )
     assert time_error.value.code == "MISSING_BOOKING_TIME"
@@ -98,9 +96,27 @@ def test_hotel_booking_preserves_guest_count() -> None:
     booking = asyncio.run(
         WalletService().process_booking(
             route_id="route-1", search_id="search-1", result_id="hotel-1",
-            booking_type="hotel_room", guests=2, booking_date="2026-09-17",
+            booking_type="hotel_room", guests=2, booking_date=BOOKING_DATE,
         )
     )
 
     assert booking.guests == 2
     assert booking.wallet_status == WalletStatus.COMPLETED
+
+
+def test_wallet_rejects_past_booking_date() -> None:
+    wallet = WalletService(today=lambda: date(2026, 9, 25))
+
+    with pytest.raises(APIError) as error:
+        asyncio.run(
+            wallet.process_booking(
+                route_id="route-1",
+                search_id="search-1",
+                result_id="hotel-1",
+                booking_type="hotel_room",
+                guests=2,
+                booking_date="2026-09-24",
+            )
+        )
+
+    assert error.value.code == "PAST_BOOKING_DATE"

@@ -112,3 +112,43 @@ button { font: inherit; }
 .place-detail-card strong { font-size: .78rem; }
 .place-detail-card .place-rating { font-size: .58rem; }
 .place-rating { color: #e8d7aa !important; }.place-rating span { color: #f2cc61; letter-spacing: .08em; }
+
+/* Compact trip card: a route diagram and three clearly separated readouts. */
+.route-summary { gap: 0; }
+.trip-details-heading { align-items: center; flex: 0 0 auto; }
+.route-summary h2 { margin: 2px 0 0; color: #f0fbff; font-size: .9rem; font-weight: 700; letter-spacing: -.02em; }
+.trip-stop-count { flex: 0 0 auto; padding: 4px 7px; border: 1px solid #316178; border-radius: 999px; color: #a8c6cf; font: 500 .54rem 'DM Mono', monospace; text-transform: uppercase; white-space: nowrap; }
+.trip-details-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(92px, .85fr); gap: 10px; flex: 1 1 auto; min-height: 0; margin-top: 9px; }
+.trip-timeline { min-width: 0; min-height: 0; margin: 0; padding: 1px 4px 1px 0; overflow-y: auto; overflow-x: hidden; list-style: none; scrollbar-color: #346579 transparent; scrollbar-width: thin; }
+.trip-timeline-item { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr); gap: 8px; min-height: 38px; padding: 0 0 7px; }
+.trip-timeline-item:not(:last-child)::before { position: absolute; top: 11px; bottom: -2px; left: 6px; width: 1px; background: #3c6978; content: ''; }
+.trip-timeline-node { position: relative; z-index: 1; width: 13px; height: 13px; margin-top: 2px; border: 2px solid #8babb6; border-radius: 50%; background: #0a202e; box-shadow: 0 0 0 2px #0a202e; }
+.trip-timeline-endpoint .trip-timeline-node { border-color: #61e4c1; background: #61e4c1; }
+.trip-timeline-charging .trip-timeline-node { border-color: #f2cc61; background: #f2cc61; }
+.trip-timeline-attraction .trip-timeline-node { border-color: #8bd5ff; background: #8bd5ff; }
+.trip-timeline-copy { display: grid; align-content: start; min-width: 0; gap: 1px; }
+.trip-timeline-copy span { color: #81a1ad; font: 500 .5rem 'DM Mono', monospace; letter-spacing: .04em; text-transform: uppercase; }
+.trip-timeline-copy strong { overflow: hidden; color: #e5f1f4; font-size: .69rem; font-weight: 600; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
+.trip-timeline-arrival .trip-timeline-copy strong { color: #a8f5df; }
+.trip-metrics { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(3, minmax(0, 1fr)); gap: 4px; min-width: 0; min-height: 0; margin: 0; overflow: visible; border: 0; border-radius: 0; background: transparent; }
+.trip-metric { display: grid; align-content: center; min-width: 0; min-height: 0; padding: 4px 7px; overflow: hidden; border: 1px solid #254b5c; border-radius: 4px; background: #0b2130a8; }
+.trip-metric span { color: #8eabb7; font-size: .5rem; letter-spacing: .02em; }
+.trip-metric strong { margin: 1px 0 0; overflow: hidden; color: #f0fbff; font-size: .8rem; font-weight: 700; letter-spacing: -.02em; text-overflow: ellipsis; }
+.trip-cost-metric strong { color: #61e4c1; font-size: .75rem; }
+
+/* Suggestion slides prioritise a legible name and trustworthy review data. */
+.battery-carousel { margin-top: 8px; }
+.battery-carousel-track { transition: transform .42s cubic-bezier(.22, 1, .36, 1); }
+.place-detail-card { grid-template-rows: auto minmax(0, 1fr) auto; align-content: stretch; gap: 5px; min-height: 90px; max-height: 112px; padding-top: 3px; padding-bottom: 3px; }
+.place-detail-card .place-category { color: #75dbbe; font: 500 .55rem 'DM Mono', monospace; letter-spacing: .1em; text-transform: uppercase; }
+.place-detail-card h3 { display: -webkit-box; min-width: 0; margin: 0; overflow: hidden; color: #f3fbff; font-size: 1.04rem; font-weight: 700; line-height: 1.18; letter-spacing: -.025em; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.place-review-row { display: flex; align-items: baseline; gap: 5px; min-width: 0; color: #abc2ca; font-size: .64rem; white-space: nowrap; }
+.place-review-row .place-review-star { color: #f2cc61; font-size: .93rem; line-height: 1; }
+.place-review-row strong { flex: 0 0 auto; margin: 0; color: #f2e0a6; font-size: .74rem; }
+.place-review-row span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.place-review-unavailable { color: #8fa7b1; font-size: .63rem; }
+.battery-carousel-controls { margin-top: 8px; }
+.battery-carousel-controls button { width: 27px; height: 27px; border-color: #37677a; border-radius: 50%; background: #0d2b3a; font-size: 1rem; line-height: 1; }
+.battery-carousel-controls button:not(:disabled):hover, .battery-carousel-controls button:not(:disabled):focus-visible { border-color: #61e4c1; color: #61e4c1; outline: none; }
+@media (max-height: 700px) { .trip-details-body { gap: 6px; margin-top: 5px; } .trip-metric { padding: 2px 5px; } .trip-timeline-item { min-height: 33px; } }
+@media (prefers-reduced-motion: reduce) { .battery-carousel-track { transition: none; } }

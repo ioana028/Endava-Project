@@ -10,12 +10,6 @@ class WalletStatus(StrEnum):
     DUPLICATE = "duplicate"
 
 
-class PhoneConfirmationStatus(StrEnum):
-    PENDING = "pending"
-    SENT = "sent"
-    FAILED = "failed"
-
-
 @dataclass(frozen=True, slots=True)
 class WalletTransaction:
     transaction_id: str
@@ -24,7 +18,6 @@ class WalletTransaction:
     route_id: str
     status: WalletStatus = WalletStatus.COMPLETED
     wallet_status: WalletStatus = WalletStatus.COMPLETED
-    phone_confirmation_status: PhoneConfirmationStatus = PhoneConfirmationStatus.SENT
     amount_eur: float = 0.0
     currency: str = "EUR"
     requirement_id: str | None = None
@@ -43,4 +36,3 @@ class BookingConfirmation:
     date: str
     time: str | None = None
     wallet_status: WalletStatus = WalletStatus.COMPLETED
-    phone_confirmation_status: PhoneConfirmationStatus = PhoneConfirmationStatus.SENT

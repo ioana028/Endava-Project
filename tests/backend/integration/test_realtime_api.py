@@ -20,7 +20,6 @@ class FakeDay6Service:
             "route_id": payload["route_id"],
             "requirement_id": payload["requirement_id"],
             "wallet_status": "completed",
-            "phone_confirmation_status": "sent",
             "amount_eur": 16.5,
             "currency": "EUR",
         }
@@ -36,7 +35,6 @@ class FakeDay6Service:
             "date": payload["date"],
             "time": payload.get("time"),
             "wallet_status": "completed",
-            "phone_confirmation_status": "sent",
         }
 
     async def book_restaurant_table(self, **payload: Any) -> dict[str, Any]:
@@ -404,10 +402,16 @@ def test_realtime_day6_tools_return_camel_case_contracts() -> None:
 
     assert purchase.status_code == hotel.status_code == restaurant.status_code == 200
     assert purchase.json()["transactionId"] == "txn-vignette-001"
+    assert "phoneConfirmationStatus" not in purchase.json()
     assert hotel.json()["bookingType"] == "hotel_room"
+    assert "phoneConfirmationStatus" not in hotel.json()
     assert restaurant.json()["bookingType"] == "restaurant_table"
     assert driving.json()["nextStop"]["name"] == "TEA Mosonmagyarovar"
-    assert returned.json() == {"status": "success", "routeId": "route-123"}
+    assert returned.json() == {
+        "status": "success",
+        "routeId": "route-123",
+        "sessionId": None,
+    }
 
 
 def test_realtime_day6_tools_require_exact_confirmation() -> None:

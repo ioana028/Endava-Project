@@ -4,6 +4,13 @@
  */
 
 export type RoutePriority = 'FASTEST' | 'CHEAPEST' | 'SCENIC' | 'BALANCED';
+export type RouteSessionStatus =
+  | 'ROUTE_READY'
+  | 'CHARGING_OPTIONS_READY'
+  | 'CHARGING_CONFIRMED'
+  | 'REROUTING'
+  | 'DRIVING'
+  | 'ERROR';
 
 export type StopCategory =
   | 'charging'
@@ -51,7 +58,11 @@ export interface StopPinpoint {
   amenities?: string[];
   distanceMeters?: number;
   detourMinutes: number;
+  routeOffsetKm?: number;
+  estimatedDrivingDetourMinutes?: number;
   chargingDurationMinutes?: number;
+  connectorTypes?: string[];
+  availability?: boolean | null;
   mandatory?: boolean;
   partner?: {
     id: string;
@@ -70,7 +81,7 @@ export interface PartnerFact {
   brand: string;
   benefit?: string | null;
   benefitScope?: string | null;
-  benefitSource: 'fixture' | 'configured' | 'provider';
+  benefitSource?: 'fixture' | 'configured' | 'provider' | null;
   verified: boolean;
 }
 
@@ -99,6 +110,12 @@ export interface ChargingPlan {
   complete: boolean;
   totalChargingMinutes: number;
   confirmed: boolean;
+}
+
+export interface ChargingOption {
+  optionNumber: number;
+  stop: StopPinpoint;
+  status: 'suggested' | 'selected' | 'validated' | 'confirmed';
 }
 
 export interface RouteSessionFacts {
@@ -136,8 +153,12 @@ export interface RouteRequirement {
 }
 
 export interface RouteResponse {
+  sessionId?: string | null;
+  routeStatus?: RouteSessionStatus;
   origin: string;
+  originCoordinates?: Coordinates | null;
   destination: string;
+  countries: string[];
   stats: TripStats;
   geometry: [number, number][];    // Full route polyline coordinates [[lng, lat], ...]
   stops: StopPinpoint[];
@@ -147,6 +168,7 @@ export interface RouteResponse {
   borderCrossings: BorderCrossing[];
   routeRequirements: RouteRequirement[];
   opportunities?: RouteOpportunity[];
+  chargingOptions: ChargingOption[];
   chargingPlan?: ChargingPlan | null;
   sessionFacts?: RouteSessionFacts | null;
   telemetry?: TelemetryNarrationFacts | null;
@@ -170,6 +192,7 @@ export interface StopAmenitiesResponse {
 
 export interface ConfirmChargingStopResponse extends StopAmenitiesResponse {
   route: RouteResponse;
+  amenitiesAvailable?: boolean;
   chargingPlan?: ChargingPlan | null;
   sessionFacts?: RouteSessionFacts | null;
 }
@@ -182,11 +205,11 @@ export interface PurchaseVignetteRequest {
 
 export interface PurchaseVignetteResponse {
   status: 'completed' | 'duplicate';
+  sessionId?: string | null;
   transactionId: string;
   routeId: string;
   requirementId: string;
   walletStatus: 'ready' | 'processing' | 'completed' | 'declined' | 'duplicate';
-  phoneConfirmationStatus: 'pending' | 'sent' | 'failed';
   amountEur: number;
   currency: 'EUR';
   sessionFacts?: RouteSessionFacts | null;
@@ -206,7 +229,8 @@ export interface BookingRequest {
 }
 
 export interface BookingResponse {
-  status: 'completed' | 'duplicate';
+  status: 'completed' | 'duplicate' | 'pending' | 'failed';
+  sessionId?: string | null;
   bookingId: string;
   resultId: string;
   routeId: string;
@@ -215,11 +239,11 @@ export interface BookingResponse {
   date: string;
   time?: string | null;
   walletStatus: 'ready' | 'processing' | 'completed' | 'declined' | 'duplicate';
-  phoneConfirmationStatus: 'pending' | 'sent' | 'failed';
 }
 
 export interface StartDrivingResponse {
   status: 'active';
+  sessionId?: string | null;
   routeId: string;
   remainingDistanceKm: number;
   remainingDurationMinutes: number;
@@ -230,6 +254,7 @@ export interface StartDrivingResponse {
 
 export interface ReturnToMainRouteResponse {
   status: 'success';
+  sessionId?: string | null;
   routeId: string;
 }
 
@@ -255,6 +280,22 @@ export interface VehicleTelemetry {
   estimatedRangeKm: number;
   maxChargedRangeKm: number;
   consumptionRateKwh: number;
+  connectorTypes: string[];
+  maxChargingPowerKw: number;
+  batteryCapacityKwh: number;
   tyres: 'SUMMER' | 'WINTER' | 'ALL_SEASON';
   odometerKm: number;
+}
+
+export interface VehicleContext {
+  currentLocation: string;
+  currentLocationCoordinates?: Coordinates | null;
+  vehicleModel: string;
+  vehicleId: string;
+  batteryPercent: number;
+  currentRangeKm: number;
+  maxRangeKm: number;
+  consumptionRateKwh: number;
+  connectorTypes: string[];
+  maxChargingPowerKw: number;
 }

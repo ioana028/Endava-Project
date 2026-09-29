@@ -24,6 +24,15 @@ class RoutePriority(StrEnum):
     BALANCED = "BALANCED"
 
 
+class RouteSessionStatus(StrEnum):
+    ROUTE_READY = "ROUTE_READY"
+    CHARGING_OPTIONS_READY = "CHARGING_OPTIONS_READY"
+    CHARGING_CONFIRMED = "CHARGING_CONFIRMED"
+    REROUTING = "REROUTING"
+    DRIVING = "DRIVING"
+    ERROR = "ERROR"
+
+
 class AssistantIntent(ContractModel):
     destination: str = Field(min_length=1)
     priority: RoutePriority
@@ -52,7 +61,11 @@ class StopPinpoint(ContractModel):
     source: str | None = None
     amenities: tuple[str, ...] = ()
     charging_power_kw: float | None = Field(default=None, ge=0)
+    connector_types: tuple[str, ...] = ()
+    availability: bool | None = None
     detour_minutes: float = Field(ge=0, default=0)
+    route_offset_km: float | None = Field(default=None, ge=0)
+    estimated_driving_detour_minutes: float | None = Field(default=None, ge=0)
     distance_meters: float | None = Field(default=None, ge=0)
     charging_duration_minutes: float = Field(ge=0, default=0)
     mandatory: bool = False
@@ -75,7 +88,7 @@ class PartnerFact(ContractModel):
     brand: str
     benefit: str | None = None
     benefit_scope: str | None = None
-    benefit_source: Literal["fixture", "configured", "provider"]
+    benefit_source: Literal["fixture", "configured", "provider"] | None = None
     verified: bool
 
 
@@ -96,6 +109,12 @@ class ChargingPlan(ContractModel):
     complete: bool = False
     total_charging_minutes: float = Field(ge=0, default=0)
     confirmed: bool = False
+
+
+class ChargingOption(ContractModel):
+    option_number: int = Field(ge=1, le=2)
+    stop: StopPinpoint
+    status: Literal["suggested", "selected", "validated", "confirmed"] = "suggested"
 
 
 class BorderCrossing(ContractModel):
@@ -141,8 +160,12 @@ class RouteAlert(ContractModel):
 
 
 class RouteResponse(ContractModel):
+    session_id: str | None = None
+    route_status: RouteSessionStatus = RouteSessionStatus.ROUTE_READY
     origin: str = Field(min_length=1)
+    origin_coordinates: Coordinates | None = None
     destination: str = Field(min_length=1)
+    countries: list[str] = Field(default_factory=list)
     stats: TripStats
     geometry: list[tuple[float, float]]
     stops: list[StopPinpoint] = Field(default_factory=list)
@@ -152,6 +175,7 @@ class RouteResponse(ContractModel):
     charging_stop: StopPinpoint | None = None
     charging_required: bool = False
     opportunities: list[RouteOpportunity] = Field(default_factory=list)
+    charging_options: list[ChargingOption] = Field(default_factory=list, max_length=2)
     charging_plan: ChargingPlan | None = None
     session_facts: RouteSessionFacts | None = None
     telemetry: TelemetryNarrationFacts | None = None
@@ -164,6 +188,7 @@ class RealtimeToolRouteRequest(ContractModel):
 
 class RealtimeToolRouteResponse(ContractModel):
     route: RouteResponse
+    session_id: str | None = None
     route_id: str | None = None
     search_id: str | None = None
 
@@ -177,6 +202,7 @@ class RealtimeToolSearchRoutePoiRequest(ContractModel):
 class RealtimeToolSearchRoutePoiResponse(ContractModel):
     results: list[StopPinpoint] = Field(default_factory=list)
     opportunities: list[RouteOpportunity] = Field(default_factory=list)
+    session_id: str | None = None
     route_id: str | None = None
     search_id: str | None = None
 
@@ -199,7 +225,7 @@ class RealtimeToolSearchStopAmenitiesResponse(ContractModel):
 
 class RealtimeToolConfirmChargingRequest(ContractModel):
     route_id: str = Field(min_length=1, max_length=200)
-    stop_id: str | None = Field(default=None, max_length=200)
+    stop_id: str | None = Field(default=None, min_length=1, max_length=200)
     confirmation: Literal["confirmed"]
 
 
@@ -207,8 +233,10 @@ class RealtimeToolConfirmChargingResponse(ContractModel):
     route: RouteResponse
     selected_stop_name: str
     results: list[StopPinpoint] = Field(default_factory=list, max_length=4)
+    amenities_available: bool = True
     charging_plan: ChargingPlan | None = None
     session_facts: RouteSessionFacts | None = None
+    session_id: str | None = None
     radius_meters: int = Field(default=500, ge=500, le=500)
     route_id: str
     search_id: str | None = None
@@ -225,6 +253,7 @@ class RealtimeToolRerouteRequest(ContractModel):
 
 class RealtimeToolRerouteResponse(ContractModel):
     route: RouteResponse
+    session_id: str | None = None
     route_id: str | None = None
 
 
@@ -236,11 +265,11 @@ class RealtimeToolPurchaseVignetteRequest(ContractModel):
 
 class RealtimeToolPurchaseVignetteResponse(ContractModel):
     status: Literal["completed", "duplicate"]
+    session_id: str | None = None
     transaction_id: str = Field(min_length=1)
     route_id: str
     requirement_id: str
     wallet_status: Literal["ready", "processing", "completed", "declined", "duplicate"]
-    phone_confirmation_status: Literal["pending", "sent", "failed"]
     amount_eur: float = Field(ge=0)
     currency: Literal["EUR"]
     session_facts: RouteSessionFacts | None = None
@@ -258,7 +287,8 @@ class RealtimeToolBookingRequest(ContractModel):
 
 
 class RealtimeToolBookingResponse(ContractModel):
-    status: Literal["completed", "duplicate"]
+    status: Literal["completed", "duplicate", "pending", "failed"]
+    session_id: str | None = None
     booking_id: str = Field(min_length=1)
     result_id: str
     route_id: str
@@ -267,7 +297,6 @@ class RealtimeToolBookingResponse(ContractModel):
     date: str
     time: str | None = None
     wallet_status: Literal["ready", "processing", "completed", "declined", "duplicate"]
-    phone_confirmation_status: Literal["pending", "sent", "failed"]
 
 
 class RealtimeToolStartDrivingRequest(ContractModel):
@@ -286,6 +315,7 @@ class DrivingNextStop(ContractModel):
 
 class RealtimeToolStartDrivingResponse(ContractModel):
     status: Literal["active"]
+    session_id: str | None = None
     route_id: str
     remaining_distance_km: float = Field(ge=0)
     remaining_duration_minutes: float = Field(ge=0)
@@ -300,6 +330,7 @@ class RealtimeToolReturnToMainRouteRequest(ContractModel):
 
 class RealtimeToolReturnToMainRouteResponse(ContractModel):
     status: Literal["success"]
+    session_id: str | None = None
     route_id: str
 
 
@@ -334,5 +365,23 @@ class VehicleTelemetryResponse(ContractModel):
     estimated_range_km: float = Field(ge=0)
     max_charged_range_km: float = Field(ge=0)
     consumption_rate_kwh: float = Field(gt=0)
+    connector_types: tuple[str, ...] = ("CCS",)
+    max_charging_power_kw: float = Field(default=150, ge=0)
+    battery_capacity_kwh: float = Field(default=35.5, gt=0)
     tyres: Literal["SUMMER", "WINTER", "ALL_SEASON"]
     odometer_km: float = Field(ge=0)
+
+
+class VehicleContextResponse(ContractModel):
+    """Authoritative, non-Google facts for direct driver questions."""
+
+    current_location: str = Field(min_length=1)
+    current_location_coordinates: Coordinates | None = None
+    vehicle_model: str = Field(min_length=1)
+    vehicle_id: str = Field(min_length=1)
+    battery_percent: float = Field(ge=0, le=100)
+    current_range_km: float = Field(ge=0)
+    max_range_km: float = Field(ge=0)
+    consumption_rate_kwh: float = Field(gt=0)
+    connector_types: tuple[str, ...] = ()
+    max_charging_power_kw: float = Field(ge=0)

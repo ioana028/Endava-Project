@@ -6,12 +6,16 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ..core.errors import APIError
-from ..integrations.weather.provider import summarize_route_weather
+from ..integrations.weather.provider import (
+    summarize_route_weather,
+    summarize_route_weather_advisories,
+)
 from ..models.contracts import (
     AssistantIntent,
     RealtimeSessionResponse,
     RealtimeToolRouteRequest,
     RealtimeToolRouteResponse,
+    VehicleContextResponse,
     RealtimeToolBookingRequest,
     RealtimeToolBookingResponse,
     RealtimeToolConfirmChargingRequest,
@@ -67,7 +71,14 @@ def _validate_response(model: type[Any], result: Any) -> Any:
     if is_dataclass(result):
         result = asdict(result)
     if isinstance(result, dict) and "booking_id" in result and "status" not in result:
-        result["status"] = "completed"
+        wallet_status = result.get("wallet_status")
+        result["status"] = (
+            "duplicate"
+            if wallet_status == "duplicate"
+            else "completed"
+            if wallet_status == "completed"
+            else "failed"
+        )
     if isinstance(result, dict):
         result = {
             field_name: result[field_name]
@@ -99,11 +110,19 @@ async def _attach_route_facts(request: Request, route: Any) -> Any:
             location=route.destination,
         )
         weather_summary = summarize_route_weather(snapshot)
-        weather_alerts = {
-            (weather_summary.location_name, weather_summary.message): weather_summary
-        } if weather_summary is not None else {}
+        weather_advisories = summarize_route_weather_advisories(snapshot)
+        alerts = [*route.alerts]
+        alerts.extend(
+            alert
+            for alert in (weather_summary, weather_advisories)
+            if alert is not None
+        )
+        unique_alerts = {
+            (alert.type, alert.location_name, alert.severity, alert.message): alert
+            for alert in alerts
+        }
         updated_route = updated_route.model_copy(
-            update={"alerts": [*route.alerts, *weather_alerts.values()]}
+            update={"alerts": list(unique_alerts.values())}
         )
     return updated_route
 
@@ -121,6 +140,38 @@ async def realtime_session(request: Request) -> RealtimeSessionResponse:
 
 
 @router.post(
+    "/realtime/tools/vehicle-context",
+    response_model=VehicleContextResponse,
+)
+async def realtime_vehicle_context(request: Request) -> VehicleContextResponse:
+    """Return cached vehicle/location facts without any provider request."""
+    fixtures = getattr(request.app.state, "fixtures", None)
+    if fixtures is None:
+        fixtures = request.app.state.fixture_repository.load()
+    telemetry = fixtures.telemetry
+    route_service = request.app.state.route_service
+    vehicle_model = (
+        "Honda E"
+        if telemetry.vehicle_id.casefold().startswith("honda-e")
+        else telemetry.vehicle_id
+    )
+    return VehicleContextResponse(
+        current_location=getattr(route_service, "current_location_name", "Vienna, Austria"),
+        current_location_coordinates=getattr(
+            route_service, "current_location_coordinates", None
+        ),
+        vehicle_model=vehicle_model,
+        vehicle_id=telemetry.vehicle_id,
+        battery_percent=telemetry.battery_percent,
+        current_range_km=telemetry.estimated_range_km,
+        max_range_km=telemetry.max_charged_range_km,
+        consumption_rate_kwh=telemetry.consumption_rate_kwh,
+        connector_types=telemetry.connector_types,
+        max_charging_power_kw=telemetry.max_charging_power_kw,
+    )
+
+
+@router.post(
     "/realtime/tools/plan-route",
     response_model=RealtimeToolRouteResponse,
 )
@@ -134,6 +185,7 @@ async def realtime_plan_route(
     route = await _attach_route_facts(request, route)
     return RealtimeToolRouteResponse(
         route=route,
+        session_id=_active_context_id(request.app.state.route_service, "session_id"),
         route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
         search_id=_active_context_id(request.app.state.route_service, "active_search_id"),
     )
@@ -161,6 +213,7 @@ async def realtime_search_route_poi(
     return RealtimeToolSearchRoutePoiResponse(
         results=results,
         opportunities=opportunities,
+        session_id=_active_context_id(request.app.state.route_service, "session_id"),
         route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
         search_id=_active_context_id(request.app.state.route_service, "active_search_id"),
     )
@@ -227,8 +280,10 @@ async def realtime_confirm_charging_stop(
         route=await _attach_route_facts(request, result["route"]),
         selected_stop_name=result["selected_stop_name"],
         results=result.get("results", []),
+        amenities_available=result.get("amenities_available", True),
         charging_plan=result.get("charging_plan"),
         session_facts=result.get("session_facts"),
+        session_id=_active_context_id(request.app.state.route_service, "session_id"),
         radius_meters=result.get("radius_meters", 500),
         route_id=result["route_id"],
         search_id=result.get("search_id"),
@@ -260,6 +315,7 @@ async def realtime_reroute_through_poi(
     )
     return RealtimeToolRerouteResponse(
         route=await _attach_route_facts(request, route),
+        session_id=_active_context_id(request.app.state.route_service, "session_id"),
         route_id=_active_context_id(request.app.state.route_service, "active_route_id"),
     )
 
@@ -278,7 +334,10 @@ async def realtime_purchase_vignette(
         "purchase_vignette",
         **payload.model_dump(),
     )
-    return _validate_response(RealtimeToolPurchaseVignetteResponse, result)
+    response = _validate_response(RealtimeToolPurchaseVignetteResponse, result)
+    return response.model_copy(
+        update={"session_id": _active_context_id(request.app.state.route_service, "session_id")}
+    )
 
 
 @router.post(
@@ -297,7 +356,10 @@ async def realtime_book_hotel_room(
         "book_hotel_room",
         **payload.model_dump(),
     )
-    return _validate_response(RealtimeToolBookingResponse, result)
+    response = _validate_response(RealtimeToolBookingResponse, result)
+    return response.model_copy(
+        update={"session_id": _active_context_id(request.app.state.route_service, "session_id")}
+    )
 
 
 @router.post(
@@ -320,7 +382,10 @@ async def realtime_book_restaurant_table(
         "book_restaurant_table",
         **payload.model_dump(),
     )
-    return _validate_response(RealtimeToolBookingResponse, result)
+    response = _validate_response(RealtimeToolBookingResponse, result)
+    return response.model_copy(
+        update={"session_id": _active_context_id(request.app.state.route_service, "session_id")}
+    )
 
 
 @router.post(
@@ -337,7 +402,10 @@ async def realtime_start_driving(
         "start_driving",
         **payload.model_dump(),
     )
-    return _validate_response(RealtimeToolStartDrivingResponse, result)
+    response = _validate_response(RealtimeToolStartDrivingResponse, result)
+    return response.model_copy(
+        update={"session_id": _active_context_id(request.app.state.route_service, "session_id")}
+    )
 
 
 @router.post(
@@ -354,4 +422,7 @@ async def realtime_return_to_main_route(
         "return_to_main_route",
         **payload.model_dump(),
     )
-    return _validate_response(RealtimeToolReturnToMainRouteResponse, result)
+    response = _validate_response(RealtimeToolReturnToMainRouteResponse, result)
+    return response.model_copy(
+        update={"session_id": _active_context_id(request.app.state.route_service, "session_id")}
+    )

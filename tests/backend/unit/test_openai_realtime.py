@@ -48,8 +48,10 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
     assert kwargs["session"]["model"] == "gpt-realtime-2.1-mini"
     assert kwargs["session"]["output_modalities"] == ["audio"]
     assert kwargs["session"]["audio"]["output"]["voice"] == "marin"
+    assert "turn_detection" not in kwargs["session"]
     tools = kwargs["session"]["tools"]
     assert [tool["name"] for tool in tools] == [
+        "get_vehicle_context",
         "plan_route",
         "search_route_poi",
         "reroute_through_poi",
@@ -62,16 +64,18 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "return_to_main_route",
     ]
     instructions = kwargs["session"]["instructions"]
-    assert "Should I find the required charging stop?" in instructions
-    assert "Do not" in instructions
-    assert "at most two short sentences" in instructions
+    normalized_instructions = " ".join(instructions.split())
+    assert "At most one brief, noncommittal acknowledgement" in normalized_instructions
+    assert "do not narrate progress" in normalized_instructions
     assert "vehicleAlerts" not in instructions
     assert "confirm_charging_stop" in instructions
-    assert "Searching returns suggestions only and does not change the route" in instructions
+    assert "Search results are suggestions, not route changes" in normalized_instructions
     assert "search_stop_amenities" in instructions
-    assert "500 metre stop radius" in instructions
+    assert "no more than two hotels or restaurants" in normalized_instructions
+    assert "speech-only" in instructions
+    assert "A direct request to add a charger or charging stop is sufficient consent" in normalized_instructions
 
-    poi_tool = tools[1]
+    poi_tool = tools[2]
     assert poi_tool["parameters"]["required"] == ["category", "location"]
     assert poi_tool["parameters"]["properties"]["category"]["enum"] == [
         "hotel",
@@ -90,7 +94,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "destination",
     ]
 
-    reroute_tool = tools[2]
+    reroute_tool = tools[3]
     assert reroute_tool["parameters"]["required"] == [
         "poi_id",
         "route_id",
@@ -101,7 +105,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "confirmed"
     ]
 
-    amenities_tool = tools[3]
+    amenities_tool = tools[4]
     assert amenities_tool["parameters"]["required"] == [
         "stopId",
         "routeId",
@@ -118,16 +122,18 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "service",
     ]
 
-    confirm_tool = tools[4]
+    confirm_tool = tools[5]
     assert confirm_tool["parameters"]["required"] == [
         "routeId",
         "confirmation",
     ]
+    assert "stopId" not in confirm_tool["parameters"]["properties"]
     assert confirm_tool["parameters"]["properties"]["confirmation"]["enum"] == [
         "confirmed"
     ]
+    assert "do not ask for another confirmation" in confirm_tool["description"]
 
-    purchase_tool = tools[5]
+    purchase_tool = tools[6]
     assert purchase_tool["parameters"]["required"] == [
         "routeId",
         "requirementId",
@@ -137,7 +143,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "confirmed"
     ]
 
-    hotel_tool = tools[6]
+    hotel_tool = tools[7]
     assert hotel_tool["parameters"]["properties"]["bookingType"]["enum"] == [
         "hotel_room"
     ]
@@ -145,7 +151,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "confirmed"
     ]
 
-    restaurant_tool = tools[7]
+    restaurant_tool = tools[8]
     assert restaurant_tool["parameters"]["properties"]["bookingType"]["enum"] == [
         "restaurant_table"
     ]
@@ -153,14 +159,16 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
         "confirmed"
     ]
 
-    driving_tool = tools[8]
+    driving_tool = tools[9]
     assert driving_tool["parameters"]["required"] == ["routeId", "confirmation"]
     assert driving_tool["parameters"]["properties"]["confirmation"]["enum"] == [
         "confirmed"
     ]
-    assert tools[9]["parameters"]["required"] == ["routeId"]
-    assert "in-car wallet" in instructions
-    assert "Selecting, naming, or praising a result never books it" in instructions
+    assert tools[10]["parameters"]["required"] == ["routeId"]
+    assert "For a returned vignette requirement" in instructions
+    assert "naming or selecting one does not book it" in normalized_instructions
+    assert "phone app" in normalized_instructions
+    assert "complete ordered charging plan as one action" in normalized_instructions
 
 
 def test_realtime_provider_rejects_missing_server_key() -> None:

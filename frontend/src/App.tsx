@@ -78,9 +78,16 @@ function App() {
           <RouteMap
             route={route}
             poiResults={assistant.poiResults}
-            amenityResults={assistant.amenityResults}
-            amenityFocusName={assistant.amenitySearchContext?.selectedStopName}
+            amenityResults={
+              assistant.amenityMarkersVisible ? assistant.amenityResults : []
+            }
+            amenityFocusName={
+              assistant.amenityMarkersVisible
+                ? assistant.amenitySearchContext?.selectedStopName
+                : undefined
+            }
             focusStop={assistant.chargingStopFocus}
+            focusDestination={assistant.destinationFocus}
             drivingActive={assistant.driving?.active ?? false}
             showChargingStop={assistant.chargingStopConfirmed || Boolean(assistant.driving?.active)}
             routePriority={assistant.response?.intent.priority}
@@ -104,8 +111,18 @@ function App() {
                 </div>
                 <span className="result-count">within {assistant.amenitySearchContext.radiusMeters} m</span>
               </div>
-              {assistant.amenitySearchState === 'LOADING' && <p>Searching nearby places...</p>}
-              {assistant.amenitySearchState === 'EMPTY' && <p>No returned amenities in this radius.</p>}
+              {assistant.amenitySearchState === 'LOADING' && (
+                <p>Searching nearby places...</p>
+              )}
+              {assistant.amenitySearchState === 'EMPTY' && (
+                <p>No nearby amenities were found in this radius.</p>
+              )}
+              {assistant.amenitySearchState === 'FAILURE' && (
+                <p>Nearby amenities could not be loaded.</p>
+              )}
+              {assistant.amenitySearchState === 'STALE' && (
+                <p>This charging stop is no longer available on the current route.</p>
+              )}
               {assistant.amenitySearchState === 'SUCCESS' && (
                 <ul>
                   {assistant.amenityResults.map((amenity) => (
@@ -146,8 +163,8 @@ function App() {
                 <span className="confirmation-check" aria-hidden="true">✓</span>
                 <p className="eyebrow">Complete</p>
                 <h1>{assistant.successFeedback.label}</h1>
-                <strong>Confirmation ready</strong>
-                <span>Details sent to your phone app</span>
+                <strong>Confirmation recorded</strong>
+                <span>Available in this trip session</span>
                 {assistant.successFeedback.action === 'purchase' && assistant.purchase && (
                   <span>Amount: {assistant.purchase.amountEur.toFixed(2)} EUR</span>
                 )}
@@ -186,7 +203,7 @@ function App() {
                   transform: `translateX(-${(visibleBatteryCard * 100) / (suggestions.length + 1)}%)`,
                 }}
               >
-                <article className="battery-carousel-card" style={{ flexBasis: `${100 / (suggestions.length + 1)}%` }} aria-label="Battery telemetry">
+                <article className="battery-carousel-card" style={{ flexBasis: `${100 / (suggestions.length + 1)}%` }} aria-label="Battery telemetry" aria-hidden={visibleBatteryCard !== 0}>
                   <div className="card-heading"><span>Battery</span><span>Range</span></div>
                   <div className="vehicle-values"><strong>{telemetry ? `${Math.round(telemetry.batteryPercent)}%` : '--'}</strong><strong>{telemetry ? `${Math.round(telemetry.estimatedRangeKm)} km` : '--'}</strong></div>
                   <div className="battery-track" aria-label={`${Math.round(telemetry?.batteryPercent ?? 0)} percent battery`}><span style={{ width: `${telemetry?.batteryPercent ?? 0}%` }} /></div>
@@ -195,17 +212,25 @@ function App() {
                 {suggestions.map((place) => (
                   <article className="battery-carousel-card place-detail-card" style={{ flexBasis: `${100 / (suggestions.length + 1)}%` }} key={place.id} aria-label={`${place.name} suggested stop`} aria-hidden={place.id !== suggestion?.id}>
                     <span className="place-category">{place.category}</span>
-                    <strong>{place.name}</strong>
-                    <span>{place.tag}</span>
-                    {typeof place.rating === 'number' && <span className="place-rating" aria-label={`${place.rating.toFixed(1)} out of 5 stars`}><span aria-hidden="true">{'★'.repeat(Math.round(place.rating))}{'☆'.repeat(5 - Math.round(place.rating))}</span> {place.rating.toFixed(1)} · {place.userReviewCount ?? 0} reviews</span>}
-                    {place.details && <p>{place.details}</p>}
+                    <h3 title={place.name}>{place.name}</h3>
+                    {typeof place.rating === 'number' ? (
+                      <div className="place-review-row" aria-label={`${place.rating.toFixed(1)} out of 5 stars${typeof place.userReviewCount === 'number' ? ` from ${place.userReviewCount} reviews` : ''}`}>
+                        <span className="place-review-star" aria-hidden="true">★</span>
+                        <strong>{place.rating.toFixed(1)}</strong>
+                        {typeof place.userReviewCount === 'number' && (
+                          <span>{place.userReviewCount.toLocaleString()} reviews</span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="place-review-unavailable">Rating unavailable</span>
+                    )}
                   </article>
                 ))}
               </div>
             </div>
             <div className="battery-carousel-controls">
               <button type="button" aria-label="Previous battery or suggested stop card" disabled={visibleBatteryCard === 0} onClick={() => moveBatteryCard(-1)}>‹</button>
-              <span>Swipe for route suggestions</span>
+              <span>Swipe to explore</span>
               <button type="button" aria-label="Next battery or suggested stop card" disabled={visibleBatteryCard === suggestions.length} onClick={() => moveBatteryCard(1)}>›</button>
             </div>
           </section>

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import logging
 import math
+import hashlib
 from time import monotonic
 
 import httpx
 
 from ...models.contracts import StopPinpoint
+from ...core.async_cache import AsyncTTLCache
 from ...services.trip.deterministic import distance_to_route_km, route_progress_km
 from ...services.trip.ports import ChargingCandidate, JourneyProviderError, ProviderRoute
 
@@ -44,7 +46,8 @@ class GooglePlacesProvider:
         self._search_radius_meters = float(search_radius_meters)
         self._nearby_search_radius_meters = float(nearby_search_radius_meters)
         self._sample_interval_km = sample_interval_km
-        self._max_search_points = max(2, max_search_points)
+        self._max_search_points = min(4, max(2, max_search_points))
+        self._search_cache = AsyncTTLCache[tuple[object, ...], tuple[StopPinpoint, ...]](300, 256)
 
     async def search(
         self,
@@ -54,6 +57,43 @@ class GooglePlacesProvider:
         route: ProviderRoute | tuple[tuple[float, float], ...] | None = None,
         near_coords: tuple[float, float] | None = None,
     ) -> list[StopPinpoint]:
+        key = (
+            self._normalize_category(category),
+            (location or "").strip().casefold(),
+            (preference or "").strip().casefold(),
+            near_coords,
+            self._geometry_key(route),
+        )
+        results = await self._search_cache.get_or_create(
+            key,
+            lambda: self._search_uncached(category, location, preference, route, near_coords),
+        )
+        return list(results)
+
+    async def search_amenities(
+        self,
+        categories: tuple[str, ...],
+        location: str | None = None,
+        route: ProviderRoute | None = None,
+        near_coords: tuple[float, float] | None = None,
+    ) -> list[StopPinpoint]:
+        preference = ", ".join(dict.fromkeys(categories))
+        return await self.search(
+            "food",
+            location=location,
+            preference=f"{preference} amenities",
+            route=route,
+            near_coords=near_coords,
+        )
+
+    async def _search_uncached(
+        self,
+        category: str,
+        location: str | None = None,
+        preference: str | None = None,
+        route: ProviderRoute | tuple[tuple[float, float], ...] | None = None,
+        near_coords: tuple[float, float] | None = None,
+    ) -> tuple[StopPinpoint, ...]:
         normalized = self._normalize_category(category)
         if not self._api_key:
             raise JourneyProviderError("Google Places is not configured")
@@ -73,7 +113,7 @@ class GooglePlacesProvider:
                 "tourist attractions",
                 "things to see and points of interest",
             )
-            if search_along_route
+            if normalized == "attraction" and search_along_route
             else (query,)
         )
         radius = (
@@ -102,7 +142,15 @@ class GooglePlacesProvider:
                         json={
                             "textQuery": query_text,
                             "languageCode": "en",
-                            "maxResultCount": 20 if location == "stop" or normalized == "attraction" else 10,
+                            "maxResultCount": (
+                                20
+                                if location == "stop"
+                                else 5
+                                if location == "route-target" and normalized == "charging"
+                                else 20
+                                if normalized == "attraction"
+                                else 10
+                            ),
                             **({
                                 "searchAlongRouteParameters": {
                                     "polyline": {
@@ -122,11 +170,7 @@ class GooglePlacesProvider:
                         },
                         headers={
                             "X-Goog-Api-Key": self._api_key,
-                            "X-Goog-FieldMask": (
-                                "places.id,places.displayName,places.location,places.types,"
-                                "places.rating,places.userRatingCount,places.editorialSummary,places.formattedAddress,places.photos,"
-                                "places.evChargeOptions"
-                            ),
+                            "X-Goog-FieldMask": self._field_mask(normalized),
                         },
                     )
                         response.raise_for_status()
@@ -160,16 +204,55 @@ class GooglePlacesProvider:
         )
 
         result_limit = 50 if normalized == "charging" else 10
-        return sorted(
+        return tuple(sorted(
             results.values(),
             key=lambda stop: (stop.detour_minutes, -(stop.rating or 0), stop.name),
-        )[:result_limit]
+        )[:result_limit])
+
+    @staticmethod
+    def _geometry_key(
+        route: ProviderRoute | tuple[tuple[float, float], ...] | None,
+    ) -> str | None:
+        geometry = GooglePlacesProvider._route_geometry(route)
+        if geometry is None:
+            return None
+        payload = repr(tuple((round(lng, 5), round(lat, 5)) for lng, lat in geometry))
+        return hashlib.sha256(payload.encode("ascii")).hexdigest()
+
+    @staticmethod
+    def _field_mask(category: str) -> str:
+        fields = ["places.id", "places.displayName", "places.location", "places.types"]
+        if category == "charging":
+            fields.append("places.evChargeOptions")
+        elif category == "attraction":
+            fields.extend(("places.rating", "places.userRatingCount", "places.formattedAddress"))
+        else:
+            fields.extend(("places.rating", "places.userRatingCount", "places.formattedAddress"))
+        return ",".join(fields)
 
     async def search_charging(
-        self, route: ProviderRoute, max_distance_km: float
+        self,
+        route: ProviderRoute,
+        max_distance_km: float,
+        target_progress_km: tuple[float, ...] = (),
     ) -> tuple[ChargingCandidate, ...]:
         started_at = monotonic()
-        stops = await self.search("charging", location="route", route=route)
+        if target_progress_km:
+            stops_by_id: dict[str, StopPinpoint] = {}
+            for progress_km in target_progress_km:
+                target_coords = self._point_at_progress_km(
+                    tuple(route.geometry), progress_km
+                )
+                for stop in await self.search(
+                    "charging",
+                    location="route-target",
+                    route=route,
+                    near_coords=target_coords,
+                ):
+                    stops_by_id[stop.id] = stop
+            stops = tuple(stops_by_id.values())
+        else:
+            stops = await self.search("charging", location="route", route=route)
         route_distance_km = route.distance_meters / 1000
         candidates = tuple(
             ChargingCandidate(
@@ -196,6 +279,23 @@ class GooglePlacesProvider:
             round(route.distance_meters / 1000, 2),
         )
         return candidates
+
+    def _point_at_progress_km(
+        self,
+        geometry: tuple[tuple[float, float], ...],
+        progress_km: float,
+    ) -> tuple[float, float]:
+        remaining = max(0.0, progress_km)
+        for start, end in zip(geometry, geometry[1:]):
+            segment_km = self._haversine_km(start, end)
+            if remaining <= segment_km or segment_km == 0:
+                fraction = 0.0 if segment_km == 0 else remaining / segment_km
+                return (
+                    start[0] + (end[0] - start[0]) * fraction,
+                    start[1] + (end[1] - start[1]) * fraction,
+                )
+            remaining -= segment_km
+        return geometry[-1]
 
     def _to_stop(
         self,
@@ -224,8 +324,13 @@ class GooglePlacesProvider:
         if route_geometry is None:
             return None
         route_distance_km = self._route_distance_km(coords, route_geometry)
-        if location == "stop" and near_coords is not None:
-            if self._distance_to_point_km(coords, near_coords) > self._nearby_search_radius_meters / 1000:
+        if location in {"stop", "route-target"} and near_coords is not None:
+            radius_km = (
+                self._nearby_search_radius_meters / 1000
+                if location == "stop"
+                else self._search_radius_meters / 1000
+            )
+            if self._distance_to_point_km(coords, near_coords) > radius_km:
                 return None
         else:
             corridor_radius_km = max(
@@ -270,7 +375,9 @@ class GooglePlacesProvider:
             source="provider",
             amenities=factual_types,
             charging_power_kw=charging_power_kw,
-            detour_minutes=round(route_distance_km, 1),
+            connector_types=self._charging_connector_types(place),
+            availability=self._charging_availability(place),
+            route_offset_km=round(route_distance_km, 1),
         )
 
     @staticmethod
@@ -284,19 +391,39 @@ class GooglePlacesProvider:
         ]
         return max(rates) if rates else None
 
+    @staticmethod
+    def _charging_connector_types(place: dict[str, object]) -> tuple[str, ...]:
+        options = place.get("evChargeOptions") or {}
+        connectors = options.get("connectorAggregation", []) if isinstance(options, dict) else []
+        values = {
+            str(item.get("type", "")).upper()
+            for item in connectors
+            if isinstance(item, dict) and item.get("type")
+        }
+        return tuple(sorted(values))
+
+    @staticmethod
+    def _charging_availability(place: dict[str, object]) -> bool | None:
+        options = place.get("evChargeOptions") or {}
+        if not isinstance(options, dict) or "availability" not in options:
+            return None
+        return str(options["availability"]).casefold() in {"available", "open"}
+
     def _search_points(
         self,
         route: ProviderRoute | tuple[tuple[float, float], ...],
         location: str | None,
         near_coords: tuple[float, float] | None = None,
     ) -> tuple[tuple[float, float], ...]:
-        if location == "stop" and near_coords is not None:
+        if location in {"stop", "route-target"} and near_coords is not None:
             return (near_coords,)
 
         geometry = self._route_geometry(route) or ()
         if location == "destination":
             return (geometry[-1],) if geometry else ()
-        return self._distance_samples(geometry)
+        if geometry:
+            return (geometry[len(geometry) // 2],)
+        return ()
 
     def _distance_samples(
         self, geometry: tuple[tuple[float, float], ...]
