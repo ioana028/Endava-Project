@@ -362,11 +362,18 @@ class RouteService:
     ) -> tuple[list[StopPinpoint], list[RouteOpportunity]]:
         try:
             self._request_budget.consume(
-                provider="places", method="search_charging", reason="charging_discovery"
+                provider="places",
+                method="search_charging",
+                reason="charging_discovery",
             )
+
             candidates = await charging_provider.search_charging(
-                provider_route, charging_search_distance_km
+                provider_route,
+                charging_search_distance_km,
             )
+
+            print("GOOGLE RETURNED:", len(candidates))
+
         except (JourneyProviderError, OSError) as error:
             raise APIError(
                 503,
@@ -376,7 +383,10 @@ class RouteService:
 
         enriched_candidates = tuple(
             candidate.__class__(
-                stop=enrich_partner(candidate.stop, self._fixture_repository.fixtures.partners),
+                stop=enrich_partner(
+                    candidate.stop,
+                    self._fixture_repository.fixtures.partners,
+                ),
                 compatible=candidate.compatible,
                 available=candidate.available,
                 distance_from_route_km=(
@@ -387,42 +397,15 @@ class RouteService:
                         tuple(provider_route.geometry),
                     )
                 ),
-                distance_from_origin_km=(
-                    candidate.distance_from_origin_km
-                    if candidate.distance_from_origin_km is not None
-                    else candidate.distance_from_route_km
-                ),
+                distance_from_origin_km=candidate.distance_from_origin_km,
                 charging_power_kw=candidate.charging_power_kw,
                 charging_duration_minutes=candidate.charging_duration_minutes,
             )
             for candidate in candidates
         )
-        if self._is_google_charging_provider(charging_provider):
-            enriched_candidates = tuple(
-                candidate
-                for candidate in enriched_candidates
-                if candidate.stop.availability is True
-            )
-        vehicle_connectors = {
-            connector.casefold() for connector in self._telemetry.connector_types
-        }
-        enriched_candidates = tuple(
-            candidate
-            for candidate in enriched_candidates
-            if candidate.compatible
-            and candidate.stop.connector_types
-            and bool(
-                vehicle_connectors.intersection(
-                    connector.casefold()
-                    for connector in candidate.stop.connector_types
-                )
-            )
-            or (
-                candidate.compatible
-                and not candidate.stop.connector_types
-                and not self._is_google_charging_provider(charging_provider)
-            )
-        )
+
+        print("ENRICHED:", len(enriched_candidates))
+
         selected_candidates = select_chargers_iteratively(
             enriched_candidates,
             initial_distance_km,
@@ -430,10 +413,20 @@ class RouteService:
             self._safety_buffer_km,
             max_charged_range_km,
         )
+
         if selected_candidates is None:
             if not enriched_candidates:
-                raise APIError(422, "NO_SUITABLE_CHARGER", "No suitable charging stop was found for this route.")
-            raise APIError(422, "NO_SAFE_CHARGING_PLAN", "No safe sequence of compatible charging stops was found for this route.")
+                raise APIError(
+                    422,
+                    "NO_SUITABLE_CHARGER",
+                    "No suitable charging stop was found for this route.",
+                )
+
+            raise APIError(
+                422,
+                "NO_SAFE_CHARGING_PLAN",
+                "No safe sequence of compatible charging stops was found for this route.",
+            )
 
         stops = [
             candidate.stop.model_copy(
@@ -451,8 +444,10 @@ class RouteService:
             )
             for candidate in selected_candidates
         ]
+
         return stops, self._nearby_partner_opportunities(
-            enriched_candidates, selected_candidates
+            enriched_candidates,
+            selected_candidates,
         )
 
     @staticmethod
