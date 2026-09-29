@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import re
+from dataclasses import replace
 from datetime import datetime, timedelta
 import logging
 from time import monotonic
@@ -432,8 +433,25 @@ class RouteService:
                     )
                 ),
                 distance_from_origin_km=candidate.distance_from_origin_km,
-                charging_power_kw=candidate.charging_power_kw,
-                charging_duration_minutes=candidate.charging_duration_minutes,
+                charging_power_kw=min(
+                    candidate.charging_power_kw or DEFAULT_CHARGING_POWER_KW,
+                    self._telemetry.max_charging_power_kw,
+                ),
+                charging_duration_minutes=estimate_charging_duration_minutes(
+                    replace(
+                        candidate,
+                        charging_power_kw=min(
+                            candidate.charging_power_kw or DEFAULT_CHARGING_POWER_KW,
+                            self._telemetry.max_charging_power_kw,
+                        ),
+                    ),
+                    initial_distance_km,
+                    candidate.distance_from_origin_km or 0,
+                    reachable_distance_km,
+                    self._safety_buffer_km,
+                    self._telemetry.consumption_rate_kwh,
+                    max_charged_range_km,
+                ),
             )
             for candidate in candidates
         )
@@ -472,6 +490,7 @@ class RouteService:
                         self._telemetry.estimated_range_km,
                         self._safety_buffer_km,
                         self._telemetry.consumption_rate_kwh,
+                        max_charged_range_km,
                     ),
                 }
             )

@@ -407,6 +407,8 @@ export function useRealtimeAssistant() {
   const streamRef = useRef<MediaStream | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const feedbackAudioRef = useRef<HTMLAudioElement | null>(null)
+  const listeningJinglePlayedRef = useRef(false)
+  const listeningJinglePlaybackRef = useRef<Promise<void> | null>(null)
   const connectionAbortRef = useRef<AbortController | null>(null)
   const toolAbortRef = useRef<AbortController | null>(null)
   const toolCallInFlightRef = useRef(false)
@@ -620,16 +622,13 @@ export function useRealtimeAssistant() {
             ?? result.route.stops.find((stop) => stop.category === 'charging')
             ?? null,
         )
-        setAmenityResults(result.results)
+        // Nearby places are spoken after confirmation; keep them off the map
+        // so charger confirmation does not look like an amenity search.
+        setAmenityResults([])
         setPoiResults([])
         setSelectedPoi(null)
-        setAmenitySearchContext({
-          selectedStopName: result.selectedStopName,
-          radiusMeters: result.radiusMeters,
-          routeId: result.routeId,
-          searchId: result.searchId ?? null,
-        })
-        setAmenitySearchState(result.results.length ? 'SUCCESS' : 'EMPTY')
+        setAmenitySearchContext(null)
+        setAmenitySearchState('IDLE')
         setError(null)
         sendEvent({
           type: 'conversation.item.create',
@@ -679,7 +678,7 @@ export function useRealtimeAssistant() {
           type: 'response.create',
           response: {
             instructions:
-              'Say the station name once, then its returned charging time and any route time added. If it has a verified partner benefit, say: "They are a verified partner of ours offering [benefit]." Do not repeat the station name, network name, verification, or benefit. Mention nearby amenities only briefly and never claim the route was replanned.',
+              'Confirm that the charging stop was added. Name each stop in the returned charging plan once and state its returned charging duration. Then say "Nearby amenities include" and name up to three returned nearby amenities and their returned categories. If there are no nearby amenities, say none were found. Do not imply amenities were added to the route or shown as map markers. If a stop has a verified partner benefit, mention it once. Never claim the route was replanned.',
           },
         })
         return
@@ -1009,6 +1008,21 @@ export function useRealtimeAssistant() {
     setError(null)
     setState('CONNECTING')
 
+    if (!listeningJinglePlayedRef.current) {
+      listeningJinglePlayedRef.current = true
+      const feedbackAudio = new Audio('/audio/listening-jingle.mp3')
+      feedbackAudio.preload = 'auto'
+      feedbackAudioRef.current = feedbackAudio
+      const playbackEnded = new Promise<void>((resolve) => {
+        feedbackAudio.addEventListener('ended', () => resolve(), { once: true })
+        feedbackAudio.addEventListener('pause', () => resolve(), { once: true })
+      })
+      listeningJinglePlaybackRef.current = feedbackAudio
+        .play()
+        .then(() => playbackEnded)
+        .catch(() => undefined)
+    }
+
     try {
       recordTelemetry('sessionRequestStarted')
       recordTelemetry('microphoneRequested')
@@ -1021,6 +1035,11 @@ export function useRealtimeAssistant() {
       const microphonePromise = navigator.mediaDevices
         .getUserMedia({ audio: true })
         .then((stream) => {
+          if (listeningJinglePlaybackRef.current) {
+            stream.getAudioTracks().forEach((track) => {
+              track.enabled = false
+            })
+          }
           if (isSessionCurrent(generation)) {
             recordTelemetry('microphoneGranted')
           }
@@ -1102,7 +1121,6 @@ export function useRealtimeAssistant() {
           const now = performance.now()
           if (now - speechStartedAtRef.current >= 350) {
             speechStartedAtRef.current = now
-            feedbackAudioRef.current?.play().catch(() => undefined)
             setState('LISTENING')
           }
         } else if (event.type === 'response.created') {
@@ -1194,10 +1212,11 @@ export function useRealtimeAssistant() {
       if (!isSessionCurrent(generation)) {
         throw new Error('Voice connection was stopped.')
       }
+      await listeningJinglePlaybackRef.current
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = true
+      })
       channelRef.current = channel
-      const feedbackAudio = new Audio('/audio/listening-jingle.mp3')
-      feedbackAudio.preload = 'auto'
-      feedbackAudioRef.current = feedbackAudio
       setEnabled(true)
       recordTelemetry('assistantReady')
       window.dispatchEvent(

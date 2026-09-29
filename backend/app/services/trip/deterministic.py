@@ -281,18 +281,30 @@ def select_chargers_iteratively(
                 ]
                 if quick_reachable:
                     reachable = quick_reachable
-        candidate = max(
-            reachable,
-            key=lambda item: (
-                -(item.charging_duration_minutes or float("inf"))
-                if priority == RoutePriority.FASTEST
-                else (item.distance_from_origin_km or 0),
-                item.charging_power_kw or 0,
-                0 if item.stop.partner else 1,
-                item.distance_from_route_km,
-                item.stop.id,
-            ),
-        )
+        if priority == RoutePriority.FASTEST:
+            candidate = min(
+                reachable,
+                key=lambda item: (
+                    item.charging_duration_minutes
+                    if item.charging_duration_minutes > 0
+                    else float("inf"),
+                    -(item.charging_power_kw or 0),
+                    item.distance_from_route_km,
+                    item.stop.detour_minutes,
+                    item.stop.id,
+                ),
+            )
+        else:
+            candidate = max(
+                reachable,
+                key=lambda item: (
+                    item.distance_from_origin_km or 0,
+                    item.charging_power_kw or 0,
+                    0 if item.stop.partner else 1,
+                    -item.distance_from_route_km,
+                    item.stop.id,
+                ),
+            )
         selected.append(candidate)
         previous_progress_km = candidate.distance_from_origin_km or previous_progress_km
         ordered = [
@@ -323,13 +335,16 @@ def estimate_charging_duration_minutes(
     current_range_km: float,
     safety_buffer_km: float,
     consumption_rate_kwh: float,
+    max_charged_range_km: float | None = None,
 ) -> float:
     if candidate.charging_duration_minutes > 0:
         return candidate.charging_duration_minutes
     remaining_distance_km = max(0.0, route_distance_km - charger_progress_km)
-    additional_range_km = max(
-        0.0, remaining_distance_km + safety_buffer_km - max(0.0, current_range_km - charger_progress_km)
-    )
+    range_after_charge_km = max_charged_range_km or remaining_distance_km
+    safe_charge_leg_km = max(0.0, range_after_charge_km - safety_buffer_km)
+    required_leg_km = min(remaining_distance_km, safe_charge_leg_km)
+    remaining_vehicle_range_km = max(0.0, current_range_km - charger_progress_km)
+    additional_range_km = max(0.0, required_leg_km - remaining_vehicle_range_km)
     power_kw = candidate.charging_power_kw or DEFAULT_CHARGING_POWER_KW
     energy_kwh = additional_range_km * consumption_rate_kwh / 100
     return round(energy_kwh / power_kw * 60, 1)
