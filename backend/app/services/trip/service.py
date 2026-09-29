@@ -35,6 +35,7 @@ from ...models.contracts import (
 )
 from .country_rules import derive_requirements, detect_border_crossings
 from .deterministic import (
+    BOOKING_POI_MAX_RESULTS,
     DEFAULT_CHARGING_POWER_KW,
     POI_COORDINATE_TOLERANCE,
     distance_to_route_km,
@@ -599,6 +600,8 @@ class RouteService:
                     selection_location,
                     scenic=self._active_priority == RoutePriority.SCENIC,
                 )
+            if category.casefold() in {"hotel", "restaurant"}:
+                results = results[:BOOKING_POI_MAX_RESULTS]
             self._active_search_id = uuid4().hex
             self._active_search_results = {result.id: result for result in results}
             LOGGER.info(
@@ -730,17 +733,18 @@ class RouteService:
         if not self._pending_charging_stops and self._confirmed_charging_response is not None:
             return self._confirmed_charging_response
 
-        stop = next(
-            (
-                item
-            for item in self._pending_charging_stops
-                if item.category == "charging"
-                and (stop_id is None or item.id == stop_id)
-            ),
-            None,
-        )
-        if stop is None:
+        if not self._pending_charging_stops:
             raise APIError(409, "STALE_STOP", "That charging stop is no longer current.")
+        pending_stops = list(self._pending_charging_stops)
+        stop = pending_stops[0]
+        if stop.category != "charging":
+            raise APIError(409, "STALE_STOP", "The charging plan is no longer current.")
+        if stop_id is not None and stop_id != stop.id:
+            raise APIError(
+                409,
+                "STALE_STOP",
+                "Charging confirmation applies to the complete plan, starting at its first stop.",
+            )
         if self._active_origin is None or self._active_destination is None:
             raise APIError(409, "NO_ACTIVE_ROUTE", "Plan a route before confirming a charging stop.")
 
@@ -751,12 +755,8 @@ class RouteService:
                 "The routing service cannot route through a charging stop.",
             )
 
-        selected_index = self._pending_charging_stops.index(stop)
-        # The discovered plan is ordered by route progress. Confirming an
-        # option confirms that stop and every later stop required to reach the
-        # destination, preserving multi-stop safety without another discovery
-        # request.
-        pending_stops = self._pending_charging_stops[selected_index:]
+        # A driver's consent confirms the complete ordered plan. Never let a
+        # selected later stop skip an earlier required charge.
         waypoints = tuple(
             GeocodedPlace(
                 item.name,
@@ -794,11 +794,33 @@ class RouteService:
             item.id for item in self._active_stops
         ]
 
-        amenity_search = await self.search_stop_amenities(
-            stop_id=stop.id,
-            route_id=self._active_route_id,
-            search_id=None,
-        )
+        amenities_available = True
+        try:
+            amenity_search = await self.search_stop_amenities(
+                stop_id=stop.id,
+                route_id=self._active_route_id,
+                search_id=None,
+            )
+        except APIError as error:
+            if error.code not in {"POI_UNAVAILABLE", "PROVIDER_BUDGET_EXHAUSTED"}:
+                raise
+            LOGGER.warning(
+                "optional stop amenities unavailable after charging confirmation code=%s",
+                error.code,
+            )
+            amenities_available = False
+        except OSError:
+            LOGGER.warning("optional stop amenities unavailable after charging confirmation")
+            amenities_available = False
+
+        if not amenities_available:
+            amenity_search = {
+                "selected_stop_name": stop.name,
+                "results": [],
+                "radius_meters": 500,
+                "route_id": self._active_route_id,
+                "search_id": None,
+            }
         amenities_by_stop = {stop.id: amenity_search}
         route = self._build_route_response(
             self._active_provider_route,
@@ -836,9 +858,10 @@ class RouteService:
         response = {
             "route": route,
             **amenity_search,
+            "amenities_available": amenities_available,
             "amenities_by_stop": amenities_by_stop,
-                "charging_plan": charging_plan,
-                "session_facts": session_facts,
+            "charging_plan": charging_plan,
+            "session_facts": session_facts,
         }
         self._confirmed_charging_response = response
         return response
@@ -1178,15 +1201,23 @@ class RouteService:
                         brand=candidate.stop.partner.name,
                         benefit=candidate.stop.partner.benefit,
                         benefit_scope=candidate.stop.partner.benefit_scope,
-                        benefit_source=candidate.stop.partner.benefit_source or "fixture",
+                        benefit_source=candidate.stop.partner.benefit_source,
                         verified=True,
                     )
-                    if candidate.stop.partner is not None
+                    if (
+                        candidate.stop.partner is not None
+                        and candidate.stop.partner.verified
+                        and candidate.stop.partner.benefit
+                    )
                     else None
                 ),
                 reason=(
-                    f"Nearby partner alternative: {candidate.stop.partner.benefit}"
-                    if candidate.stop.partner is not None
+                    "Nearby verified partner alternative"
+                    if (
+                        candidate.stop.partner is not None
+                        and candidate.stop.partner.verified
+                        and candidate.stop.partner.benefit
+                    )
                     else "Nearby charging alternative"
                 ),
                 detour_minutes=candidate.stop.detour_minutes,

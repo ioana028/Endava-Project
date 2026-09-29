@@ -59,7 +59,7 @@ def rank_partner_opportunities(
             PartnerOpportunity(
                 id=f"partner-opportunity-{stop.id}",
                 stop=stop,
-                reason=f"Verified demo partner benefit: {stop.partner_benefit}",
+                reason=f"Verified partner benefit: {stop.partner_benefit}",
                 detour_minutes=stop.detour_minutes,
                 score=score,
             )

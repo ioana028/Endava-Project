@@ -114,9 +114,8 @@ def create_app(
         partner_records = tuple(getattr(application.state, "fixtures", safe_load_fixtures()).partners)
         scenic_capability = bool(settings.google_server_api_key)
         weather_provider_name = settings.weather_provider or "offline"
-        weather_ready = settings.weather_enabled and (
-            weather_provider_name in {"offline", "open-meteo"}
-            or bool(settings.weather_api_key)
+        weather_ready = (
+            settings.weather_enabled and weather_provider_name == "open-meteo"
         )
         return ProviderHealthResponse(
             status="ok",

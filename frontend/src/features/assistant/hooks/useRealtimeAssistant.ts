@@ -107,53 +107,50 @@ function compactRouteFacts(
 ) {
   const formatDuration = (totalMinutes: number) => {
     const roundedMinutes = Math.round(totalMinutes)
-    const hours = Math.floor(roundedMinutes / 60)
-    const minutes = roundedMinutes % 60
-    return hours === 0
-      ? `${minutes} minutes`
-      : minutes === 0
-        ? `${hours} hours`
-        : `${hours} hours and ${minutes} minutes`
+    if (roundedMinutes < 60) {
+      return `${roundedMinutes} minutes`
+    }
+    const hours = Math.round(roundedMinutes / 60)
+    return `${hours} hour${hours === 1 ? '' : 's'}`
   }
   const chargingStop = route.chargingStop ?? route.stops.find((stop) => stop.mandatory)
+  const chargingPlanConfirmed = Boolean(
+    route.sessionFacts?.chargingPlanConfirmed || route.chargingPlan?.confirmed,
+  )
   const telemetryRequiresCharging = route.telemetry
     ? route.stats.totalDistanceKm > route.telemetry.estimatedRangeKm
     : false
-  const unconfirmedChargingMinutes = chargingStop?.chargingDurationMinutes ?? 0
-  const initialTotalDurationMinutes = Math.max(
-    route.stats.drivingDurationMinutes,
-    route.stats.totalDurationMinutes - unconfirmedChargingMinutes,
+  const chargingRequired = Boolean(
+    (chargingPlanConfirmed ? false : route.chargingRequired ?? Boolean(chargingStop))
+    || (!chargingPlanConfirmed && telemetryRequiresCharging),
   )
-  const partnerFacts = route.stops
-    .map((stop) => stop.partner)
-    .filter(
-      (partner): partner is NonNullable<StopPinpoint['partner']> =>
-        Boolean(partner?.name && partner.verified && partner.benefit),
-    )
-    .map((partner) => ({
-      partnerId: partner.id,
-      brand: partner.name,
-      benefit: partner.benefit,
-      ...(partner.benefitScope ? { benefitScope: partner.benefitScope } : {}),
-      ...(partner.benefitSource ? { benefitSource: partner.benefitSource } : {}),
-      verified: true,
-    }))
-
-  const compactChargingPlan = route.chargingPlan
+  const routeWeatherAlert = route.alerts.find(
+    (alert) => alert.type === 'WEATHER' && alert.locationName === 'Route average',
+  )
+  const weatherFacts = routeWeatherAlert?.message.match(
+    /Current route conditions:\s*([^;]+);\s*average temperature about\s+(-?\d+(?:\.\d+)?)°C/i,
+  )
+  const routeWeatherSummary = routeWeatherAlert
+    ? weatherFacts
+      ? `${weatherFacts[1].trim()}, around ${Math.round(Number(weatherFacts[2]))}°C`
+      : routeWeatherAlert.message
+    : null
+  const remainingRequirements = route.sessionFacts?.remainingRequirements ?? route.routeRequirements
+  const vignetteCount = remainingRequirements.filter(
+    (requirement) => requirement.kind === 'vignette',
+  ).length
+  const tollRequired = remainingRequirements.some(
+    (requirement) => requirement.kind === 'toll',
+  )
+  const compactChargingPlan = route.chargingPlan?.confirmed
     ? {
-        complete: route.chargingPlan.complete,
-        confirmed: route.chargingPlan.confirmed,
-        totalChargingMinutes: Math.round(route.chargingPlan.totalChargingMinutes),
         stops: route.chargingPlan.stops.map((stop, index) => ({
           order: index + 1,
-          id: stop.id,
           name: stop.name,
           chargingDurationMinutes: Math.round(stop.chargingDurationMinutes ?? 0),
           ...(stop.partner?.verified && stop.partner.benefit
             ? {
                 partnerFact: {
-                  partnerId: stop.partner.id,
-                  brand: stop.partner.name,
                   benefit: stop.partner.benefit,
                   verified: true,
                 },
@@ -168,77 +165,13 @@ function compactRouteFacts(
     routeStatus: route.routeStatus,
     origin: route.origin,
     destination: route.destination,
-    ...(route.countries.length > 0 ? { countries: route.countries } : {}),
     distanceKm: Math.round(route.stats.totalDistanceKm),
     travelTime: formatDuration(route.stats.drivingDurationMinutes),
-    drivingDurationMinutes: Math.round(route.stats.drivingDurationMinutes),
-    totalDurationMinutes: Math.round(initialTotalDurationMinutes),
-    chargingRequired: Boolean(
-      (route.sessionFacts?.chargingPlanConfirmed ? false : route.chargingRequired ?? Boolean(chargingStop))
-      || (!route.sessionFacts?.chargingPlanConfirmed && telemetryRequiresCharging),
-    ),
-    vignetteRequired: route.sessionFacts?.remainingRequirements?.some(
-      (requirement) => requirement.kind === 'vignette',
-    ) ?? route.routeRequirements.some((requirement) => requirement.kind === 'vignette'),
-    ...(route.opportunities?.length
-      ? {
-          opportunities: route.opportunities.map((opportunity) => ({
-            id: opportunity.id,
-            type: opportunity.type,
-            ...(opportunity.stopId ? { stopId: opportunity.stopId } : {}),
-            ...(opportunity.resultId ? { resultId: opportunity.resultId } : {}),
-            reason: opportunity.reason,
-            detourMinutes: opportunity.detourMinutes,
-            requiresRouteConfirmation: opportunity.requiresRouteConfirmation,
-            status: opportunity.status,
-            ...(opportunity.partnerFact?.verified
-              ? { partnerFact: opportunity.partnerFact }
-              : {}),
-          })),
-        }
-      : {}),
-    ...(route.chargingOptions.length > 0
-      ? {
-          chargingOptions: route.chargingOptions.map((option) => ({
-            optionNumber: option.optionNumber,
-            name: option.stop.name,
-            id: option.stop.id,
-            chargingDurationMinutes: Math.round(option.stop.chargingDurationMinutes ?? 0),
-            detourMinutes: option.stop.detourMinutes,
-            status: option.status,
-          })),
-        }
-      : {}),
-    ...(partnerFacts.length > 0 ? { partnerFacts } : {}),
+    ...(chargingRequired ? { chargingRequired: true } : {}),
+    routeWeatherSummary,
+    ...(vignetteCount > 0 ? { vignetteCount } : {}),
+    ...(tollRequired ? { tollRequired: true } : {}),
     ...(compactChargingPlan ? { chargingPlan: compactChargingPlan } : {}),
-    ...(route.sessionFacts ? { sessionFacts: route.sessionFacts } : {}),
-    ...(route.alerts.length
-      ? {
-          alerts: route.alerts.map((alert) => ({
-            type: alert.type,
-            locationName: alert.locationName,
-            severity: alert.severity,
-            message: alert.message,
-          })),
-        }
-      : {}),
-    ...(route.borderCrossings.length > 0
-      ? {
-          borderCrossings: route.borderCrossings.map(
-            (crossing) => `${crossing.fromCountry}-${crossing.toCountry}`,
-          ),
-        }
-      : {}),
-    ...(route.routeRequirements.length > 0
-      ? {
-          routeRequirements: route.routeRequirements.map((requirement) => ({
-            id: requirement.id,
-            name: requirement.name,
-            kind: requirement.kind,
-            country: requirement.country,
-          })),
-        }
-      : {}),
     ...(context.routeId ? { routeId: context.routeId } : {}),
     ...(context.searchId ? { searchId: context.searchId } : {}),
   }
@@ -250,8 +183,6 @@ function compactPoiFacts(
 ) {
   const partnerFact = stop.partner?.verified && stop.partner.benefit
     ? {
-        partnerId: stop.partner.id,
-        brand: stop.partner.name,
         benefit: stop.partner.benefit,
         ...(stop.partner.benefitScope
           ? { benefitScope: stop.partner.benefitScope }
@@ -273,19 +204,13 @@ function compactPoiFacts(
       : {}),
     ...(stop.tag ? { tag: stop.tag } : {}),
     ...(stop.details ? { details: stop.details } : {}),
-    ...(stop.photoReference ? { photoReference: stop.photoReference } : {}),
     ...(stop.keywords?.length ? { keywords: stop.keywords.slice(0, 3) } : {}),
-    ...(stop.provider ? { provider: stop.provider } : {}),
-    ...(stop.source ? { source: stop.source } : {}),
     ...(stop.amenities?.length ? { amenities: stop.amenities } : {}),
     ...(stop.distanceMeters !== undefined ? { distanceMeters: stop.distanceMeters } : {}),
     ...(stop.routeOffsetKm !== undefined ? { routeOffsetKm: stop.routeOffsetKm } : {}),
-    ...(stop.estimatedDrivingDetourMinutes !== undefined
-      ? { estimatedDrivingDetourMinutes: stop.estimatedDrivingDetourMinutes }
-      : {}),
-    ...(stop.estimatedDrivingDetourMinutes !== undefined
-      ? { detourMinutes: stop.estimatedDrivingDetourMinutes }
-      : {}),
+    detourMinutes: Math.round(
+      stop.estimatedDrivingDetourMinutes ?? stop.detourMinutes,
+    ),
     ...(partnerFact ? { partnerFact } : {}),
     ...(context.routeId ? { routeId: context.routeId } : {}),
     ...(context.searchId ? { searchId: context.searchId } : {}),
@@ -295,8 +220,6 @@ function compactPoiFacts(
 function compactAmenityFacts(stop: StopPinpoint) {
   const partnerFact = stop.partner?.verified && stop.partner.benefit
     ? {
-        partnerId: stop.partner.id,
-        brand: stop.partner.name,
         benefit: stop.partner.benefit,
         ...(stop.partner.benefitScope
           ? { benefitScope: stop.partner.benefitScope }
@@ -316,9 +239,51 @@ function compactAmenityFacts(stop: StopPinpoint) {
     ...(stop.distanceMeters !== undefined
       ? { distanceMeters: stop.distanceMeters }
       : {}),
-    ...(stop.partner?.name ? { providerBrand: stop.partner.name } : {}),
-    ...(stop.partnerBenefit ? { partnerBenefit: stop.partnerBenefit } : {}),
     ...(partnerFact ? { partnerFact } : {}),
+  }
+}
+
+function getAmenityLoadingContext(
+  argumentsJson: string,
+  route: RouteResponse | undefined,
+  candidates: StopPinpoint[],
+) {
+  try {
+    const argumentsValue = JSON.parse(argumentsJson) as {
+      stopId?: unknown
+      routeId?: unknown
+      searchId?: unknown
+    }
+    if (typeof argumentsValue.stopId !== 'string') {
+      return null
+    }
+
+    const routeStops = route
+      ? [
+          ...(route.chargingStop ? [route.chargingStop] : []),
+          ...route.chargingOptions.map((option) => option.stop),
+          ...route.stops,
+        ]
+      : []
+    const selectedStop = [...candidates, ...routeStops].find(
+      (stop) => stop.id === argumentsValue.stopId && stop.category === 'charging',
+    )
+    if (!selectedStop) {
+      return null
+    }
+
+    return {
+      selectedStopName: selectedStop.name,
+      radiusMeters: 500,
+      routeId:
+        typeof argumentsValue.routeId === 'string' ? argumentsValue.routeId : '',
+      searchId:
+        typeof argumentsValue.searchId === 'string'
+          ? argumentsValue.searchId
+          : null,
+    }
+  } catch {
+    return null
   }
 }
 
@@ -386,6 +351,7 @@ export function useRealtimeAssistant() {
   const [selectedPoi, setSelectedPoi] = useState<StopPinpoint | null>(null)
   const [poiActionState, setPoiActionState] = useState<PoiActionState>('IDLE')
   const [amenityResults, setAmenityResults] = useState<StopPinpoint[]>([])
+  const [amenityMarkersVisible, setAmenityMarkersVisible] = useState(false)
   const [amenitySearchState, setAmenitySearchState] = useState<AmenitySearchState>('IDLE')
   const [amenitySearchContext, setAmenitySearchContext] = useState<{
     selectedStopName: string
@@ -398,6 +364,7 @@ export function useRealtimeAssistant() {
   const [driving, setDriving] = useState<DrivingState | null>(null)
   const [chargingStopConfirmed, setChargingStopConfirmed] = useState(false)
   const [chargingStopFocus, setChargingStopFocus] = useState<StopPinpoint | null>(null)
+  const [destinationFocus, setDestinationFocus] = useState(false)
   const [successFeedback, setSuccessFeedback] = useState<SuccessFeedback | null>(null)
   const [selectedBookingPoi, setSelectedBookingPoi] = useState<StopPinpoint | null>(null)
   const [telemetry, setTelemetry] = useState<RealtimeTelemetry>({})
@@ -423,6 +390,10 @@ export function useRealtimeAssistant() {
   const toolRequestIdRef = useRef(0)
   const successFeedbackTimerRef = useRef<number | null>(null)
   const bookingPanelTimerRef = useRef<number | null>(null)
+  const chargingSpeechPhaseRef = useRef<'plan' | 'amenities' | null>(null)
+  const chargingAmenitiesFocusStopRef = useRef<StopPinpoint | null>(null)
+  const chargingSpeechResponseIdRef = useRef<string | null>(null)
+  const chargingSpeechCompleteRef = useRef(false)
   const speechStartedAtRef = useRef(0)
 
   function recordTelemetry(name: keyof RealtimeTelemetry) {
@@ -452,6 +423,14 @@ export function useRealtimeAssistant() {
     }, 5000)
   }
 
+  function clearChargingMapFocus() {
+    chargingSpeechPhaseRef.current = null
+    chargingAmenitiesFocusStopRef.current = null
+    chargingSpeechResponseIdRef.current = null
+    chargingSpeechCompleteRef.current = false
+    setChargingStopFocus(null)
+  }
+
   function closeSession() {
     sessionGenerationRef.current += 1
     startingRef.current = false
@@ -466,7 +445,8 @@ export function useRealtimeAssistant() {
     }
     setSuccessFeedback(null)
     pendingRouteRef.current = null
-    setChargingStopFocus(null)
+    clearChargingMapFocus()
+    setDestinationFocus(false)
     assistantTranscriptRef.current = ''
     channelRef.current?.close()
     channelRef.current = null
@@ -517,6 +497,25 @@ export function useRealtimeAssistant() {
     if (event.name === 'reroute_through_poi') {
       setPoiActionState('REROUTING_IN_PROGRESS')
     }
+    if (event.name === 'search_route_poi') {
+      try {
+        const search = JSON.parse(event.arguments) as { category?: string; location?: string }
+        setDestinationFocus(
+          (search.category === 'hotel' || search.category === 'restaurant') &&
+          search.location === 'destination',
+        )
+      } catch {
+        setDestinationFocus(false)
+      }
+    } else if (
+      event.name === 'plan_route' ||
+      event.name === 'confirm_charging_stop' ||
+      event.name === 'reroute_through_poi' ||
+      event.name === 'return_to_main_route' ||
+      event.name === 'start_driving'
+    ) {
+      setDestinationFocus(false)
+    }
     const toolController = new AbortController()
     toolAbortRef.current = toolController
 
@@ -565,10 +564,11 @@ export function useRealtimeAssistant() {
 
         setPoiResults(result.results)
         setAmenityResults([])
+        setAmenityMarkersVisible(false)
         setAmenitySearchContext(null)
         setAmenitySearchState('IDLE')
         setSelectedPoi(null)
-        setChargingStopFocus(null)
+        clearChargingMapFocus()
         setPoiActionState('IDLE')
         setError(
           result.results.length === 0
@@ -595,7 +595,7 @@ export function useRealtimeAssistant() {
           type: 'response.create',
           response: {
             instructions:
-              'Acknowledge that the place search completed, then give the returned results briefly. For attractions, mention what can be seen or done from details or tag, and include the rating and review count when returned. Use only returned facts and never invent review content. Never leave the driver without a spoken response.',
+              'In one concise response, give at most two returned hotels or restaurants and describe each in one short phrase using returned details, tags, amenities, or category. For attractions, choose one useful description from returned details or tags, and include rating and review count when present. Translate a non-English name into a speech-only English rendering when reliable, but preserve official names for maps and tool calls. Use only returned facts; do not claim an option matches a preference without supporting facts, invent review sentiment, repeat details, or add a separate acknowledgement.',
           },
         })
         return
@@ -617,18 +617,31 @@ export function useRealtimeAssistant() {
             : createRouteResponse(result.route, activePriorityRef.current),
         )
         setChargingStopConfirmed(true)
-        setChargingStopFocus(
-          result.route.chargingStop
-            ?? result.route.stops.find((stop) => stop.category === 'charging')
-            ?? null,
-        )
-        // Nearby places are spoken after confirmation; keep them off the map
-        // so charger confirmation does not look like an amenity search.
-        setAmenityResults([])
+        clearChargingMapFocus()
+        chargingAmenitiesFocusStopRef.current =
+          result.amenitiesAvailable !== false && result.results.length > 0
+            ? result.route.chargingStop
+              ?? result.route.stops.find((stop) => stop.category === 'charging')
+              ?? null
+            : null
+        // Keep the nearby list available without displaying amenity pins.
+        setAmenityResults(result.results)
         setPoiResults([])
         setSelectedPoi(null)
-        setAmenitySearchContext(null)
-        setAmenitySearchState('IDLE')
+        setAmenityMarkersVisible(false)
+        setAmenitySearchContext({
+          selectedStopName: result.selectedStopName,
+          radiusMeters: result.radiusMeters,
+          routeId: result.routeId,
+          searchId: result.searchId ?? null,
+        })
+        setAmenitySearchState(
+          result.amenitiesAvailable === false
+            ? 'FAILURE'
+            : result.results.length
+              ? 'SUCCESS'
+              : 'EMPTY',
+        )
         setError(null)
         sendEvent({
           type: 'conversation.item.create',
@@ -637,48 +650,34 @@ export function useRealtimeAssistant() {
             call_id: event.call_id,
             output: JSON.stringify({
               status: 'success',
-              chargingStopAdded: result.selectedStopName,
-              chargingPartnerFacts: result.route.stops
-                .filter((stop) => stop.category === 'charging' && stop.partner?.benefit)
-                .map((stop) => ({
-                  stopName: stop.name,
-                  brand: stop.partner?.name,
-                  benefit: stop.partner?.benefit ?? stop.partnerBenefit,
-                  benefitScope: stop.partner?.benefitScope,
-                  benefitSource: stop.partner?.benefitSource,
-                  verified: stop.partner?.verified ?? false,
-                })),
+              routeId: result.routeId,
+              amenitiesStatus:
+                result.amenitiesAvailable === false
+                  ? 'unavailable'
+                  : result.results.length
+                    ? 'available'
+                    : 'empty',
               chargingPlan: result.chargingPlan ?? result.route.chargingPlan
                 ? {
-                    complete: (result.chargingPlan ?? result.route.chargingPlan)?.complete,
-                    confirmed: (result.chargingPlan ?? result.route.chargingPlan)?.confirmed,
-                    totalChargingMinutes: Math.round((result.chargingPlan ?? result.route.chargingPlan)?.totalChargingMinutes ?? 0),
-                    stops: (result.chargingPlan ?? result.route.chargingPlan)?.stops.map((stop, index) => ({
-                      order: index + 1,
-                      id: stop.id,
+                    stops: (result.chargingPlan ?? result.route.chargingPlan)?.stops.map((stop) => ({
                       name: stop.name,
                       chargingDurationMinutes: Math.round(stop.chargingDurationMinutes ?? 0),
+                      ...(stop.partner?.verified && stop.partner.benefit
+                        ? { partnerBenefit: stop.partner.benefit }
+                        : {}),
                     })),
                   }
                 : undefined,
-              sessionFacts: result.sessionFacts ?? result.route.sessionFacts,
               nearbyAmenities: result.results.map(compactAmenityFacts),
-              nearbyPartnerFacts: result.results
-                .filter((amenity) => amenity.partner?.verified && amenity.partner.benefit)
-                .map((amenity) => ({
-                  placeName: amenity.name,
-                  brand: amenity.partner?.name,
-                  benefit: amenity.partner?.benefit,
-                  verified: true,
-                })),
             }),
           },
         })
+        chargingSpeechPhaseRef.current = 'plan'
         sendEvent({
           type: 'response.create',
           response: {
             instructions:
-              'Confirm that the charging stop was added. Name each stop in the returned charging plan once and state its returned charging duration. Then say "Nearby amenities include" and name up to three returned nearby amenities and their returned categories. If there are no nearby amenities, say none were found. Do not imply amenities were added to the route or shown as map markers. If a stop has a verified partner benefit, mention it once. Never claim the route was replanned.',
+              'In one concise response, confirm the complete returned charging plan and state each returned station and charging duration once. Do not mention nearby amenities or amenitiesStatus yet, and do not announce a search, say you will check nearby, or introduce the next response. Stop after the charging details. Do not ask for another confirmation, repeat route requirements, or claim the route was replanned. Mention a verified returned partner benefit at most once.',
           },
         })
         return
@@ -741,7 +740,9 @@ export function useRealtimeAssistant() {
             reference: 'route-active',
           })
         } else {
+          clearChargingMapFocus()
           setAmenityResults([])
+          setAmenityMarkersVisible(false)
           setAmenitySearchContext(null)
           setAmenitySearchState('IDLE')
         }
@@ -767,17 +768,27 @@ export function useRealtimeAssistant() {
               event.name === 'return_to_main_route'
                 ? 'Confirm that the full route view has been restored. Keep it to one short sentence and do not claim that a new route was planned.'
                 : event.name === 'purchase_vignette'
-                  ? 'Say that the vignette is handled and the details were sent to the phone app. Never speak the transaction ID, requirement ID, or any internal identifier.'
+                  ? 'Confirm the returned wallet status once. Never claim a third-party payment or say confirmation details were sent to a phone app. Never speak the transaction ID, requirement ID, or other internal identifier.'
                   : event.name === 'book_hotel_room' || event.name === 'book_restaurant_table'
-                    ? 'Say that the booking was completed and the details were sent to the phone app. Never speak the booking ID, result ID, route ID, or any internal identifier.'
-                    : 'Acknowledge the successful action clearly and briefly, then state only the useful returned result. Never speak internal IDs or reference codes.',
+                    ? 'Confirm the returned booking status once. Never claim an external reservation or phone notification. Never speak the booking ID, result ID, route ID, or other internal identifier.'
+                    : 'Use one concise sentence to confirm the action and state only its useful returned result. Do not repeat an acknowledgement or speak internal IDs or reference codes.',
           },
         })
         return
       }
 
       if (event.name === 'search_stop_amenities') {
+        setAmenityResults([])
+        setAmenityMarkersVisible(false)
+        setAmenitySearchContext(
+          getAmenityLoadingContext(event.arguments, response?.route, [
+            ...(selectedPoi ? [selectedPoi] : []),
+            ...(chargingStopFocus ? [chargingStopFocus] : []),
+            ...poiResults,
+          ]),
+        )
         setAmenitySearchState('LOADING')
+        setError(null)
         const result = await searchStopAmenitiesWithTool(
           event.arguments,
           toolController.signal,
@@ -787,6 +798,7 @@ export function useRealtimeAssistant() {
         }
 
         setAmenityResults(result.results)
+        setAmenityMarkersVisible(true)
         setPoiResults([])
         setSelectedPoi(null)
         setPoiActionState('IDLE')
@@ -822,7 +834,7 @@ export function useRealtimeAssistant() {
           type: 'response.create',
           response: {
             instructions:
-              'Acknowledge the amenity search and briefly name the returned nearby places, including their categories and distances when available. If there are no results, say so clearly.',
+              'Give one concise factual result using only returned places, categories, and distances. If there are no results, say none were found. Do not add a separate acknowledgement or infer amenities that were not returned.',
           },
         })
         return
@@ -848,12 +860,13 @@ export function useRealtimeAssistant() {
         setChargingStopConfirmed(Boolean(reroutedChargingStop))
         // Adding a POI waypoint must keep the full-route viewport. Charger
         // focus is reserved for the explicit charging-stop amenities flow.
-        setChargingStopFocus(null)
+        clearChargingMapFocus()
         setPoiActionState('REROUTE_SUCCESS')
         // Nearby amenities are an explicit follow-up request. Searching them
         // here adds an unnecessary provider call and leaves a stale charger
         // focus that makes the map zoom into the station after any waypoint.
         setAmenityResults([])
+        setAmenityMarkersVisible(false)
         setAmenitySearchContext(null)
         setAmenitySearchState('IDLE')
         pendingRouteRef.current = {
@@ -876,7 +889,7 @@ export function useRealtimeAssistant() {
           type: 'response.create',
           response: {
             instructions:
-              'Acknowledge that the selected place or places were added in one route change, then briefly state the returned route facts. Never leave the driver without a spoken response.',
+              'In one concise response, confirm that the route was updated and state its returned approximate travelTime once. If routeWeatherSummary is present, summarize the route-average condition and temperature once; otherwise omit weather. Do not mention other alerts, repeat old route facts, or imply every event source was checked.',
           },
         })
         return
@@ -889,13 +902,14 @@ export function useRealtimeAssistant() {
 
       setPoiResults([])
       setAmenityResults([])
+      setAmenityMarkersVisible(false)
       setAmenitySearchContext(null)
       setAmenitySearchState('IDLE')
       setPurchase(null)
       setBooking(null)
       setDriving(null)
       setChargingStopConfirmed(false)
-      setChargingStopFocus(null)
+      clearChargingMapFocus()
       setSelectedBookingPoi(null)
       const routePriority = getRoutePriority(event.arguments)
       activePriorityRef.current = routePriority
@@ -923,8 +937,8 @@ export function useRealtimeAssistant() {
       sendEvent({
         type: 'response.create',
         response: {
-            instructions:
-              'Reply in exactly one natural sentence using only returned facts: "Your route to [destination] will take [travelTime] and require [only the returned vignette and charging requirements]." Omit unreturned requirements, never say the route is set before this tool result, never mention telemetry, weather, opportunities, or a charger name before confirmation, and do not repeat any acknowledgement.',
+          instructions:
+            'Give the route overview in no more than two concise sentences. Say the destination and approximate travelTime once; if routeWeatherSummary is present, include its condition and temperature naturally. Then phrase only positive requirements as actions: "You will need to stop for charging" if chargingRequired is true, "buy a motorway vignette" if vignetteCount is positive, and mention a toll only if tollRequired is true. When any requirement is present, finish with one offer: "Shall I help with that?" Never say "no other tolls" or mention any absent requirement. Omit missing weather and requirements. Do not mention alerts, IDs, telemetry, opportunities, unconfirmed chargers, or repeat an acknowledgement.',
         },
       })
     } catch (toolError) {
@@ -945,6 +959,9 @@ export function useRealtimeAssistant() {
         if (event.name === 'reroute_through_poi' && isSessionCurrent(generation)) {
           setPoiActionState('REROUTE_FAILED')
         }
+        if (event.name === 'search_route_poi' && isSessionCurrent(generation)) {
+          setDestinationFocus(false)
+        }
         if (event.name === 'search_stop_amenities' && isSessionCurrent(generation)) {
           setAmenitySearchState('STALE')
         }
@@ -959,6 +976,9 @@ export function useRealtimeAssistant() {
         setAmenitySearchState(
           code.startsWith('STALE_') ? 'STALE' : 'FAILURE',
         )
+      }
+      if (event.name === 'search_route_poi') {
+        setDestinationFocus(false)
       }
 
       sendEvent({
@@ -1124,6 +1144,14 @@ export function useRealtimeAssistant() {
             setState('LISTENING')
           }
         } else if (event.type === 'response.created') {
+          const createdResponse = event.response as { id?: string } | undefined
+          if (
+            chargingSpeechPhaseRef.current !== null &&
+            chargingSpeechResponseIdRef.current === null &&
+            typeof createdResponse?.id === 'string'
+          ) {
+            chargingSpeechResponseIdRef.current = createdResponse.id
+          }
           setState('SPEAKING')
         } else if (event.type === 'response.output_audio_transcript.done') {
           const transcriptText = event.transcript
@@ -1145,6 +1173,20 @@ export function useRealtimeAssistant() {
             arguments: String(event.arguments),
           }, generation)
         } else if (event.type === 'response.done') {
+          const completedResponse = event.response as
+            | { id?: string; status?: string }
+            | undefined
+          if (
+            chargingSpeechPhaseRef.current !== null &&
+            completedResponse?.id === chargingSpeechResponseIdRef.current
+          ) {
+            if (completedResponse.status !== 'completed') {
+              clearChargingMapFocus()
+            } else {
+              // Generation is complete, but WebRTC may still be playing the audio.
+              chargingSpeechCompleteRef.current = true
+            }
+          }
           if (pendingRouteRef.current) {
             const pendingRoute = pendingRouteRef.current
             pendingRouteRef.current = null
@@ -1156,7 +1198,53 @@ export function useRealtimeAssistant() {
               ),
             )
           }
-          setState(toolCallInFlightRef.current ? 'PROCESSING' : 'LISTENING')
+          setState(
+            toolCallInFlightRef.current
+              ? 'PROCESSING'
+              : chargingSpeechCompleteRef.current
+                ? 'SPEAKING'
+                : 'LISTENING',
+          )
+        } else if (event.type === 'output_audio_buffer.started') {
+          if (
+            chargingSpeechPhaseRef.current === 'amenities' &&
+            event.response_id === chargingSpeechResponseIdRef.current
+          ) {
+            setChargingStopFocus(chargingAmenitiesFocusStopRef.current)
+          }
+        } else if (event.type === 'output_audio_buffer.stopped') {
+          if (
+            typeof event.response_id === 'string' &&
+            event.response_id === chargingSpeechResponseIdRef.current &&
+            chargingSpeechCompleteRef.current
+          ) {
+            if (chargingSpeechPhaseRef.current === 'plan') {
+              // Chargers have been added in overview throughout the plan speech.
+              // The close-up begins when the next audio buffer starts playing.
+              chargingSpeechPhaseRef.current = 'amenities'
+              chargingSpeechResponseIdRef.current = null
+              chargingSpeechCompleteRef.current = false
+              sendEvent({
+                type: 'response.create',
+                response: {
+                  instructions:
+                    'Say exactly one short sentence about the nearbyAmenities in the preceding charging result. If places exist, start "Nearby you have" and name up to three distinct places; include a verified partner benefit only if returned. Stop after the names or benefit. Do not add a second clause restating that amenities are nearby, repeat a place or charging detail, or use a preamble. If the list is empty, say "I could not find nearby amenities." If amenitiesStatus is unavailable, say "I could not check nearby amenities right now." Do not claim amenities were added to the route.',
+                },
+              })
+            } else if (chargingSpeechPhaseRef.current === 'amenities') {
+              clearChargingMapFocus()
+              setState('LISTENING')
+            }
+          }
+        } else if (event.type === 'output_audio_buffer.cleared') {
+          if (
+            chargingSpeechPhaseRef.current !== null &&
+            (event.response_id == null ||
+              event.response_id === chargingSpeechResponseIdRef.current)
+          ) {
+            clearChargingMapFocus()
+            setState('LISTENING')
+          }
         } else if (event.type === 'error') {
           const eventError = event.error as { message?: string } | undefined
           setError(
@@ -1303,6 +1391,7 @@ export function useRealtimeAssistant() {
     selectedPoi,
     poiActionState,
     amenityResults,
+    amenityMarkersVisible,
     amenitySearchState,
     amenitySearchContext,
     purchase,
@@ -1310,6 +1399,7 @@ export function useRealtimeAssistant() {
     driving,
     chargingStopConfirmed,
     chargingStopFocus,
+    destinationFocus,
     selectedBookingPoi,
     telemetry,
     successFeedback,

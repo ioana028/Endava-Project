@@ -8,7 +8,6 @@ from typing import Any
 from ...core.errors import APIError
 from .models import (
     BookingConfirmation,
-    PhoneConfirmationStatus,
     WalletStatus,
     WalletTransaction,
 )
@@ -36,7 +35,6 @@ class WalletService:
             route_id=route_id,
             status=WalletStatus.READY,
             wallet_status=WalletStatus.READY,
-            phone_confirmation_status=PhoneConfirmationStatus.PENDING,
             requirement_id=requirement_id,
         )
         self._transactions[key] = transaction
@@ -56,7 +54,6 @@ class WalletService:
             route_id=route_id,
             status=WalletStatus.PROCESSING,
             wallet_status=WalletStatus.PROCESSING,
-            phone_confirmation_status=PhoneConfirmationStatus.PENDING,
             requirement_id=requirement_id,
         )
         self._transactions[key] = transaction
@@ -69,7 +66,6 @@ class WalletService:
                     transaction,
                     status=WalletStatus.COMPLETED,
                     wallet_status=WalletStatus.COMPLETED,
-                    phone_confirmation_status=PhoneConfirmationStatus.SENT,
                 )
                 self._transactions[key] = updated
                 return updated
@@ -112,7 +108,6 @@ class WalletService:
             route_id=route_id,
             status=WalletStatus.DECLINED,
             wallet_status=WalletStatus.DECLINED,
-            phone_confirmation_status=PhoneConfirmationStatus.FAILED,
             requirement_id=requirement_id,
         )
         self._transactions[key] = transaction
@@ -160,28 +155,6 @@ class WalletService:
         )
         self._bookings[key] = booking
         return booking
-
-    async def send_phone_confirmation(self, transaction_id: str) -> WalletTransaction:
-        for key, transaction in self._transactions.items():
-            if transaction.transaction_id == transaction_id:
-                updated = replace(
-                    transaction,
-                    phone_confirmation_status=PhoneConfirmationStatus.SENT,
-                )
-                self._transactions[key] = updated
-                return updated
-        raise APIError(404, "TRANSACTION_NOT_FOUND", "The wallet transaction was not found.")
-
-    async def fail_phone_confirmation(self, transaction_id: str) -> WalletTransaction:
-        for key, transaction in self._transactions.items():
-            if transaction.transaction_id == transaction_id:
-                updated = replace(
-                    transaction,
-                    phone_confirmation_status=PhoneConfirmationStatus.FAILED,
-                )
-                self._transactions[key] = updated
-                return updated
-        raise APIError(404, "TRANSACTION_NOT_FOUND", "The wallet transaction was not found.")
 
     @staticmethod
     def _validate_booking(

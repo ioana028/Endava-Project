@@ -95,6 +95,31 @@ function routeHeading(path: google.maps.LatLngLiteral[]) {
   return (Math.atan2(longitude, north) * 180 / Math.PI + 360) % 360
 }
 
+function routeOverviewCamera(map: google.maps.Map, path: google.maps.LatLngLiteral[]) {
+  const bounds = new google.maps.LatLngBounds()
+  path.forEach((point) => bounds.extend(point))
+  const northEast = bounds.getNorthEast()
+  const southWest = bounds.getSouthWest()
+  const mercatorY = (latitude: number) => {
+    const radians = Math.max(-85.051, Math.min(85.051, latitude)) * Math.PI / 180
+    return (1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2
+  }
+  const longitudeSpan = ((northEast.lng() - southWest.lng() + 360) % 360) / 360
+  const latitudeSpan = Math.abs(mercatorY(northEast.lat()) - mercatorY(southWest.lat()))
+  const width = Math.max(1, map.getDiv().clientWidth - 96)
+  const height = Math.max(1, map.getDiv().clientHeight - 96)
+  const zoom = Math.min(
+    Math.log2(width / (256 * Math.max(longitudeSpan, 1e-6))),
+    Math.log2(height / (256 * Math.max(latitudeSpan, 1e-6))),
+  )
+  return {
+    center: bounds.getCenter().toJSON(),
+    zoom: Math.max(3, Math.min(17, zoom)),
+    tilt: 25,
+    heading: 0,
+  }
+}
+
 const overviewMapStyles: google.maps.MapTypeStyle[] = [
   {
     featureType: 'landscape.man_made',
@@ -129,6 +154,7 @@ interface RouteMapProps {
   amenityResults?: StopPinpoint[]
   amenityFocusName?: string | null
   focusStop?: Pick<StopPinpoint, 'id' | 'name' | 'coords'> | null
+  focusDestination?: boolean
   drivingActive?: boolean
   showChargingStop?: boolean
   routePriority?: RoutePriority
@@ -142,6 +168,7 @@ export function RouteMap({
   amenityResults = [],
   amenityFocusName = null,
   focusStop = null,
+  focusDestination = false,
   drivingActive = false,
   showChargingStop = true,
   routePriority = 'BALANCED',
@@ -151,15 +178,29 @@ export function RouteMap({
   const mapElementRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
   const polylineRef = useRef<google.maps.Polyline | null>(null)
-  const markersRef = useRef<google.maps.Marker[]>([])
-  const poiMarkersRef = useRef<google.maps.Marker[]>([])
+  const routeMarkersRef = useRef<Map<string, google.maps.Marker>>(new Map())
+  const markerTimersRef = useRef<number[]>([])
+  const routeDrawFrameRef = useRef<number | null>(null)
+  const previousRouteRef = useRef<RouteResponse | null>(null)
+  const poiMarkersRef = useRef<Map<string, google.maps.Marker>>(new Map())
+  const poiMarkerTimersRef = useRef<number[]>([])
+  const onPoiSelectRef = useRef(onPoiSelect)
   const amenityMarkersRef = useRef<google.maps.Marker[]>([])
   const poiResultsRef = useRef(poiResults)
   const durationOverlayRef = useRef<google.maps.OverlayView | null>(null)
+  const durationOverlayClassRef = useRef<(new (
+    position: google.maps.LatLngLiteral,
+    text: string,
+    placement: 'above' | 'below',
+  ) => google.maps.OverlayView) | null>(null)
+  const mapStylesRef = useRef<google.maps.MapTypeStyle[]>([])
+  const initialRouteRef = useRef(route)
+  const cameraFrameRef = useRef<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [mapReady, setMapReady] = useState(false)
 
   poiResultsRef.current = poiResults
+  onPoiSelectRef.current = onPoiSelect
 
   function disposeMap() {
     const map = mapRef.current
@@ -180,19 +221,8 @@ export function RouteMap({
 
   useEffect(() => {
     let cancelled = false
-
-    polylineRef.current?.setMap(null)
-    polylineRef.current = null
-    disposeMap()
-    markersRef.current.forEach(disposeMarker)
-    markersRef.current = []
-    poiMarkersRef.current.forEach(disposeMarker)
-    poiMarkersRef.current = []
-    amenityMarkersRef.current.forEach(disposeMarker)
-    amenityMarkersRef.current = []
-    durationOverlayRef.current?.setMap(null)
-    durationOverlayRef.current = null
-    setMapReady(false)
+    const routeMarkers = routeMarkersRef.current
+    const poiMarkers = poiMarkersRef.current
 
     async function renderMap() {
       if (!browserKey) {
@@ -301,17 +331,20 @@ export function RouteMap({
           }
         }
 
+        durationOverlayClassRef.current = DurationOverlay
+
         if (cancelled || !mapElementRef.current) {
           return
         }
 
-        const path = route && route.geometry.length > 0
-          ? toGooglePath(route.geometry)
+        const initialRoute = initialRouteRef.current
+        const path = initialRoute && initialRoute.geometry.length > 0
+          ? toGooglePath(initialRoute.geometry)
           : [{ lat: 48.2082, lng: 16.3738 }]
         const map = new Map(mapElementRef.current, {
           center: path[0],
-          zoom: route ? 7 : 17,
-          tilt: drivingActive ? 67.5 : 0,
+          zoom: initialRoute ? 7 : 17,
+          tilt: 0,
           heading: 0,
           mapId: mapId || undefined,
           colorScheme: google.maps.ColorScheme.DARK,
@@ -428,104 +461,12 @@ export function RouteMap({
     elementType: 'labels',
     stylers: [{ visibility: 'off' }],
   },
-  ...(drivingActive ? drivingMapStyles : overviewMapStyles),
+  ...overviewMapStyles,
 ],
         })
         mapRef.current = map
+        mapStylesRef.current = (map.get('styles') as google.maps.MapTypeStyle[] | undefined) ?? []
 
-        const bounds = new google.maps.LatLngBounds()
-
-        for (const point of path) {
-          bounds.extend(point)
-        }
-
-        if (route) {
-          if (drivingActive) {
-            map.setCenter(path[0])
-            map.setZoom(18)
-            map.setTilt(67.5)
-            map.setHeading(routeHeading(path))
-          } else {
-            map.fitBounds(bounds, 48)
-          }
-        }
-
-        if (route) {
-          polylineRef.current = new google.maps.Polyline({
-            map,
-            path,
-            strokeColor: routePriority === 'SCENIC' ? '#f2cc61' : '#19a7ff',
-            strokeOpacity: 0.95,
-            strokeWeight: 6,
-          })
-        }
-
-        const originMarker = new google.maps.Marker({
-          map,
-          position: path[0],
-          title: route?.origin ?? 'Current vehicle position',
-          icon: drivingActive
-            ? {
-                path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-                scale: 7,
-                rotation: routeHeading(path),
-                fillColor: '#61e4c1',
-                fillOpacity: 1,
-                strokeColor: '#ffffff',
-                strokeWeight: 2,
-              }
-            : {
-                path: google.maps.SymbolPath.CIRCLE,
-                scale: 8,
-                fillColor: '#1677ff',
-                fillOpacity: 1,
-                strokeColor: '#ffffff',
-                strokeWeight: 3,
-              },
-          zIndex: 3,
-        })
-
-        const destinationMarker = route ? new google.maps.Marker({
-          map,
-          position: path[path.length - 1],
-          title: route.destination,
-          icon: createMarkerIcon(destinationPin, 30, 46),
-          zIndex: 3,
-        }) : null
-
-        const stopMarkers = route?.stops.filter(
-          (stop) => showChargingStop || stop.category !== 'charging',
-        ).map(
-          (stop) =>
-            new google.maps.Marker({
-              map,
-              position: { lat: stop.coords[1], lng: stop.coords[0] },
-              title: stop.name,
-              icon: markerIconForCategory(stop.category),
-              zIndex: 2,
-            }),
-        ) ?? []
-
-        const durationOverlay = route ? new DurationOverlay(
-          getCalloutPosition(path, [...route.stops, ...poiResultsRef.current]),
-          formatDuration(
-            showChargingStop
-              ? route.stats.totalDurationMinutes
-              : route.stats.drivingDurationMinutes,
-          ),
-          Math.abs(path[path.length - 1].lng - path[0].lng)
-            >= Math.abs(path[path.length - 1].lat - path[0].lat)
-            ? 'above'
-            : 'below',
-        ) : null
-        durationOverlay?.setMap(map)
-
-        markersRef.current = [
-          originMarker,
-          ...(destinationMarker ? [destinationMarker] : []),
-          ...stopMarkers,
-        ]
-        durationOverlayRef.current = durationOverlay
         setMapReady(true)
       } catch {
         if (!cancelled) {
@@ -538,47 +479,216 @@ export function RouteMap({
 
     return () => {
       cancelled = true
+      if (cameraFrameRef.current !== null) {
+        window.cancelAnimationFrame(cameraFrameRef.current)
+      }
+      if (routeDrawFrameRef.current !== null) {
+        window.cancelAnimationFrame(routeDrawFrameRef.current)
+      }
+      markerTimersRef.current.forEach(window.clearTimeout)
+      markerTimersRef.current = []
+      poiMarkerTimersRef.current.forEach(window.clearTimeout)
+      poiMarkerTimersRef.current = []
       polylineRef.current?.setMap(null)
       polylineRef.current = null
       disposeMap()
-      markersRef.current.forEach(disposeMarker)
-      markersRef.current = []
-      poiMarkersRef.current.forEach(disposeMarker)
-      poiMarkersRef.current = []
+      routeMarkers.forEach(disposeMarker)
+      routeMarkers.clear()
+      previousRouteRef.current = null
+      poiMarkers.forEach(disposeMarker)
+      poiMarkers.clear()
       amenityMarkersRef.current.forEach(disposeMarker)
       amenityMarkersRef.current = []
       durationOverlayRef.current?.setMap(null)
       durationOverlayRef.current = null
       setMapReady(false)
     }
-  }, [drivingActive, route, routePriority, showChargingStop])
+  }, [])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!mapReady || !map) return
+    const path = route && route.geometry.length > 0
+      ? toGooglePath(route.geometry)
+      : [{ lat: 48.2082, lng: 16.3738 }]
+    const previousRoute = previousRouteRef.current
+    const isNewRoute = Boolean(
+      route && route !== previousRoute && (
+        previousRoute === null ||
+        route.routeStatus === 'ROUTE_READY' ||
+        route.routeStatus === 'CHARGING_OPTIONS_READY'
+      ),
+    )
+    previousRouteRef.current = route ?? null
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    if (routeDrawFrameRef.current !== null) {
+      window.cancelAnimationFrame(routeDrawFrameRef.current)
+      routeDrawFrameRef.current = null
+    }
+    markerTimersRef.current.forEach(window.clearTimeout)
+    markerTimersRef.current = []
+    durationOverlayRef.current?.setMap(null)
+    map.setOptions({
+      styles: [...mapStylesRef.current, ...(drivingActive ? drivingMapStyles : [])],
+    })
+
+    if (!route) {
+      polylineRef.current?.setMap(null)
+      polylineRef.current = null
+    } else {
+      const polyline = polylineRef.current ?? new google.maps.Polyline({ map })
+      polyline.setOptions({
+        strokeColor: routePriority === 'SCENIC' ? '#f2cc61' : '#19a7ff',
+        strokeOpacity: 0.95,
+        strokeWeight: 6,
+      })
+      polylineRef.current = polyline
+      if (isNewRoute && !reducedMotion && !drivingActive && path.length > 1) {
+        polyline.setPath([path[0]])
+        let startedAt: number | null = null
+        let lastUpdatedAt = 0
+        const draw = (now: number) => {
+          startedAt ??= now
+          const progress = Math.min(1, (now - startedAt) / 950)
+          const eased = 1 - (1 - progress) ** 2
+          if (now - lastUpdatedAt >= 28 || progress === 1) {
+            const visibleCount = Math.max(2, Math.ceil(1 + (path.length - 1) * eased))
+            polyline.setPath(progress === 1 ? path : path.slice(0, visibleCount))
+            lastUpdatedAt = now
+          }
+          if (progress < 1) {
+            routeDrawFrameRef.current = window.requestAnimationFrame(draw)
+          } else {
+            routeDrawFrameRef.current = null
+          }
+        }
+        routeDrawFrameRef.current = window.requestAnimationFrame(draw)
+      } else {
+        polyline.setPath(path)
+      }
+    }
+
+    type RouteMarkerSpec = { key: string; position: google.maps.LatLngLiteral; title: string; icon: google.maps.Icon | google.maps.Symbol | undefined; zIndex: number }
+    const markerSpecs: RouteMarkerSpec[] = [{
+      key: 'origin',
+      position: path[0],
+      title: route?.origin ?? 'Current vehicle position',
+      icon: drivingActive
+        ? {
+            path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+            scale: 7,
+            rotation: routeHeading(path),
+            fillColor: '#61e4c1',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 2,
+          }
+        : {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 8,
+            fillColor: '#1677ff',
+            fillOpacity: 1,
+            strokeColor: '#ffffff',
+            strokeWeight: 3,
+          },
+      zIndex: 3,
+    }]
+    if (route) {
+      markerSpecs.push({
+        key: 'destination',
+        position: path[path.length - 1],
+        title: route.destination,
+        icon: createMarkerIcon(destinationPin, 30, 46),
+        zIndex: 3,
+      })
+      route.stops.filter(
+        (stop) => showChargingStop || stop.category !== 'charging',
+      ).forEach((stop) => markerSpecs.push({
+        key: `stop:${stop.id}`,
+        position: { lat: stop.coords[1], lng: stop.coords[0] },
+        title: stop.name,
+        icon: markerIconForCategory(stop.category),
+        zIndex: 2,
+      }))
+    }
+
+    const desiredKeys = new Set(markerSpecs.map((spec) => spec.key))
+    for (const [key, marker] of routeMarkersRef.current) {
+      if (!desiredKeys.has(key) || (isNewRoute && key !== 'origin')) {
+        disposeMarker(marker)
+        routeMarkersRef.current.delete(key)
+      }
+    }
+    let newMarkerIndex = 0
+    for (const spec of markerSpecs) {
+      const existing = routeMarkersRef.current.get(spec.key)
+      if (existing) {
+        existing.setOptions({
+          position: spec.position,
+          title: spec.title,
+          icon: spec.icon,
+          zIndex: spec.zIndex,
+        })
+        if (!existing.getMap()) existing.setMap(map)
+        continue
+      }
+      const shouldDrop = spec.key !== 'origin' && !reducedMotion && !drivingActive
+      const marker = new google.maps.Marker({
+        map: shouldDrop ? null : map,
+        position: spec.position,
+        title: spec.title,
+        icon: spec.icon,
+        zIndex: spec.zIndex,
+      })
+      routeMarkersRef.current.set(spec.key, marker)
+      if (shouldDrop) {
+        const delay = (isNewRoute ? 950 : 0) + newMarkerIndex * 110
+        const timer = window.setTimeout(() => {
+          if (routeMarkersRef.current.get(spec.key) === marker && mapRef.current === map) {
+            marker.setMap(map)
+            marker.setAnimation(google.maps.Animation.DROP)
+          }
+        }, delay)
+        markerTimersRef.current.push(timer)
+        newMarkerIndex += 1
+      }
+    }
+
+    const DurationOverlay = durationOverlayClassRef.current
+    const durationOverlay = route && DurationOverlay ? new DurationOverlay(
+      getCalloutPosition(path, [...route.stops, ...poiResultsRef.current]),
+      formatDuration(showChargingStop
+        ? route.stats.totalDurationMinutes
+        : route.stats.drivingDurationMinutes),
+      Math.abs(path[path.length - 1].lng - path[0].lng)
+        >= Math.abs(path[path.length - 1].lat - path[0].lat)
+        ? 'above' : 'below',
+    ) : null
+    durationOverlay?.setMap(map)
+    durationOverlayRef.current = durationOverlay
+  }, [drivingActive, mapReady, route, routePriority, showChargingStop])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current || !route) {
       return
     }
 
+    const map = mapRef.current
+    const path = toGooglePath(route.geometry)
+    if (path.length === 0) return
+    let target: { center: google.maps.LatLngLiteral; zoom: number; tilt: number; heading: number }
+
     if (drivingActive) {
-      const path = toGooglePath(route.geometry)
-      mapRef.current.setTilt(67.5)
-      mapRef.current.panTo(path[0])
-      mapRef.current.setHeading(routeHeading(path))
-      mapRef.current.setZoom(18)
-      return
-    }
-
-    if (focusStop) {
-      mapRef.current.panTo({
-        lat: focusStop.coords[1],
-        lng: focusStop.coords[0],
-      })
-      mapRef.current.setTilt(0)
-      mapRef.current.setHeading(0)
-      mapRef.current.setZoom(16)
-      return
-    }
-
-    if (amenityFocusName) {
+      target = { center: path[0], zoom: 18, tilt: 67.5, heading: routeHeading(path) }
+    } else if (focusStop) {
+      target = {
+        center: { lat: focusStop.coords[1], lng: focusStop.coords[0] },
+        zoom: 17,
+        tilt: 0,
+        heading: 0,
+      }
+    } else if (amenityFocusName) {
       const selectedStop = (route.chargingStop?.name === amenityFocusName
         ? route.chargingStop
         : route.stops.find(
@@ -587,24 +697,64 @@ export function RouteMap({
       if (!selectedStop) {
         return
       }
-
-      mapRef.current.panTo({
-        lat: selectedStop.coords[1],
-        lng: selectedStop.coords[0],
-      })
-      mapRef.current.setTilt(0)
-      mapRef.current.setHeading(0)
-      mapRef.current.setZoom(15)
-      return
+      target = {
+        center: { lat: selectedStop.coords[1], lng: selectedStop.coords[0] },
+        zoom: 17,
+        tilt: 0,
+        heading: 0,
+      }
+    } else if (focusDestination) {
+      target = { center: path[path.length - 1], zoom: 15, tilt: 0, heading: 0 }
+    } else {
+      target = routeOverviewCamera(map, path)
     }
 
-    const path = toGooglePath(route.geometry)
-    const bounds = new google.maps.LatLngBounds()
-    path.forEach((point) => bounds.extend(point))
-    mapRef.current.setTilt(25)
-    mapRef.current.setHeading(0)
-    mapRef.current.fitBounds(bounds, 48)
-  }, [amenityFocusName, drivingActive, focusStop, mapReady, route])
+    if (cameraFrameRef.current !== null) {
+      window.cancelAnimationFrame(cameraFrameRef.current)
+    }
+    const currentCenter = map.getCenter()?.toJSON() ?? target.center
+    const currentZoom = map.getZoom() ?? target.zoom
+    const currentTilt = map.getTilt() ?? 0
+    const currentHeading = map.getHeading() ?? 0
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (reducedMotion) {
+      map.moveCamera(target)
+      return
+    }
+    const duration = 1050
+    let startedAt: number | null = null
+    const shortestArc = (from: number, to: number) => ((to - from + 540) % 360) - 180
+    const longitudeDelta = shortestArc(currentCenter.lng, target.center.lng)
+    const headingDelta = shortestArc(currentHeading, target.heading)
+    const animate = (now: number) => {
+      startedAt ??= now
+      const progress = Math.min(1, (now - startedAt) / duration)
+      const eased = progress < 0.5
+        ? 4 * progress ** 3
+        : 1 - (-2 * progress + 2) ** 3 / 2
+      map.moveCamera({
+        center: {
+          lat: currentCenter.lat + (target.center.lat - currentCenter.lat) * eased,
+          lng: currentCenter.lng + longitudeDelta * eased,
+        },
+        zoom: currentZoom + (target.zoom - currentZoom) * eased,
+        tilt: currentTilt + (target.tilt - currentTilt) * eased,
+        heading: currentHeading + headingDelta * eased,
+      })
+      if (progress < 1) {
+        cameraFrameRef.current = window.requestAnimationFrame(animate)
+      } else {
+        cameraFrameRef.current = null
+      }
+    }
+    cameraFrameRef.current = window.requestAnimationFrame(animate)
+    return () => {
+      if (cameraFrameRef.current !== null) {
+        window.cancelAnimationFrame(cameraFrameRef.current)
+        cameraFrameRef.current = null
+      }
+    }
+  }, [amenityFocusName, drivingActive, focusDestination, focusStop, mapReady, route])
 
   useEffect(() => {
     if (!mapReady || !mapRef.current) {
@@ -629,14 +779,22 @@ export function RouteMap({
   }, [amenityResults, mapReady])
 
   useEffect(() => {
-    if (!mapReady || !mapRef.current) {
-      return
-    }
+    const map = mapRef.current
+    if (!mapReady || !map) return
 
-    poiMarkersRef.current.forEach(disposeMarker)
-    poiMarkersRef.current = poiResults.map((poi) => {
-      const marker = new google.maps.Marker({
-        map: mapRef.current,
+    poiMarkerTimersRef.current.forEach(window.clearTimeout)
+    poiMarkerTimersRef.current = []
+    const currentIds = new Set(poiResults.map((poi) => poi.id))
+    for (const [id, marker] of poiMarkersRef.current) {
+      if (!currentIds.has(id)) {
+        disposeMarker(marker)
+        poiMarkersRef.current.delete(id)
+      }
+    }
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    let newMarkerIndex = 0
+    for (const poi of poiResults) {
+      const options = {
         position: { lat: poi.coords[1], lng: poi.coords[0] },
         title: poi.name,
         icon: {
@@ -648,19 +806,32 @@ export function RouteMap({
           strokeWeight: poi.id === selectedPoiId ? 3 : 2,
         },
         zIndex: poi.id === selectedPoiId ? 5 : 4,
-        clickable: Boolean(onPoiSelect),
-      })
-      if (onPoiSelect) {
-        marker.addListener('click', () => onPoiSelect(poi.id))
+        clickable: Boolean(onPoiSelectRef.current),
       }
-      return marker
-    })
-
-    return () => {
-      poiMarkersRef.current.forEach(disposeMarker)
-      poiMarkersRef.current = []
+      const existing = poiMarkersRef.current.get(poi.id)
+      if (existing) {
+        existing.setOptions(options)
+        if (!existing.getMap()) existing.setMap(map)
+        continue
+      }
+      const marker = new google.maps.Marker({
+        ...options,
+        map: reducedMotion ? map : null,
+      })
+      marker.addListener('click', () => onPoiSelectRef.current?.(poi.id))
+      poiMarkersRef.current.set(poi.id, marker)
+      if (!reducedMotion) {
+        const timer = window.setTimeout(() => {
+          if (poiMarkersRef.current.get(poi.id) === marker && mapRef.current === map) {
+            marker.setMap(map)
+            marker.setAnimation(google.maps.Animation.DROP)
+          }
+        }, newMarkerIndex * 110)
+        poiMarkerTimersRef.current.push(timer)
+        newMarkerIndex += 1
+      }
     }
-  }, [mapReady, onPoiSelect, poiResults, selectedPoiId])
+  }, [mapReady, poiResults, selectedPoiId])
 
   if (error) {
     return <p role="alert">{error}</p>

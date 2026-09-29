@@ -81,7 +81,7 @@ export interface PartnerFact {
   brand: string;
   benefit?: string | null;
   benefitScope?: string | null;
-  benefitSource: 'fixture' | 'configured' | 'provider';
+  benefitSource?: 'fixture' | 'configured' | 'provider' | null;
   verified: boolean;
 }
 
@@ -192,6 +192,7 @@ export interface StopAmenitiesResponse {
 
 export interface ConfirmChargingStopResponse extends StopAmenitiesResponse {
   route: RouteResponse;
+  amenitiesAvailable?: boolean;
   chargingPlan?: ChargingPlan | null;
   sessionFacts?: RouteSessionFacts | null;
 }
@@ -209,7 +210,6 @@ export interface PurchaseVignetteResponse {
   routeId: string;
   requirementId: string;
   walletStatus: 'ready' | 'processing' | 'completed' | 'declined' | 'duplicate';
-  phoneConfirmationStatus: 'pending' | 'sent' | 'failed';
   amountEur: number;
   currency: 'EUR';
   sessionFacts?: RouteSessionFacts | null;
@@ -239,7 +239,6 @@ export interface BookingResponse {
   date: string;
   time?: string | null;
   walletStatus: 'ready' | 'processing' | 'completed' | 'declined' | 'duplicate';
-  phoneConfirmationStatus: 'pending' | 'sent' | 'failed';
 }
 
 export interface StartDrivingResponse {

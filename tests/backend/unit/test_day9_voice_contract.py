@@ -79,16 +79,17 @@ def test_day9_contract_keeps_voice_safe_route_facts() -> None:
 
 def test_day9_realtime_instructions_are_statement_first_and_complete() -> None:
     assert "suzanne:connection-confirmed" not in REALTIME_INSTRUCTIONS
-    assert "complete ordered charging plan" in REALTIME_INSTRUCTIONS
-    assert "returned telemetry facts" in REALTIME_INSTRUCTIONS
-    assert "route alerts" in REALTIME_INSTRUCTIONS
-    assert "review counts" in REALTIME_INSTRUCTIONS
-    assert "verified partner fact" in REALTIME_INSTRUCTIONS
-    assert "speak the result once" in REALTIME_INSTRUCTIONS
-    assert "at most one brief acknowledgement" in REALTIME_INSTRUCTIONS
-    assert "still waiting on a response" in REALTIME_INSTRUCTIONS
-    assert "Charging is a requirement, never a" in REALTIME_INSTRUCTIONS
-    assert "Do not repeat the route's vignette requirement" in REALTIME_INSTRUCTIONS
+    normalized_instructions = " ".join(REALTIME_INSTRUCTIONS.split())
+    assert "complete ordered charging plan as one action" in normalized_instructions
+    assert "state every returned station and its charging duration once" in normalized_instructions
+    assert "later stops can be searched if the driver asks" in normalized_instructions
+    assert "no more than two hotels or restaurants" in normalized_instructions
+    assert "speech-only" in normalized_instructions
+    assert "At most one brief, noncommittal acknowledgement" in normalized_instructions
+    assert "approximate travel time once" in normalized_instructions
+    assert "route-average weather in plain language" in normalized_instructions
+    assert "A direct request to add a charger or charging stop is sufficient consent" in normalized_instructions
+    assert "separate brief amenities response" in normalized_instructions
 
 
 def test_route_poi_api_preserves_service_opportunities() -> None:

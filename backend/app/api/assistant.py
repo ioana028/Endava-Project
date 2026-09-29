@@ -6,7 +6,10 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ..core.errors import APIError
-from ..integrations.weather.provider import summarize_route_weather
+from ..integrations.weather.provider import (
+    summarize_route_weather,
+    summarize_route_weather_advisories,
+)
 from ..models.contracts import (
     AssistantIntent,
     RealtimeSessionResponse,
@@ -107,11 +110,19 @@ async def _attach_route_facts(request: Request, route: Any) -> Any:
             location=route.destination,
         )
         weather_summary = summarize_route_weather(snapshot)
-        weather_alerts = {
-            (weather_summary.location_name, weather_summary.message): weather_summary
-        } if weather_summary is not None else {}
+        weather_advisories = summarize_route_weather_advisories(snapshot)
+        alerts = [*route.alerts]
+        alerts.extend(
+            alert
+            for alert in (weather_summary, weather_advisories)
+            if alert is not None
+        )
+        unique_alerts = {
+            (alert.type, alert.location_name, alert.severity, alert.message): alert
+            for alert in alerts
+        }
         updated_route = updated_route.model_copy(
-            update={"alerts": [*route.alerts, *weather_alerts.values()]}
+            update={"alerts": list(unique_alerts.values())}
         )
     return updated_route
 
@@ -269,6 +280,7 @@ async def realtime_confirm_charging_stop(
         route=await _attach_route_facts(request, result["route"]),
         selected_stop_name=result["selected_stop_name"],
         results=result.get("results", []),
+        amenities_available=result.get("amenities_available", True),
         charging_plan=result.get("charging_plan"),
         session_facts=result.get("session_facts"),
         session_id=_active_context_id(request.app.state.route_service, "session_id"),

@@ -88,7 +88,7 @@ class PartnerFact(ContractModel):
     brand: str
     benefit: str | None = None
     benefit_scope: str | None = None
-    benefit_source: Literal["fixture", "configured", "provider"]
+    benefit_source: Literal["fixture", "configured", "provider"] | None = None
     verified: bool
 
 
@@ -225,7 +225,7 @@ class RealtimeToolSearchStopAmenitiesResponse(ContractModel):
 
 class RealtimeToolConfirmChargingRequest(ContractModel):
     route_id: str = Field(min_length=1, max_length=200)
-    stop_id: str = Field(min_length=1, max_length=200)
+    stop_id: str | None = Field(default=None, min_length=1, max_length=200)
     confirmation: Literal["confirmed"]
 
 
@@ -233,6 +233,7 @@ class RealtimeToolConfirmChargingResponse(ContractModel):
     route: RouteResponse
     selected_stop_name: str
     results: list[StopPinpoint] = Field(default_factory=list, max_length=4)
+    amenities_available: bool = True
     charging_plan: ChargingPlan | None = None
     session_facts: RouteSessionFacts | None = None
     session_id: str | None = None
@@ -269,7 +270,6 @@ class RealtimeToolPurchaseVignetteResponse(ContractModel):
     route_id: str
     requirement_id: str
     wallet_status: Literal["ready", "processing", "completed", "declined", "duplicate"]
-    phone_confirmation_status: Literal["pending", "sent", "failed"]
     amount_eur: float = Field(ge=0)
     currency: Literal["EUR"]
     session_facts: RouteSessionFacts | None = None
@@ -297,7 +297,6 @@ class RealtimeToolBookingResponse(ContractModel):
     date: str
     time: str | None = None
     wallet_status: Literal["ready", "processing", "completed", "declined", "duplicate"]
-    phone_confirmation_status: Literal["pending", "sent", "failed"]
 
 
 class RealtimeToolStartDrivingRequest(ContractModel):

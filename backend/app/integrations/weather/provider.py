@@ -37,62 +37,82 @@ def summarize_route_weather(snapshot: WeatherSnapshot) -> RouteAlert | None:
     condition_counts: dict[str, int] = {}
     for point in snapshot.points:
         condition_counts[point.condition] = condition_counts.get(point.condition, 0) + 1
-    condition = max(condition_counts, key=condition_counts.get)
-    severity = max(
-        (point.severity for point in snapshot.points),
-        key=("INFO", "WARNING", "CRITICAL").index,
+    condition = (
+        next(iter(condition_counts))
+        if len(condition_counts) == 1
+        else "Mixed conditions"
     )
     temperature_text = (
-        f"{sum(temperatures) / len(temperatures):g}°C average"
+        f"average temperature about {round(sum(temperatures) / len(temperatures))}°C"
         if temperatures
-        else "temperature unavailable"
+        else "average temperature unavailable"
     )
     return RouteAlert(
         type="WEATHER",
         location_name="Route average",
-        severity=severity,
-        message=f"{condition}, {temperature_text} across {len(snapshot.points)} segments.",
+        severity="INFO",
+        message=(
+            f"Current route conditions: {condition}; {temperature_text} across "
+            f"{len(snapshot.points)} sampled points."
+        ),
     )
+
+
+def summarize_route_weather_advisories(snapshot: WeatherSnapshot) -> RouteAlert | None:
+    counts: dict[tuple[str, str], int] = {}
+    for point in snapshot.points:
+        if point.severity not in {"WARNING", "CRITICAL"}:
+            continue
+        key = (point.severity, point.condition)
+        counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return None
+
+    severity_order = {"CRITICAL": 0, "WARNING": 1}
+    messages = []
+    for (severity, condition), count in sorted(
+        counts.items(), key=lambda item: (severity_order[item[0][0]], item[0][1])
+    ):
+        point_label = "sampled point" if count == 1 else "sampled points"
+        messages.append(f"{severity.title()}: {condition} at {count} {point_label}")
+
+    return RouteAlert(
+        type="WEATHER",
+        location_name="Weather advisories",
+        severity="CRITICAL" if any(key[0] == "CRITICAL" for key in counts) else "WARNING",
+        message="; ".join(messages) + ".",
+    )
+
+
+def sample_route_points(
+    route_points: tuple[tuple[float, float], ...] | None,
+    limit: int = 5,
+) -> tuple[tuple[float, float], ...]:
+    points = tuple(route_points or ())
+    if not points or limit <= 0:
+        return ()
+    if len(points) <= limit:
+        return points
+    if limit == 1:
+        return (points[0],)
+    indices = tuple(
+        round(index * (len(points) - 1) / (limit - 1))
+        for index in range(limit)
+    )
+    return tuple(points[index] for index in indices)
 
 
 class OfflineWeatherProvider:
     """Deterministic offline weather fixture for local route planning."""
 
-    async def get_route_weather(self, *, route_points: tuple[tuple[float, float], ...] | None = None, location: str | None = None) -> WeatherSnapshot:
-        points: list[WeatherPoint] = []
-        if route_points:
-            for index, _ in enumerate(route_points[:5], start=1):
-                points.append(
-                    WeatherPoint(
-                        location_name=(location or f"Route segment {index}"),
-                        condition="Partly cloudy" if index % 2 else "Rain showers",
-                        temperature_c=16.0 + index,
-                        severity="INFO" if index % 2 else "WARNING",
-                        timestamp=datetime.now(UTC).isoformat(timespec="minutes"),
-                    )
-                )
-        else:
-            points = [
-                WeatherPoint(
-                    location_name=location or "Route corridor",
-                    condition="Clear",
-                    temperature_c=18.0,
-                    severity="INFO",
-                    timestamp=datetime.now(UTC).isoformat(timespec="minutes"),
-                )
-            ]
-
-        alerts: list[RouteAlert] = []
-        for point in points:
-            alerts.append(
-                RouteAlert(
-                    type="WEATHER",
-                    location_name=point.location_name,
-                    severity=point.severity,
-                    message=(point.alert_message or f"{point.condition}, {point.temperature_c:g}°C." if point.temperature_c is not None else point.condition),
-                )
-            )
-        return WeatherSnapshot(points=tuple(points), alerts=tuple(alerts))
+    async def get_route_weather(
+        self,
+        *,
+        route_points: tuple[tuple[float, float], ...] | None = None,
+        location: str | None = None,
+    ) -> WeatherSnapshot:
+        # Never present fabricated offline conditions as live route weather.
+        return WeatherSnapshot(points=())
 
 
 class OpenMeteoWeatherProvider:
@@ -107,7 +127,7 @@ class OpenMeteoWeatherProvider:
         route_points: tuple[tuple[float, float], ...] | None = None,
         location: str | None = None,
     ) -> WeatherSnapshot:
-        points = tuple(route_points or ())[:5]
+        points = sample_route_points(route_points)
         if not points:
             return WeatherSnapshot(points=())
 
@@ -129,7 +149,7 @@ class OpenMeteoWeatherProvider:
 
         responses = payload if isinstance(payload, list) else [payload]
         weather_points = tuple(
-            self._to_point(item, index, location)
+            self._to_point(item, index)
             for index, item in enumerate(responses)
             if isinstance(item, dict)
         )
@@ -147,13 +167,13 @@ class OpenMeteoWeatherProvider:
         )
 
     @staticmethod
-    def _to_point(payload: dict[str, Any], index: int, location: str | None) -> WeatherPoint:
+    def _to_point(payload: dict[str, Any], index: int) -> WeatherPoint:
         current = payload.get("current") or {}
         code = int(current.get("weather_code", 0))
         condition, severity = _open_meteo_condition(code)
         temperature = current.get("temperature_2m")
         return WeatherPoint(
-            location_name=f"{location} · segment {index + 1}" if location else f"Route segment {index + 1}",
+            location_name=f"Route section {index + 1}",
             condition=condition,
             temperature_c=float(temperature) if temperature is not None else None,
             severity=severity,
@@ -182,7 +202,7 @@ def _open_meteo_condition(code: int) -> tuple[str, str]:
 
 def normalize_weather_result(payload: dict[str, Any] | None) -> WeatherSnapshot:
     if not isinstance(payload, dict):
-        return OfflineWeatherProvider().get_route_weather()
+        return WeatherSnapshot(points=())
 
     points = payload.get("points") or []
     normalized_points = []
