@@ -217,11 +217,15 @@ def test_charging_search_keeps_google_chargers_for_later_route_legs(
 
     candidates = asyncio.run(
         GooglePlacesProvider("test-key", max_search_points=2).search_charging(
-            route(), max_distance_km=10
+            route(), max_distance_km=10, target_progress_km=(10.0,)
         )
     )
 
     assert candidates == ()
+    assert len(FakePlacesClient.calls) == 1
+    request = FakePlacesClient.calls[0]["json"]
+    assert "locationBias" in request
+    assert request["locationBias"]["circle"]["radius"] == 7500.0
 
 
 def test_places_timeout_is_translated_to_provider_error(monkeypatch: pytest.MonkeyPatch) -> None:

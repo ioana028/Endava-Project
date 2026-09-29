@@ -89,6 +89,7 @@ def create_app(
         else OfflineWeatherProvider()
     )
     application.state.settings = settings
+    application.state.fixture_repository = fixture_repository
     application.state.route_service = route_service
     application.state.wallet_service = wallet_service
     application.state.commerce_service = commerce_service

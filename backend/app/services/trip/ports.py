@@ -58,7 +58,10 @@ class POICandidate:
 
 class ChargingProvider(Protocol):
     async def search_charging(
-        self, route: ProviderRoute, max_distance_km: float
+        self,
+        route: ProviderRoute,
+        max_distance_km: float,
+        target_progress_km: tuple[float, ...] = (),
     ) -> tuple[ChargingCandidate, ...]: ...
 
 

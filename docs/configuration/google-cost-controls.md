@@ -7,7 +7,7 @@ The Google Routes and Places providers use process-local request coalescing and 
 - Geocodes are cached for one hour.
 - Routes are cached for five minutes using origin, destination, priority, and waypoint coordinates.
 - Places searches are cached for five minutes using category, location, preference, route geometry, and nearby coordinates.
-- Route Places searches are hard-capped at four sample points, regardless of the environment value.
+- Charging discovery is limited to one Google Places request around each required charging progress point: the first current-safe-range point, then each max-safe-range point after charging. Other route Places searches are hard-capped at four sample points, regardless of the environment value.
 - Charger direction validation is hard-capped at six Compute Routes checks.
 - Default charger amenities use three searches: food, coffee, and rest. Additional categories are searched only when explicitly requested.
 - Charging searches request only charging fields. Attraction and general searches do not request photos or editorial summaries, avoiding unnecessary Atmosphere data.

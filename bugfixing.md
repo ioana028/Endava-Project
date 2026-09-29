@@ -418,3 +418,31 @@ Use one fresh route session and execute:
 - The route session remains consistent after charging, POI reroutes, bookings, and vignette purchase.
 - Backend tests, frontend lint, frontend build, and diff checks pass.
 - The resulting changes are documented clearly, while the original `docs/` and `DAY*.md` files remain the project baseline.
+
+## Current implementation audit (`bugfix-test`)
+
+The active implementation branch is `bugfix-test`. The current baseline keeps
+the route/session and Google cost controls from the merged cost work, then
+applies the following hardening:
+
+- waypoint reroutes keep the full-route map viewport instead of focusing a
+  charger as a side effect;
+- trip details render confirmed route stops only; charging options remain
+  suggestions until explicit confirmation;
+- route voice responses are instructed not to claim that a route is set while
+  planning is pending;
+- `FASTEST` charger selection filters to the bounded quick-time cohort after
+  safety/range checks;
+- direct `Where am I?` and car/range questions use a local
+  `get_vehicle_context` tool and make no Google request;
+- charger discovery queries only calculated live charging points: the first
+  current-safe-range point, then max-safe-range points after each charge;
+  missing live candidates fail clearly instead of being hidden by a local
+  fallback;
+- marker assets are preloaded before map markers are created;
+- the listening jingle is played on validated speech start, and explicit
+  server VAD settings are enabled for the Realtime session.
+
+The remaining acceptance requirement is a browser run of the live Realtime
+session with provider credentials: verify the eight reported interactions and
+inspect request logs to confirm that no additional Google calls are introduced.

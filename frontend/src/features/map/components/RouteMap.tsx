@@ -9,6 +9,29 @@ import hotelPin from '../../../assets/hotelpin.png'
 import servicePin from '../../../assets/servicepin.png'
 import { toGooglePath } from '../utils/routeGeometry'
 
+const markerAssets = [
+  attractionPin,
+  chargingPin,
+  destinationPin,
+  foodPin,
+  hotelPin,
+  servicePin,
+]
+
+function preloadMarkerAssets(): Promise<void> {
+  if (typeof Image === 'undefined') {
+    return Promise.resolve()
+  }
+  return Promise.all(
+    markerAssets.map((src) => new Promise<void>((resolve) => {
+      const image = new Image()
+      image.onload = () => resolve()
+      image.onerror = () => resolve()
+      image.src = src
+    })),
+  ).then(() => undefined)
+}
+
 const browserKey = import.meta.env.VITE_GOOGLE_MAPS_BROWSER_KEY
 const mapId = import.meta.env.VITE_GOOGLE_MAPS_MAP_ID
 
@@ -183,6 +206,7 @@ export function RouteMap({
 
       try {
         const { Map } = (await importLibrary('maps')) as google.maps.MapsLibrary
+        await preloadMarkerAssets()
 
         class DurationOverlay extends google.maps.OverlayView {
           private readonly position: google.maps.LatLngLiteral

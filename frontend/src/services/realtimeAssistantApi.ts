@@ -7,6 +7,7 @@ import type {
   RouteResponse,
   StartDrivingResponse,
   StopAmenitiesResponse,
+  VehicleContext,
 } from '../types/contracts'
 
 const API_BASE_URL =
@@ -102,6 +103,25 @@ export async function createRealtimeSession(): Promise<RealtimeSessionResponse> 
   }
 
   return payload
+}
+
+export async function getVehicleContextWithTool(
+  argumentsJson = '{}',
+  signal?: AbortSignal,
+): Promise<VehicleContext> {
+  const response = await fetch(
+    `${API_BASE_URL}/api/assistant/realtime/tools/vehicle-context`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: argumentsJson,
+      signal,
+    },
+  )
+  if (!response.ok) {
+    return throwToolError(response, 'Vehicle information is unavailable.')
+  }
+  return (await response.json()) as VehicleContext
 }
 
 export async function planRouteWithTool(

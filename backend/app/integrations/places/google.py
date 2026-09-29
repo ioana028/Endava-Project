@@ -113,7 +113,7 @@ class GooglePlacesProvider:
                 "tourist attractions",
                 "things to see and points of interest",
             )
-            if search_along_route
+            if normalized == "attraction" and search_along_route
             else (query,)
         )
         radius = (
@@ -142,7 +142,15 @@ class GooglePlacesProvider:
                         json={
                             "textQuery": query_text,
                             "languageCode": "en",
-                            "maxResultCount": 20 if location == "stop" or normalized == "attraction" else 10,
+                            "maxResultCount": (
+                                20
+                                if location == "stop"
+                                else 5
+                                if location == "route-target" and normalized == "charging"
+                                else 20
+                                if normalized == "attraction"
+                                else 10
+                            ),
                             **({
                                 "searchAlongRouteParameters": {
                                     "polyline": {
@@ -223,10 +231,28 @@ class GooglePlacesProvider:
         return ",".join(fields)
 
     async def search_charging(
-        self, route: ProviderRoute, max_distance_km: float
+        self,
+        route: ProviderRoute,
+        max_distance_km: float,
+        target_progress_km: tuple[float, ...] = (),
     ) -> tuple[ChargingCandidate, ...]:
         started_at = monotonic()
-        stops = await self.search("charging", location="route", route=route)
+        if target_progress_km:
+            stops_by_id: dict[str, StopPinpoint] = {}
+            for progress_km in target_progress_km:
+                target_coords = self._point_at_progress_km(
+                    tuple(route.geometry), progress_km
+                )
+                for stop in await self.search(
+                    "charging",
+                    location="route-target",
+                    route=route,
+                    near_coords=target_coords,
+                ):
+                    stops_by_id[stop.id] = stop
+            stops = tuple(stops_by_id.values())
+        else:
+            stops = await self.search("charging", location="route", route=route)
         route_distance_km = route.distance_meters / 1000
         candidates = tuple(
             ChargingCandidate(
@@ -253,6 +279,23 @@ class GooglePlacesProvider:
             round(route.distance_meters / 1000, 2),
         )
         return candidates
+
+    def _point_at_progress_km(
+        self,
+        geometry: tuple[tuple[float, float], ...],
+        progress_km: float,
+    ) -> tuple[float, float]:
+        remaining = max(0.0, progress_km)
+        for start, end in zip(geometry, geometry[1:]):
+            segment_km = self._haversine_km(start, end)
+            if remaining <= segment_km or segment_km == 0:
+                fraction = 0.0 if segment_km == 0 else remaining / segment_km
+                return (
+                    start[0] + (end[0] - start[0]) * fraction,
+                    start[1] + (end[1] - start[1]) * fraction,
+                )
+            remaining -= segment_km
+        return geometry[-1]
 
     def _to_stop(
         self,
@@ -281,8 +324,13 @@ class GooglePlacesProvider:
         if route_geometry is None:
             return None
         route_distance_km = self._route_distance_km(coords, route_geometry)
-        if location == "stop" and near_coords is not None:
-            if self._distance_to_point_km(coords, near_coords) > self._nearby_search_radius_meters / 1000:
+        if location in {"stop", "route-target"} and near_coords is not None:
+            radius_km = (
+                self._nearby_search_radius_meters / 1000
+                if location == "stop"
+                else self._search_radius_meters / 1000
+            )
+            if self._distance_to_point_km(coords, near_coords) > radius_km:
                 return None
         else:
             corridor_radius_km = max(
@@ -367,7 +415,7 @@ class GooglePlacesProvider:
         location: str | None,
         near_coords: tuple[float, float] | None = None,
     ) -> tuple[tuple[float, float], ...]:
-        if location == "stop" and near_coords is not None:
+        if location in {"stop", "route-target"} and near_coords is not None:
             return (near_coords,)
 
         geometry = self._route_geometry(route) or ()

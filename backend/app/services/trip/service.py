@@ -115,6 +115,18 @@ class RouteService:
         return self._session_id
 
     @property
+    def current_location_name(self) -> str:
+        return (
+            self._active_origin.display_name
+            if self._active_origin is not None
+            else self._origin
+        )
+
+    @property
+    def current_location_coordinates(self) -> Coordinates | None:
+        return self._active_origin.coordinates if self._active_origin is not None else None
+
+    @property
     def active_search_results(self) -> dict[str, StopPinpoint]:
         return dict(self._active_search_results)
 
@@ -291,10 +303,11 @@ class RouteService:
         stops: list[StopPinpoint] = []
 
         charging_required = initial_distance_km > safe_distance_km
-        charging_search_distance_km = max(
-            safe_distance_km,
-            max_charged_range_km - self._safety_buffer_km,
-        )
+        # Discover candidates along the complete route in one bounded search.
+        # The deterministic selector applies the current and post-charge range
+        # limits for each leg; limiting discovery to the first battery leg
+        # would make long routes unable to produce a multi-stop plan.
+        charging_search_distance_km = initial_distance_km
         partner_opportunities: list[RouteOpportunity] = []
         charging_provider = self._charging_provider or FixtureChargingProvider(
             self._fixture_repository.fixtures.partners
@@ -304,7 +317,6 @@ class RouteService:
                 charging_provider, provider_route, origin, destination, intent.priority,
                 safe_distance_km, initial_distance_km, reachable_distance_km, max_charged_range_km,
             )
-        stops = stops[:2]
         self._session_id = uuid4().hex
 
         route_response = self._build_route_response(
@@ -360,26 +372,43 @@ class RouteService:
         reachable_distance_km: float,
         max_charged_range_km: float,
     ) -> tuple[list[StopPinpoint], list[RouteOpportunity]]:
+        target_progress_km = self._charging_target_progress_km(
+            initial_distance_km,
+            reachable_distance_km,
+            max_charged_range_km,
+        )
         try:
-            self._request_budget.consume(
-                provider="places",
-                method="search_charging",
-                reason="charging_discovery",
-            )
-
-            candidates = await charging_provider.search_charging(
-                provider_route,
-                charging_search_distance_km,
-            )
-
-            print("GOOGLE RETURNED:", len(candidates))
-
+            for target_index, _ in enumerate(target_progress_km, start=1):
+                self._request_budget.consume(
+                    provider="places",
+                    method="search_charging",
+                    reason=f"charging_target_{target_index}",
+                )
+            search_charging = charging_provider.search_charging
+            if "target_progress_km" in inspect.signature(search_charging).parameters:
+                candidates = await search_charging(
+                    provider_route,
+                    charging_search_distance_km,
+                    target_progress_km=target_progress_km,
+                )
+            else:
+                candidates = await search_charging(
+                    provider_route,
+                    charging_search_distance_km,
+                )
         except (JourneyProviderError, OSError) as error:
             raise APIError(
                 503,
                 "CHARGING_PROVIDER_UNAVAILABLE",
-                "Google charging data is unavailable.",
+                "Live Google charging data is unavailable.",
             ) from error
+
+        if not candidates:
+            raise APIError(
+                422,
+                "NO_SUITABLE_CHARGER",
+                "No suitable charging stop was found for this route.",
+            )
 
         enriched_candidates = tuple(
             candidate.__class__(
@@ -387,8 +416,11 @@ class RouteService:
                     candidate.stop,
                     self._fixture_repository.fixtures.partners,
                 ),
-                compatible=candidate.compatible,
-                available=candidate.available,
+                compatible=(
+                    candidate.compatible
+                    and self._live_charger_compatible(candidate.stop)
+                ),
+                available=(candidate.available and candidate.stop.availability is not False),
                 distance_from_route_km=(
                     candidate.distance_from_route_km
                     if candidate.distance_from_route_km > 0
@@ -404,14 +436,13 @@ class RouteService:
             for candidate in candidates
         )
 
-        print("ENRICHED:", len(enriched_candidates))
-
         selected_candidates = select_chargers_iteratively(
             enriched_candidates,
             initial_distance_km,
             reachable_distance_km,
             self._safety_buffer_km,
             max_charged_range_km,
+            priority,
         )
 
         if selected_candidates is None:
@@ -450,9 +481,46 @@ class RouteService:
             selected_candidates,
         )
 
-    @staticmethod
-    def _is_google_charging_provider(provider: ChargingProvider) -> bool:
-        return provider.__class__.__name__ == "GooglePlacesProvider"
+    def _charging_target_progress_km(
+        self,
+        route_distance_km: float,
+        current_safe_range_km: float,
+        max_charged_range_km: float,
+    ) -> tuple[float, ...]:
+        """Return only the route progress points where a charge is needed."""
+        targets: list[float] = []
+        progress_km = 0.0
+        leg_range_km = max(0.0, current_safe_range_km)
+        charged_leg_range_km = max(
+            0.0,
+            max_charged_range_km - self._safety_buffer_km,
+        )
+        while route_distance_km - progress_km > leg_range_km:
+            if leg_range_km <= 0:
+                return ()
+            progress_km += leg_range_km
+            targets.append(round(progress_km, 1))
+            leg_range_km = charged_leg_range_km
+        return tuple(targets)
+
+    def _live_charger_compatible(self, stop: StopPinpoint) -> bool:
+        """Reject live chargers whose connector compatibility is unknown."""
+        if stop.provider != "Google Places":
+            return True
+        if not stop.connector_types:
+            return False
+
+        def normalize(value: str) -> str:
+            normalized = value.casefold().replace("_combo", "").replace("-", "").replace(" ", "")
+            if normalized.startswith("ccs"):
+                return "ccs"
+            return normalized
+
+        vehicle_connectors = {
+            normalize(connector) for connector in self._telemetry.connector_types
+        }
+        charger_connectors = {normalize(connector) for connector in stop.connector_types}
+        return bool(vehicle_connectors & charger_connectors)
 
     async def search_route_poi(
         self,
@@ -657,7 +725,12 @@ class RouteService:
                 "The routing service cannot route through a charging stop.",
             )
 
-        pending_stops = [stop]
+        selected_index = self._pending_charging_stops.index(stop)
+        # The discovered plan is ordered by route progress. Confirming an
+        # option confirms that stop and every later stop required to reach the
+        # destination, preserving multi-stop safety without another discovery
+        # request.
+        pending_stops = self._pending_charging_stops[selected_index:]
         waypoints = tuple(
             GeocodedPlace(
                 item.name,
@@ -701,12 +774,6 @@ class RouteService:
             search_id=None,
         )
         amenities_by_stop = {stop.id: amenity_search}
-        for confirmed_stop in self._active_stops[1:]:
-            amenities_by_stop[confirmed_stop.id] = await self.search_stop_amenities(
-                stop_id=confirmed_stop.id,
-                route_id=route_id,
-                search_id=None,
-            )
         route = self._build_route_response(
             self._active_provider_route,
             self._active_origin,

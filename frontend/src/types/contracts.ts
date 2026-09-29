@@ -287,3 +287,16 @@ export interface VehicleTelemetry {
   tyres: 'SUMMER' | 'WINTER' | 'ALL_SEASON';
   odometerKm: number;
 }
+
+export interface VehicleContext {
+  currentLocation: string;
+  currentLocationCoordinates?: Coordinates | null;
+  vehicleModel: string;
+  vehicleId: string;
+  batteryPercent: number;
+  currentRangeKm: number;
+  maxRangeKm: number;
+  consumptionRateKwh: number;
+  connectorTypes: string[];
+  maxChargingPowerKw: number;
+}

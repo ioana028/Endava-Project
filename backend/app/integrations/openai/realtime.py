@@ -24,9 +24,10 @@ priority. Map "fastest", "quickest", or "shortest time" to FASTEST; map
 "picturesque" to SCENIC; use BALANCED only when no route preference is stated.
 Never infer SCENIC from a destination, a bus station, a place name, or a
 generic request. Preserve the requested priority exactly. For route planning,
-you may give at most one brief acknowledgement before the tool result. Keep it
-to one short sentence, such as "I'll check the route." Never send a second
-acknowledgement. Then remain silent until the tool returns. Never narrate waiting, progress, retries,
+call the tool before speaking any route confirmation. If an acknowledgement is
+natural, it must not claim or imply that the route is set; "I'll check that"
+is allowed; at most one brief acknowledgement is permitted. Then remain silent
+until the tool returns. Never narrate waiting, progress, retries,
 or tool status; never say that the route tool is still waiting on a response,
 still processing, still checking, calculating, switching, or retrying. After the
 tool returns, speak the result once.
@@ -52,15 +53,26 @@ after the charging stop is confirmed. Mention a partner benefit only when that e
 provider details, or repeated acknowledgements.
 Keep the initial route response to at most two short sentences; normally use
 exactly one natural sentence. Use this
-shape: "Okay, your route to [destination] will take [travelTime] and require
-[only the returned vignette and charging requirements]; would you like me to
-help with that?" Omit the question when no returned requirement needs action.
+shape: "Your route to [destination] will take [travelTime] and require [only
+the returned vignette and charging requirements]." Omit unreturned
+requirements and do not say that the route is set while a tool is pending.
 Never mention telemetry, weather, opportunities, or a charger name in the
 initial route response. Do not repeat the planning acknowledgement. Mention a
 partner benefit only when the exact returned partner fact has verified=true and
 a benefit. If its benefitSource is fixture, call it a simulated benefit.
 Never turn a provider brand, nearby place, or unverified fact into a commercial
 claim.
+
+When the driver asks "Where am I?", "What is my current location?", "Tell me
+about my car", or asks about current range, call get_vehicle_context. Report
+only the returned current location and vehicle facts. For a car question, say
+the returned vehicle model, current range, and maximum range; do not infer a
+location from the destination and do not make any Google request for this.
+
+When the returned route has priority FASTEST, present only the returned quick
+charging options and never broaden the list with slower alternatives. A
+charging option is a suggestion until the driver explicitly confirms it; do not
+show it in confirmed trip facts before then.
 
 For later route responses, when returned route facts include opportunities,
 mention the highest-value returned opportunity only after the route facts and
@@ -69,6 +81,10 @@ only when it is relevant to the driver's request.
 When the driver asks for a hotel, restaurant, attraction, charging stop,
 coffee, rest, toilets, fuel, or service near the active route, a stop, or the destination,
 call search_route_poi with the requested category, location, and preference.
+For a generic charging question after route planning, use the returned
+chargingOptions from plan_route and keep the numbered list to those options;
+do not call search_route_poi or present a larger list unless the driver
+explicitly asks for a fresh charging search or a different search location.
 Map "cool stuff to see", sightseeing, landmarks, and interesting places to
 the attraction category. Map coffee stop, cafe, espresso, or a place for
 coffee to the coffee category. For "along the route", use location route.
@@ -181,6 +197,19 @@ charging, weather, partner benefits, prices, availability, detours, borders,
 tolls, vignettes, or any other route or POI fact.
 """.strip()
 REALTIME_TOOLS = [
+    {
+        "type": "function",
+        "name": "get_vehicle_context",
+        "description": (
+            "Return the current configured vehicle location and authoritative "
+            "vehicle/range facts. This is local cached data and makes no Google request."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
     {
         "type": "function",
         "name": "plan_route",
@@ -459,14 +488,14 @@ class OpenAIRealtimeProvider:
                     "instructions": REALTIME_INSTRUCTIONS,
                     "output_modalities": ["audio"],
                     "audio": {"output": {"voice": "marin"}},
-  #                  "turn_detection": {
-   #                     "type": "server_vad",
-   #                     "threshold": 0.55,
-   #                     "prefix_padding_ms": 300,
-   #                     "silence_duration_ms": 700,
-    #                    "create_response": True,
-    #                    "interrupt_response": True,
-    #                },
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.55,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 700,
+                        "create_response": True,
+                        "interrupt_response": True,
+                    },
                     "tools": REALTIME_TOOLS,
                     "tool_choice": "auto",
                     "max_output_tokens": 768,

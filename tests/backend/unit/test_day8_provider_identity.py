@@ -146,5 +146,8 @@ def test_confirming_charging_routes_only_the_selected_provider_waypoint() -> Non
     result = asyncio.run(route_service.confirm_charging_stop("route-1"))
 
     assert provider.waypoints is not None
-    assert [point.display_name for point in provider.waypoints] == ["Second Charger"]
+    assert [point.display_name for point in provider.waypoints] == [
+        "Second Charger",
+        "First Charger",
+    ]
     assert result["route"].stops[0].name == "Second Charger"

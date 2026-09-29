@@ -371,3 +371,18 @@ class VehicleTelemetryResponse(ContractModel):
     battery_capacity_kwh: float = Field(default=35.5, gt=0)
     tyres: Literal["SUMMER", "WINTER", "ALL_SEASON"]
     odometer_km: float = Field(ge=0)
+
+
+class VehicleContextResponse(ContractModel):
+    """Authoritative, non-Google facts for direct driver questions."""
+
+    current_location: str = Field(min_length=1)
+    current_location_coordinates: Coordinates | None = None
+    vehicle_model: str = Field(min_length=1)
+    vehicle_id: str = Field(min_length=1)
+    battery_percent: float = Field(ge=0, le=100)
+    current_range_km: float = Field(ge=0)
+    max_range_km: float = Field(ge=0)
+    consumption_rate_kwh: float = Field(gt=0)
+    connector_types: tuple[str, ...] = ()
+    max_charging_power_kw: float = Field(ge=0)

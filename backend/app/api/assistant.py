@@ -12,6 +12,7 @@ from ..models.contracts import (
     RealtimeSessionResponse,
     RealtimeToolRouteRequest,
     RealtimeToolRouteResponse,
+    VehicleContextResponse,
     RealtimeToolBookingRequest,
     RealtimeToolBookingResponse,
     RealtimeToolConfirmChargingRequest,
@@ -124,6 +125,38 @@ async def realtime_session(request: Request) -> RealtimeSessionResponse:
     return RealtimeSessionResponse(
         client_secret=client_secret,
         model=request.app.state.settings.realtime_model,
+    )
+
+
+@router.post(
+    "/realtime/tools/vehicle-context",
+    response_model=VehicleContextResponse,
+)
+async def realtime_vehicle_context(request: Request) -> VehicleContextResponse:
+    """Return cached vehicle/location facts without any provider request."""
+    fixtures = getattr(request.app.state, "fixtures", None)
+    if fixtures is None:
+        fixtures = request.app.state.fixture_repository.load()
+    telemetry = fixtures.telemetry
+    route_service = request.app.state.route_service
+    vehicle_model = (
+        "Honda E"
+        if telemetry.vehicle_id.casefold().startswith("honda-e")
+        else telemetry.vehicle_id
+    )
+    return VehicleContextResponse(
+        current_location=getattr(route_service, "current_location_name", "Vienna, Austria"),
+        current_location_coordinates=getattr(
+            route_service, "current_location_coordinates", None
+        ),
+        vehicle_model=vehicle_model,
+        vehicle_id=telemetry.vehicle_id,
+        battery_percent=telemetry.battery_percent,
+        current_range_km=telemetry.estimated_range_km,
+        max_range_km=telemetry.max_charged_range_km,
+        consumption_rate_kwh=telemetry.consumption_rate_kwh,
+        connector_types=telemetry.connector_types,
+        max_charging_power_kw=telemetry.max_charging_power_kw,
     )
 
 

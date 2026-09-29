@@ -2,7 +2,7 @@ import re
 from collections.abc import Iterable
 from math import cos, radians, sqrt
 
-from ...models.contracts import PartnerEnrichment, StopPinpoint
+from ...models.contracts import PartnerEnrichment, RoutePriority, StopPinpoint
 from ...models.fixtures import Partner
 from .ports import ChargingCandidate, POICandidate
 
@@ -215,6 +215,7 @@ def select_chargers_iteratively(
     vehicle_range_km: float,
     safety_buffer_km: float,
     max_charged_range_km: float | None = None,
+    priority: RoutePriority = RoutePriority.BALANCED,
 ) -> list[ChargingCandidate] | None:
     """Select chargers using initial range first, then post-charge range."""
     candidate_list = list(candidates)
@@ -259,10 +260,33 @@ def select_chargers_iteratively(
         ]
         if not reachable:
             return None
+
+        if priority == RoutePriority.FASTEST and len(reachable) > 1:
+            # FASTEST is a real charger-selection preference, not just a
+            # route-provider hint. Keep safety/range filtering first, then
+            # prefer the quick-time cohort when the provider supplied times.
+            known_times = [
+                item.charging_duration_minutes
+                for item in reachable
+                if item.charging_duration_minutes > 0
+            ]
+            if known_times:
+                quickest = min(known_times)
+                quick_limit = quickest + max(10.0, quickest * 0.35)
+                quick_reachable = [
+                    item
+                    for item in reachable
+                    if item.charging_duration_minutes <= 0
+                    or item.charging_duration_minutes <= quick_limit
+                ]
+                if quick_reachable:
+                    reachable = quick_reachable
         candidate = max(
             reachable,
             key=lambda item: (
-                item.distance_from_origin_km or 0,
+                -(item.charging_duration_minutes or float("inf"))
+                if priority == RoutePriority.FASTEST
+                else (item.distance_from_origin_km or 0),
                 item.charging_power_kw or 0,
                 0 if item.stop.partner else 1,
                 item.distance_from_route_km,

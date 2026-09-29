@@ -12,6 +12,7 @@ import {
   bookRestaurantTableWithTool,
   confirmChargingStopWithTool,
   createRealtimeSession,
+  getVehicleContextWithTool,
   getRealtimeToolErrorMessage,
   planRouteWithTool,
   purchaseVignetteWithTool,
@@ -164,6 +165,7 @@ function compactRouteFacts(
 
   return {
     status: 'success',
+    routeStatus: route.routeStatus,
     origin: route.origin,
     destination: route.destination,
     ...(route.countries.length > 0 ? { countries: route.countries } : {}),
@@ -501,6 +503,7 @@ export function useRealtimeAssistant() {
       event.name !== 'book_restaurant_table' &&
       event.name !== 'start_driving' &&
       event.name !== 'return_to_main_route'
+      && event.name !== 'get_vehicle_context'
     ) {
       return
     }
@@ -516,6 +519,39 @@ export function useRealtimeAssistant() {
     toolAbortRef.current = toolController
 
     try {
+      if (event.name === 'get_vehicle_context') {
+        const result = await getVehicleContextWithTool(event.arguments, toolController.signal)
+        if (!isSessionCurrent(generation) || requestId !== toolRequestIdRef.current) {
+          return
+        }
+        sendEvent({
+          type: 'conversation.item.create',
+          item: {
+            type: 'function_call_output',
+            call_id: event.call_id,
+            output: JSON.stringify({
+              status: 'success',
+              currentLocation: result.currentLocation,
+              vehicleModel: result.vehicleModel,
+              currentRangeKm: Math.round(result.currentRangeKm),
+              maxRangeKm: Math.round(result.maxRangeKm),
+              batteryPercent: Math.round(result.batteryPercent),
+              consumptionRateKwh: result.consumptionRateKwh,
+              connectorTypes: result.connectorTypes,
+              maxChargingPowerKw: result.maxChargingPowerKw,
+            }),
+          },
+        })
+        sendEvent({
+          type: 'response.create',
+          response: {
+            instructions:
+              'Answer the direct location or vehicle question in one concise sentence using only the returned facts. Do not mention internal IDs or make a Google request.',
+          },
+        })
+        return
+      }
+
       if (event.name === 'search_route_poi') {
         const result = await searchRoutePoiWithTool(
           event.arguments,
@@ -811,29 +847,16 @@ export function useRealtimeAssistant() {
         setSelectedPoi(null)
         const reroutedChargingStop = result.route.stops.find((stop) => stop.category === 'charging')
         setChargingStopConfirmed(Boolean(reroutedChargingStop))
-        setChargingStopFocus(reroutedChargingStop ?? null)
+        // Adding a POI waypoint must keep the full-route viewport. Charger
+        // focus is reserved for the explicit charging-stop amenities flow.
+        setChargingStopFocus(null)
         setPoiActionState('REROUTE_SUCCESS')
-        let reroutedAmenities: StopPinpoint[] = []
-        if (reroutedChargingStop && result.routeId) {
-          const amenityResult = await searchStopAmenitiesWithTool(
-            JSON.stringify({
-              stopId: reroutedChargingStop.id,
-              routeId: result.routeId,
-            }),
-            toolController.signal,
-          )
-          if (isSessionCurrent(generation) && requestId === toolRequestIdRef.current) {
-            reroutedAmenities = amenityResult.results
-            setAmenityResults(amenityResult.results)
-            setAmenitySearchContext({
-              selectedStopName: amenityResult.selectedStopName,
-              radiusMeters: amenityResult.radiusMeters,
-              routeId: amenityResult.routeId,
-              searchId: amenityResult.searchId ?? null,
-            })
-            setAmenitySearchState(amenityResult.results.length ? 'SUCCESS' : 'EMPTY')
-          }
-        }
+        // Nearby amenities are an explicit follow-up request. Searching them
+        // here adds an unnecessary provider call and leaves a stale charger
+        // focus that makes the map zoom into the station after any waypoint.
+        setAmenityResults([])
+        setAmenitySearchContext(null)
+        setAmenitySearchState('IDLE')
         pendingRouteRef.current = {
           route: result.route,
           priority: activePriorityRef.current,
@@ -847,9 +870,6 @@ export function useRealtimeAssistant() {
               ...compactRouteFacts(result.route, {
                 ...(result.routeId ? { routeId: result.routeId } : {}),
               }),
-              ...(reroutedAmenities.length
-                ? { nearbyAmenities: reroutedAmenities.map(compactAmenityFacts) }
-                : {}),
             }),
           },
         })
@@ -905,7 +925,7 @@ export function useRealtimeAssistant() {
         type: 'response.create',
         response: {
             instructions:
-              'Reply in exactly one natural sentence using this shape: "Okay, your route to [destination] will take [travelTime] and require [only the returned vignette and charging requirements]; would you like me to help with that?" Mention only returned requirements, omit the final question when none require action, never mention telemetry, weather, opportunities, or a charger name before confirmation, and do not repeat the acknowledgement.',
+              'Reply in exactly one natural sentence using only returned facts: "Your route to [destination] will take [travelTime] and require [only the returned vignette and charging requirements]." Omit unreturned requirements, never say the route is set before this tool result, never mention telemetry, weather, opportunities, or a charger name before confirmation, and do not repeat any acknowledgement.',
         },
       })
     } catch (toolError) {
@@ -1062,6 +1082,7 @@ export function useRealtimeAssistant() {
           const now = performance.now()
           if (now - speechStartedAtRef.current >= 350) {
             speechStartedAtRef.current = now
+            feedbackAudioRef.current?.play().catch(() => undefined)
             setState('LISTENING')
           }
         } else if (event.type === 'response.created') {
@@ -1155,8 +1176,8 @@ export function useRealtimeAssistant() {
       }
       channelRef.current = channel
       const feedbackAudio = new Audio('/audio/listening-jingle.mp3')
+      feedbackAudio.preload = 'auto'
       feedbackAudioRef.current = feedbackAudio
-      void feedbackAudio.play().catch(() => undefined)
       setEnabled(true)
       recordTelemetry('assistantReady')
       window.dispatchEvent(

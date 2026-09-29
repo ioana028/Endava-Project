@@ -148,6 +148,16 @@ def test_route_within_vehicle_range_has_no_range_warning() -> None:
     assert route.alerts == []
 
 
+def test_charging_targets_follow_current_then_max_safe_range() -> None:
+    service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
+
+    assert service._charging_target_progress_km(600, 85, 250) == (
+        85.0,
+        325.0,
+        565.0,
+    )
+
+
 def test_start_driving_returns_current_route_facts_without_replanning() -> None:
     provider = FakeRoutingProvider(distance_meters=95_000)
     route_service = RouteService(provider, repository())

@@ -117,7 +117,10 @@ def test_confirmation_returns_amenities_for_selected_stop_only() -> None:
     result = asyncio.run(service.confirm_charging_stop("route-1"))
 
     assert set(result["amenities_by_stop"]) == {"charger-a"}
-    assert service.route_session_facts["confirmed_charging_stop_ids"] == ["charger-a"]
+    assert service.route_session_facts["confirmed_charging_stop_ids"] == [
+        "charger-a",
+        "charger-b",
+    ]
 
 
 def test_failed_confirmation_does_not_partially_mutate_pending_plan() -> None:

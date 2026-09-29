@@ -53,21 +53,12 @@ export function RouteSummary({
           <strong>{formatEur(route.stats.totalPriceEur)}</strong>
         </div>
       </div>
-      {route.chargingOptions.length > 0 && (
-        <div className="charging-options" aria-label="Charging options">
-          <p className="eyebrow">Charging options</p>
-          {route.chargingOptions.map((option) => (
-            <div className="charging-option" key={option.stop.id}>
-              <strong>#{option.optionNumber} {option.stop.name}</strong>
-              <span>
-                {Math.round(option.stop.chargingDurationMinutes ?? 0)} min charging
-                {' · '}
-                {option.status}
-              </span>
-            </div>
-          ))}
+      {route.stops.filter((stop) => showChargingStop || stop.category !== 'charging').map((stop) => (
+        <div className="confirmed-route-stop" key={stop.id}>
+          <span>{stop.category === 'charging' ? 'Confirmed charging stop' : 'Confirmed stop'}</span>
+          <strong>{stop.name}</strong>
         </div>
-      )}
+      ))}
     </section>
   )
 }
