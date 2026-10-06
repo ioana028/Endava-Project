@@ -264,6 +264,32 @@ def test_charging_confirmation_cannot_skip_the_first_required_stop() -> None:
     assert len(provider.route_calls) == 1
 
 
+def test_prepared_charging_survives_purchase_and_search_without_rediscovery() -> None:
+    class PlacesWithAmenities(FakePlacesProvider):
+        async def search_amenities(self, categories, location, route, near_coords):
+            return []
+
+    provider = FakeRoutingProvider()
+    service = RouteService(provider, repository(), places_provider=PlacesWithAmenities())
+    route = asyncio.run(service.plan(intent()))
+    route_id = service.active_route_id
+    prepared_ids = [item.id for item in service._pending_charging_stops]
+    assert prepared_ids
+    for requirement in route.route_requirements:
+        if requirement.kind == "vignette":
+            service.mark_vignette_purchased(requirement.id)
+    asyncio.run(service.search_route_poi("coffee", "route"))
+
+    async def unexpected_discovery(*args, **kwargs):
+        raise AssertionError("Adding prepared charging must not discover new chargers")
+
+    service._discover_charging_stops = unexpected_discovery
+    result = asyncio.run(service.confirm_charging_stop(route_id))
+    assert [item.id for item in result["charging_plan"].stops] == prepared_ids
+    assert service._pending_charging_stops == []
+    assert len(provider.route_calls) == 2
+
+
 def test_search_route_poi_returns_generic_results_without_mutating_route() -> None:
     route_service = RouteService(FakeRoutingProvider(distance_meters=243_000), repository())
     asyncio.run(route_service.plan(intent()))
@@ -357,6 +383,43 @@ def test_booking_poi_search_returns_at_most_two_options(category: str) -> None:
 
     assert len(results) == 2
     assert len(route_service.active_search_results) == 2
+
+
+@pytest.mark.parametrize("category", ["hotel", "restaurant"])
+def test_hotel_review_threshold_is_strict_and_does_not_filter_restaurants(category: str) -> None:
+    class RatedPlacesProvider:
+        calls = 0
+
+        async def search(self, requested_category, location, preference, route):
+            del location, preference, route
+            self.calls += 1
+            return [StopPinpoint(id=f"place-{index}", name=f"Place {index}",
+                category=requested_category, coords=(19.04, 47.50), rating=rating)
+                for index, rating in enumerate([None, 3.9, 4.0, 4.1, 4.8, 4.6])]
+
+    places = RatedPlacesProvider()
+    service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository(), places_provider=places)
+    asyncio.run(service.plan(intent("Budapest")))
+    results = asyncio.run(service.search_route_poi(category, "destination"))
+    assert len(results) == 2
+    assert places.calls == 1
+    assert set(service.active_search_results) == {item.id for item in results}
+    if category == "hotel":
+        assert all(item.rating is not None and item.rating > 4.0 for item in results)
+
+
+@pytest.mark.parametrize("ratings", [[None, 3.9, 4.0], [4.1, None, 4.0]])
+def test_hotel_search_never_pads_with_ineligible_results(ratings: list[float | None]) -> None:
+    class Places:
+        async def search(self, category, location, preference, route):
+            return [StopPinpoint(id=str(index), name=str(index), category=category,
+                coords=(19.04, 47.50), rating=rating) for index, rating in enumerate(ratings)]
+
+    service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository(), places_provider=Places())
+    asyncio.run(service.plan(intent("Budapest")))
+    results = asyncio.run(service.search_route_poi("hotel", "destination"))
+    assert len(results) == sum(rating is not None and rating > 4.0 for rating in ratings)
+    assert set(service.active_search_results) == {item.id for item in results}
 
 
 def test_route_poi_search_uses_active_route_context_for_charging() -> None:

@@ -213,6 +213,7 @@ export interface PurchaseVignetteResponse {
   amountEur: number;
   currency: 'EUR';
   sessionFacts?: RouteSessionFacts | null;
+  phoneConfirmationStatus?: 'simulated_sent' | null;
 }
 
 export type BookingType = 'hotel_room' | 'restaurant_table';

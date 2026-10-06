@@ -73,7 +73,12 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.fixtures = safe_load_fixtures()
-        yield
+        try:
+            yield
+        finally:
+            close = getattr(app.state.realtime_provider, "aclose", None)
+            if close is not None:
+                await close()
 
     application = FastAPI(title="Suzanne Backend", version="0.1.0", lifespan=lifespan)
     application.add_middleware(

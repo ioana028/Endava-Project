@@ -46,13 +46,23 @@ Maps key is intentionally Vite-exposed and must be restricted by HTTP referrer
 to the allowed frontend origins. `.env` is ignored by Git; `.env.example`
 contains placeholders only.
 
-The backend exposes a short-lived Realtime client secret to the frontend through
-`POST /api/assistant/realtime/session`. The frontend uses that secret only to
-establish the user-started WebRTC session; it never receives `OPENAI_API_KEY`.
+The browser sends an SDP offer to `POST /api/assistant/realtime/call`. The backend
+posts that offer and its full session configuration to OpenAI and returns only
+the SDP answer. This removes the separate client-secret request from normal
+startup; the browser never receives `OPENAI_API_KEY`. The old
+`POST /api/assistant/realtime/session` endpoint remains for compatibility.
 The Realtime session is configured server-side with the deterministic
 `plan_route` tool. The browser sends tool arguments to
 `POST /api/assistant/realtime/tools/plan-route`, which delegates to the existing
 route service and returns the structured `RouteResponse`.
+
+Voice activity detection commits user turns without creating automatic
+responses. The browser serializes response generation and audio playback,
+acknowledges tool actions once, stays silent during pending work, and requests
+one factual result. Result narration cannot invoke tools. Shared backend HTTP
+clients are closed at application shutdown. Connection logs contain durations
+only, never credentials or SDP. See `docs/api/day9-voice-flows.md` for current
+purchase context and live acceptance checks.
 
 The voice tool lifecycle for route-aware POIs is:
 

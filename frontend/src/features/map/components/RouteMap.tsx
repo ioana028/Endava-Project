@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { importLibrary, setOptions } from '@googlemaps/js-api-loader'
 import type { RoutePriority, RouteResponse, StopPinpoint } from '../../../types/contracts'
 import attractionPin from '../../../assets/attractionpin.png'
@@ -8,6 +8,8 @@ import foodPin from '../../../assets/foodpin.png'
 import hotelPin from '../../../assets/hotelpin.png'
 import servicePin from '../../../assets/servicepin.png'
 import { toGooglePath } from '../utils/routeGeometry'
+import { routePathChanged, serializeMapRoute } from '../utils/mapRouteView'
+import type { MapRouteView } from '../utils/mapRouteView'
 
 const markerAssets = [
   attractionPin,
@@ -49,7 +51,7 @@ function formatDuration(totalMinutes: number) {
 
 function getCalloutPosition(
   path: google.maps.LatLngLiteral[],
-  markers: StopPinpoint[],
+  markers: Pick<StopPinpoint, 'coords'>[],
 ) {
   if (path.length < 2 || markers.length === 0) {
     return path[Math.floor(path.length / 2)]
@@ -69,7 +71,7 @@ function getCalloutPosition(
 
 function markerClearanceScore(
   point: google.maps.LatLngLiteral,
-  markers: StopPinpoint[],
+  markers: Pick<StopPinpoint, 'coords'>[],
 ) {
   const latitudeScale = Math.cos((point.lat * Math.PI) / 180)
 
@@ -163,7 +165,7 @@ interface RouteMapProps {
 }
 
 export function RouteMap({
-  route,
+  route: suppliedRoute,
   poiResults = [],
   amenityResults = [],
   amenityFocusName = null,
@@ -175,13 +177,16 @@ export function RouteMap({
   selectedPoiId = null,
   onPoiSelect,
 }: RouteMapProps) {
+  const serializedRoute = serializeMapRoute(suppliedRoute)
+  const route = useMemo(() => serializedRoute
+    ? JSON.parse(serializedRoute) as MapRouteView : undefined, [serializedRoute])
   const mapElementRef = useRef<HTMLDivElement | null>(null)
   const mapRef = useRef<google.maps.Map | null>(null)
   const polylineRef = useRef<google.maps.Polyline | null>(null)
   const routeMarkersRef = useRef<Map<string, google.maps.Marker>>(new Map())
   const markerTimersRef = useRef<number[]>([])
   const routeDrawFrameRef = useRef<number | null>(null)
-  const previousRouteRef = useRef<RouteResponse | null>(null)
+  const previousRouteRef = useRef<MapRouteView | null>(null)
   const poiMarkersRef = useRef<Map<string, google.maps.Marker>>(new Map())
   const poiMarkerTimersRef = useRef<number[]>([])
   const onPoiSelectRef = useRef(onPoiSelect)
@@ -513,11 +518,7 @@ export function RouteMap({
       : [{ lat: 48.2082, lng: 16.3738 }]
     const previousRoute = previousRouteRef.current
     const isNewRoute = Boolean(
-      route && route !== previousRoute && (
-        previousRoute === null ||
-        route.routeStatus === 'ROUTE_READY' ||
-        route.routeStatus === 'CHARGING_OPTIONS_READY'
-      ),
+      route && routePathChanged(previousRoute, route),
     )
     previousRouteRef.current = route ?? null
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches

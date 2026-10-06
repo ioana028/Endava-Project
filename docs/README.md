@@ -44,10 +44,12 @@ for coding AIs.
 
 ## Current implementation status
 
-The repository is a bootstrap skeleton. Backend routes, frontend application
-files, Docker Compose, and AI integrations still need to be implemented.
-Statements labelled `Day 1`, `Day 2`, or `Future` are targets, not claims that
-the behavior already exists.
+The repository contains the React infotainment interface, FastAPI backend,
+Realtime voice tools, route and charging planning, POI searches, and simulated
+commerce. See [current voice flows](api/day9-voice-flows.md) and
+[runtime architecture](architecture/runtime.md) for current behavior and checks.
+Day-by-day plans and onboarding layouts are historical implementation guidance,
+not the current directory tree. Unused empty scaffolding has been removed.
 
 ## Team rule
 

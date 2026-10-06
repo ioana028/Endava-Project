@@ -49,6 +49,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
     assert kwargs["session"]["output_modalities"] == ["audio"]
     assert kwargs["session"]["audio"]["output"]["voice"] == "marin"
     assert "turn_detection" not in kwargs["session"]
+    assert kwargs["session"]["audio"]["input"]["turn_detection"]["create_response"] is False
     tools = kwargs["session"]["tools"]
     assert [tool["name"] for tool in tools] == [
         "get_vehicle_context",
@@ -136,7 +137,6 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
     purchase_tool = tools[6]
     assert purchase_tool["parameters"]["required"] == [
         "routeId",
-        "requirementId",
         "confirmation",
     ]
     assert purchase_tool["parameters"]["properties"]["confirmation"]["enum"] == [
@@ -167,7 +167,7 @@ def test_realtime_provider_configures_short_lived_mini_session(monkeypatch) -> N
     assert tools[10]["parameters"]["required"] == ["routeId"]
     assert "For a returned vignette requirement" in instructions
     assert "naming or selecting one does not book it" in normalized_instructions
-    assert "phone app" in normalized_instructions
+    assert 'phoneConfirmationStatus is "simulated_sent"' in normalized_instructions
     assert "complete ordered charging plan as one action" in normalized_instructions
 
 
