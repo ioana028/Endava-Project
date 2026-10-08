@@ -587,6 +587,10 @@ class RouteService:
             results = await self._places_provider.search(
                 category, location_context, preference, **search_kwargs
             )
+            # Filter before ranking/capping so low or missing ratings cannot
+            # displace eligible hotels. This is a review score, not hotel class.
+            if category.casefold() == "hotel":
+                results = [item for item in results if item.rating is not None and item.rating > 4.0]
             if location_context == "stop":
                 results = select_stop_amenities(results, self._active_stops[-1].coords)
             else:

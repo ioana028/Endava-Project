@@ -39,11 +39,12 @@ class FakeRouteService:
 
 
 def test_day7_realtime_instructions_require_truthful_voice_results() -> None:
-    assert "never use a habitual opener before every tool result" in REALTIME_INSTRUCTIONS
-    assert "After every failed tool result, give one clear, actionable spoken error" in REALTIME_INSTRUCTIONS
-    assert "SCENIC is a route preference" in REALTIME_INSTRUCTIONS
-    assert "never call a non-partner stop a partner" in REALTIME_INSTRUCTIONS
-    assert "Mention a partner benefit only when that exact benefit is returned" in REALTIME_INSTRUCTIONS
+    instructions = " ".join(REALTIME_INSTRUCTIONS.split())
+    assert "avoid jargon, choppy fragments, repeated acknowledgements" in instructions
+    assert "give one brief, actionable explanation based only on its returned error" in instructions
+    assert "A scenic preference is not a promise of scenery" in instructions
+    assert "Use only returned" in instructions and "verified partner facts" in instructions
+    assert "Mention partner benefits only when returned and verified" in instructions
     assert 'such as "Alright"' not in REALTIME_INSTRUCTIONS
 
 
@@ -121,6 +122,6 @@ def test_day7_start_driving_contract_rejects_non_confirmed_requests() -> None:
 
 
 def test_day7_compact_partner_fact_rules_are_explicit_in_prompt() -> None:
-    assert "Do not invent or estimate" in REALTIME_INSTRUCTIONS
-    assert "provider details" in REALTIME_INSTRUCTIONS
+    assert "Never invent or estimate" in REALTIME_INSTRUCTIONS
+    assert "Ground every factual claim" in REALTIME_INSTRUCTIONS
     assert "raw provider payloads" not in REALTIME_INSTRUCTIONS

@@ -105,6 +105,19 @@ export async function createRealtimeSession(): Promise<RealtimeSessionResponse> 
   return payload
 }
 
+export async function createRealtimeCall(sdp: string, signal: AbortSignal): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}/api/assistant/realtime/call`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/sdp' },
+    body: sdp,
+    signal,
+  })
+  if (!response.ok) {
+    await throwToolError(response, `Realtime connection failed with HTTP ${response.status}`)
+  }
+  return response.text()
+}
+
 export async function getVehicleContextWithTool(
   argumentsJson = '{}',
   signal?: AbortSignal,

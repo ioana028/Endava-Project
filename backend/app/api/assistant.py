@@ -3,7 +3,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from ..core.errors import APIError
 from ..integrations.weather.provider import (
@@ -12,6 +12,8 @@ from ..integrations.weather.provider import (
 )
 from ..models.contracts import (
     AssistantIntent,
+    RouteSessionFacts,
+    TelemetryNarrationFacts,
     RealtimeSessionResponse,
     RealtimeToolRouteRequest,
     RealtimeToolRouteResponse,
@@ -95,12 +97,12 @@ async def _attach_route_facts(request: Request, route: Any) -> Any:
     vehicle = fixtures.telemetry
     updated_route = route.model_copy(
         update={
-            "telemetry": {
+            "telemetry": TelemetryNarrationFacts.model_validate({
                 "battery_percent": vehicle.battery_percent,
                 "estimated_range_km": vehicle.estimated_range_km,
                 "max_charged_range_km": vehicle.max_charged_range_km,
                 "consumption_rate_kwh": vehicle.consumption_rate_kwh,
-            }
+            })
         }
     )
     weather_provider = getattr(request.app.state, "weather_provider", None)
@@ -137,6 +139,25 @@ async def realtime_session(request: Request) -> RealtimeSessionResponse:
         client_secret=client_secret,
         model=request.app.state.settings.realtime_model,
     )
+
+
+@router.post("/realtime/call", response_class=Response)
+async def realtime_call(request: Request) -> Response:
+    if request.headers.get("content-type", "").split(";")[0] != "application/sdp":
+        raise APIError(415, "INVALID_SDP", "The voice connection requires an SDP offer.")
+    offer = bytearray()
+    async for chunk in request.stream():
+        offer.extend(chunk)
+        if len(offer) > 65_536:
+            raise APIError(413, "INVALID_SDP", "The voice connection offer is too large.")
+    try:
+        sdp = offer.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise APIError(422, "INVALID_SDP", "The voice connection offer is invalid.") from error
+    if not sdp.startswith("v=0") or "m=audio " not in sdp or "m=application " not in sdp:
+        raise APIError(422, "INVALID_SDP", "The voice connection offer is invalid.")
+    answer = await request.app.state.realtime_provider.create_call(sdp)
+    return Response(answer, media_type="application/sdp", headers={"Cache-Control": "no-store"})
 
 
 @router.post(
@@ -335,8 +356,14 @@ async def realtime_purchase_vignette(
         **payload.model_dump(),
     )
     response = _validate_response(RealtimeToolPurchaseVignetteResponse, result)
+    facts = getattr(request.app.state.route_service, "route_session_facts", None)
     return response.model_copy(
-        update={"session_id": _active_context_id(request.app.state.route_service, "session_id")}
+        update={
+            "session_id": _active_context_id(request.app.state.route_service, "session_id"),
+            "session_facts": _validate_response(RouteSessionFacts, facts) if facts is not None else response.session_facts,
+            # Presentation-only receipt delivery. No phone/push integration.
+            "phone_confirmation_status": "simulated_sent",
+        }
     )
 
 

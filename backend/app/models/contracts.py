@@ -259,7 +259,7 @@ class RealtimeToolRerouteResponse(ContractModel):
 
 class RealtimeToolPurchaseVignetteRequest(ContractModel):
     route_id: str = Field(min_length=1, max_length=200)
-    requirement_id: str = Field(min_length=1, max_length=200)
+    requirement_id: str | None = Field(default=None, min_length=1, max_length=200)
     confirmation: Literal["confirmed"]
 
 
@@ -273,6 +273,7 @@ class RealtimeToolPurchaseVignetteResponse(ContractModel):
     amount_eur: float = Field(ge=0)
     currency: Literal["EUR"]
     session_facts: RouteSessionFacts | None = None
+    phone_confirmation_status: Literal["simulated_sent"] | None = None
 
 
 class RealtimeToolBookingRequest(ContractModel):

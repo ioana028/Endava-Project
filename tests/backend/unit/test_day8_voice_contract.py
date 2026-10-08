@@ -47,9 +47,10 @@ def test_day8_contracts_preserve_verified_partner_and_route_state() -> None:
     assert session.charging_plan_confirmed is True
 
 
-def test_day8_realtime_instructions_require_verified_simulated_benefits_and_eur() -> None:
-    assert "verified=true" in REALTIME_INSTRUCTIONS
-    assert "simulated benefit" in REALTIME_INSTRUCTIONS
-    assert "never mix dollars and euros" in REALTIME_INSTRUCTIONS
-    assert "highest-value returned opportunity" in REALTIME_INSTRUCTIONS
-    assert "Do not hard-code prices" in REALTIME_INSTRUCTIONS
+def test_day8_realtime_instructions_require_verified_benefits_and_returned_eur() -> None:
+    instructions = " ".join(REALTIME_INSTRUCTIONS.split())
+    assert "Mention partner benefits only when returned and verified" in instructions
+    assert "Do not label actions or results as demos, simulations, or fixtures" in instructions
+    assert "in EUR, without hard-coded amounts" in instructions
+    assert "Mention a returned opportunity only when the driver asks about it or it is clearly relevant" in instructions
+    assert "Speak prices only when returned by a tool" in instructions

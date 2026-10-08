@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   AssistantResponse,
   BookingResponse,
@@ -11,7 +11,7 @@ import {
   bookHotelRoomWithTool,
   bookRestaurantTableWithTool,
   confirmChargingStopWithTool,
-  createRealtimeSession,
+  createRealtimeCall,
   getVehicleContextWithTool,
   getRealtimeToolErrorMessage,
   planRouteWithTool,
@@ -23,6 +23,9 @@ import {
   searchStopAmenitiesWithTool,
   startDrivingWithTool,
 } from '../../../services/realtimeAssistantApi'
+import { RealtimeTurnController } from '../realtimeTurnController'
+import { compactRouteFacts } from '../routeFacts'
+import { AMENITIES_RESULT_INSTRUCTIONS, compactPoiUpdateFacts, POI_UPDATE_INSTRUCTIONS, VIGNETTE_RESULT_INSTRUCTIONS } from '../actionNarration'
 
 export type RealtimeAssistantState =
   | 'IDLE'
@@ -98,82 +101,6 @@ function createRouteResponse(
     },
     spokenResponse,
     route,
-  }
-}
-
-function compactRouteFacts(
-  route: RouteResponse,
-  context: { routeId?: string | null; searchId?: string | null } = {},
-) {
-  const formatDuration = (totalMinutes: number) => {
-    const roundedMinutes = Math.round(totalMinutes)
-    if (roundedMinutes < 60) {
-      return `${roundedMinutes} minutes`
-    }
-    const hours = Math.round(roundedMinutes / 60)
-    return `${hours} hour${hours === 1 ? '' : 's'}`
-  }
-  const chargingStop = route.chargingStop ?? route.stops.find((stop) => stop.mandatory)
-  const chargingPlanConfirmed = Boolean(
-    route.sessionFacts?.chargingPlanConfirmed || route.chargingPlan?.confirmed,
-  )
-  const telemetryRequiresCharging = route.telemetry
-    ? route.stats.totalDistanceKm > route.telemetry.estimatedRangeKm
-    : false
-  const chargingRequired = Boolean(
-    (chargingPlanConfirmed ? false : route.chargingRequired ?? Boolean(chargingStop))
-    || (!chargingPlanConfirmed && telemetryRequiresCharging),
-  )
-  const routeWeatherAlert = route.alerts.find(
-    (alert) => alert.type === 'WEATHER' && alert.locationName === 'Route average',
-  )
-  const weatherFacts = routeWeatherAlert?.message.match(
-    /Current route conditions:\s*([^;]+);\s*average temperature about\s+(-?\d+(?:\.\d+)?)°C/i,
-  )
-  const routeWeatherSummary = routeWeatherAlert
-    ? weatherFacts
-      ? `${weatherFacts[1].trim()}, around ${Math.round(Number(weatherFacts[2]))}°C`
-      : routeWeatherAlert.message
-    : null
-  const remainingRequirements = route.sessionFacts?.remainingRequirements ?? route.routeRequirements
-  const vignetteCount = remainingRequirements.filter(
-    (requirement) => requirement.kind === 'vignette',
-  ).length
-  const tollRequired = remainingRequirements.some(
-    (requirement) => requirement.kind === 'toll',
-  )
-  const compactChargingPlan = route.chargingPlan?.confirmed
-    ? {
-        stops: route.chargingPlan.stops.map((stop, index) => ({
-          order: index + 1,
-          name: stop.name,
-          chargingDurationMinutes: Math.round(stop.chargingDurationMinutes ?? 0),
-          ...(stop.partner?.verified && stop.partner.benefit
-            ? {
-                partnerFact: {
-                  benefit: stop.partner.benefit,
-                  verified: true,
-                },
-              }
-            : {}),
-        })),
-      }
-    : null
-
-  return {
-    status: 'success',
-    routeStatus: route.routeStatus,
-    origin: route.origin,
-    destination: route.destination,
-    distanceKm: Math.round(route.stats.totalDistanceKm),
-    travelTime: formatDuration(route.stats.drivingDurationMinutes),
-    ...(chargingRequired ? { chargingRequired: true } : {}),
-    routeWeatherSummary,
-    ...(vignetteCount > 0 ? { vignetteCount } : {}),
-    ...(tollRequired ? { tollRequired: true } : {}),
-    ...(compactChargingPlan ? { chargingPlan: compactChargingPlan } : {}),
-    ...(context.routeId ? { routeId: context.routeId } : {}),
-    ...(context.searchId ? { searchId: context.searchId } : {}),
   }
 }
 
@@ -295,50 +222,39 @@ function getRoutePriority(argumentsJson: string) {
   return argumentsValue.priority ?? 'BALANCED'
 }
 
-async function waitForIceGathering(peerConnection: RTCPeerConnection) {
-  if (peerConnection.iceGatheringState === 'complete') {
-    return
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const timeout = window.setTimeout(() => {
-      peerConnection.removeEventListener('icegatheringstatechange', onState)
-      reject(new Error('Timed out while preparing the voice connection.'))
-    }, 10_000)
-
-    function onState() {
-      if (peerConnection.iceGatheringState !== 'complete') {
-        return
-      }
-
-      window.clearTimeout(timeout)
-      peerConnection.removeEventListener('icegatheringstatechange', onState)
-      resolve()
-    }
-
-    peerConnection.addEventListener('icegatheringstatechange', onState)
-    onState()
-  })
-}
-
-async function waitForDataChannelOpen(channel: RTCDataChannel) {
+async function waitForDataChannelOpen(channel: RTCDataChannel, signal: AbortSignal) {
   if (channel.readyState === 'open') {
     return
   }
 
   await new Promise<void>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
-      channel.removeEventListener('open', onOpen)
+      cleanup()
       reject(new Error('Timed out while opening the voice data channel.'))
     }, 15_000)
 
     function onOpen() {
-      window.clearTimeout(timeout)
-      channel.removeEventListener('open', onOpen)
+      cleanup()
       resolve()
     }
-
+    function onFailure() {
+      cleanup()
+      reject(signal.aborted
+        ? new DOMException('Voice connection aborted.', 'AbortError')
+        : new Error('The voice connection was closed.'))
+    }
+    function cleanup() {
+      window.clearTimeout(timeout)
+      channel.removeEventListener('open', onOpen)
+      channel.removeEventListener('close', onFailure)
+      channel.removeEventListener('error', onFailure)
+      signal.removeEventListener('abort', onFailure)
+    }
     channel.addEventListener('open', onOpen)
+    channel.addEventListener('close', onFailure)
+    channel.addEventListener('error', onFailure)
+    signal.addEventListener('abort', onFailure, { once: true })
+    if (signal.aborted || channel.readyState === 'closed') onFailure()
   })
 }
 
@@ -379,10 +295,6 @@ export function useRealtimeAssistant() {
   const connectionAbortRef = useRef<AbortController | null>(null)
   const toolAbortRef = useRef<AbortController | null>(null)
   const toolCallInFlightRef = useRef(false)
-  const pendingRouteRef = useRef<{
-    route: RouteResponse
-    priority: AssistantResponse['intent']['priority']
-  } | null>(null)
   const activePriorityRef = useRef<AssistantResponse['intent']['priority']>('BALANCED')
   const assistantTranscriptRef = useRef('')
   const startingRef = useRef(false)
@@ -393,15 +305,25 @@ export function useRealtimeAssistant() {
   const chargingSpeechPhaseRef = useRef<'plan' | 'amenities' | null>(null)
   const chargingAmenitiesFocusStopRef = useRef<StopPinpoint | null>(null)
   const chargingSpeechResponseIdRef = useRef<string | null>(null)
-  const chargingSpeechCompleteRef = useRef(false)
+  const turnControllerRef = useRef<RealtimeTurnController | null>(null)
   const speechStartedAtRef = useRef(0)
+  const currentRouteRef = useRef<RouteResponse | undefined>(undefined)
+
+  useEffect(() => {
+    // The WebRTC callback outlives the render that opened the connection.
+    currentRouteRef.current = response?.route
+  }, [response])
 
   function recordTelemetry(name: keyof RealtimeTelemetry) {
     setTelemetry((current) => ({ ...current, [name]: performance.now() }))
   }
 
   function sendEvent(event: Record<string, unknown>) {
-    channelRef.current?.send(JSON.stringify(event))
+    if (event.type === 'response.create') {
+      turnControllerRef.current?.request(event, event.response ? 'result' : 'user')
+    } else if (channelRef.current?.readyState === 'open') {
+      channelRef.current.send(JSON.stringify(event))
+    }
   }
 
   function isSessionCurrent(generation: number) {
@@ -423,15 +345,14 @@ export function useRealtimeAssistant() {
     }, 5000)
   }
 
-  function clearChargingMapFocus() {
+  const clearChargingMapFocus = useCallback(() => {
     chargingSpeechPhaseRef.current = null
     chargingAmenitiesFocusStopRef.current = null
     chargingSpeechResponseIdRef.current = null
-    chargingSpeechCompleteRef.current = false
     setChargingStopFocus(null)
-  }
+  }, [])
 
-  function closeSession() {
+  const closeSession = useCallback(() => {
     sessionGenerationRef.current += 1
     startingRef.current = false
     connectionAbortRef.current?.abort()
@@ -439,12 +360,18 @@ export function useRealtimeAssistant() {
     toolAbortRef.current?.abort()
     toolAbortRef.current = null
     toolRequestIdRef.current += 1
+    toolCallInFlightRef.current = false
+    turnControllerRef.current?.reset()
+    turnControllerRef.current = null
+    if (bookingPanelTimerRef.current !== null) {
+      window.clearTimeout(bookingPanelTimerRef.current)
+      bookingPanelTimerRef.current = null
+    }
     if (successFeedbackTimerRef.current !== null) {
       window.clearTimeout(successFeedbackTimerRef.current)
       successFeedbackTimerRef.current = null
     }
     setSuccessFeedback(null)
-    pendingRouteRef.current = null
     clearChargingMapFocus()
     setDestinationFocus(false)
     assistantTranscriptRef.current = ''
@@ -464,7 +391,7 @@ export function useRealtimeAssistant() {
     feedbackAudioRef.current = null
     setEnabled(false)
     setState('IDLE')
-  }
+  }, [clearChargingMapFocus])
 
   async function handleToolCall(event: {
     call_id: string
@@ -490,6 +417,15 @@ export function useRealtimeAssistant() {
       return
     }
 
+    const disposition = turnControllerRef.current?.beginTool(event.call_id, event.name)
+    if (disposition === 'duplicate') return
+    if (disposition === 'busy') {
+      sendEvent({ type: 'conversation.item.create', item: {
+        type: 'function_call_output', call_id: event.call_id,
+        output: JSON.stringify({ error: { code: 'ACTION_IN_PROGRESS', message: 'An action is already processing. Do not repeat or confirm this action.' } }),
+      } })
+      return
+    }
     setState('PROCESSING')
     toolCallInFlightRef.current = true
     recordTelemetry('toolCallStarted')
@@ -554,6 +490,7 @@ export function useRealtimeAssistant() {
       }
 
       if (event.name === 'search_route_poi') {
+        const requestedSearch = JSON.parse(event.arguments) as { category: string; location: string; preference?: string }
         const result = await searchRoutePoiWithTool(
           event.arguments,
           toolController.signal,
@@ -582,6 +519,7 @@ export function useRealtimeAssistant() {
             call_id: event.call_id,
             output: JSON.stringify({
               status: 'success',
+              requestedSearch,
               ...(result.opportunities?.length
                 ? { opportunities: result.opportunities }
                 : {}),
@@ -595,7 +533,7 @@ export function useRealtimeAssistant() {
           type: 'response.create',
           response: {
             instructions:
-              'In one concise response, give at most two returned hotels or restaurants and describe each in one short phrase using returned details, tags, amenities, or category. For attractions, choose one useful description from returned details or tags, and include rating and review count when present. Translate a non-English name into a speech-only English rendering when reliable, but preserve official names for maps and tool calls. Use only returned facts; do not claim an option matches a preference without supporting facts, invent review sentiment, repeat details, or add a separate acknowledgement.',
+              'Describe only the latest returned search results and requestedSearch. Discard earlier rejected suggestions and categories; never combine the current cuisine with a previous mistaken category. In one concise response, give at most two returned hotels or restaurants and describe each in one short phrase using returned details, tags, amenities, or category. For attractions, choose one useful description from returned details or tags, and include rating and review count when present. Translate a non-English name into a speech-only English rendering when reliable, but preserve official names for maps and tool calls. Use only returned facts; do not claim an option matches a preference without supporting facts, invent review sentiment, repeat details, or add a separate acknowledgement.',
           },
         })
         return
@@ -610,7 +548,6 @@ export function useRealtimeAssistant() {
           return
         }
 
-        pendingRouteRef.current = null
         setResponse((current) =>
           current
             ? { ...current, route: result.route }
@@ -651,6 +588,7 @@ export function useRealtimeAssistant() {
             output: JSON.stringify({
               status: 'success',
               routeId: result.routeId,
+              routeRequirements: compactRouteFacts(result.route).routeRequirements,
               amenitiesStatus:
                 result.amenitiesAvailable === false
                   ? 'unavailable'
@@ -708,6 +646,11 @@ export function useRealtimeAssistant() {
         if (event.name === 'purchase_vignette') {
           const purchaseResult = result as PurchaseVignetteResponse
           setPurchase({ ...purchaseResult, status: purchaseResult.status })
+          if (purchaseResult.sessionFacts) {
+            setResponse(current => current?.route ? {
+              ...current, route: { ...current.route, sessionFacts: purchaseResult.sessionFacts },
+            } : current)
+          }
           showSuccessFeedback({
             action: 'purchase',
             label: 'Vignette purchase confirmed',
@@ -768,7 +711,7 @@ export function useRealtimeAssistant() {
               event.name === 'return_to_main_route'
                 ? 'Confirm that the full route view has been restored. Keep it to one short sentence and do not claim that a new route was planned.'
                 : event.name === 'purchase_vignette'
-                  ? 'Confirm the returned wallet status once. Never claim a third-party payment or say confirmation details were sent to a phone app. Never speak the transaction ID, requirement ID, or other internal identifier.'
+                  ? VIGNETTE_RESULT_INSTRUCTIONS
                   : event.name === 'book_hotel_room' || event.name === 'book_restaurant_table'
                     ? 'Confirm the returned booking status once. Never claim an external reservation or phone notification. Never speak the booking ID, result ID, route ID, or other internal identifier.'
                     : 'Use one concise sentence to confirm the action and state only its useful returned result. Do not repeat an acknowledgement or speak internal IDs or reference codes.',
@@ -841,6 +784,7 @@ export function useRealtimeAssistant() {
       }
 
       if (event.name === 'reroute_through_poi') {
+        const previousRoute = currentRouteRef.current
         const result = await rerouteWithTool(
           event.arguments,
           toolController.signal,
@@ -869,10 +813,6 @@ export function useRealtimeAssistant() {
         setAmenityMarkersVisible(false)
         setAmenitySearchContext(null)
         setAmenitySearchState('IDLE')
-        pendingRouteRef.current = {
-          route: result.route,
-          priority: activePriorityRef.current,
-        }
         sendEvent({
           type: 'conversation.item.create',
           item: {
@@ -882,6 +822,7 @@ export function useRealtimeAssistant() {
               ...compactRouteFacts(result.route, {
                 ...(result.routeId ? { routeId: result.routeId } : {}),
               }),
+              updateFacts: compactPoiUpdateFacts(previousRoute, result.route),
             }),
           },
         })
@@ -889,7 +830,7 @@ export function useRealtimeAssistant() {
           type: 'response.create',
           response: {
             instructions:
-              'In one concise response, confirm that the route was updated and state its returned approximate travelTime once. If routeWeatherSummary is present, summarize the route-average condition and temperature once; otherwise omit weather. Do not mention other alerts, repeat old route facts, or imply every event source was checked.',
+              `Use only updateFacts for this narration. ${POI_UPDATE_INSTRUCTIONS}`,
           },
         })
         return
@@ -913,10 +854,7 @@ export function useRealtimeAssistant() {
       setSelectedBookingPoi(null)
       const routePriority = getRoutePriority(event.arguments)
       activePriorityRef.current = routePriority
-      pendingRouteRef.current = {
-        route: result.route,
-        priority: routePriority,
-      }
+      setResponse(createRouteResponse(result.route, routePriority))
       setPoiResults([])
       setSelectedPoi(null)
       setPoiActionState('IDLE')
@@ -1004,10 +942,13 @@ export function useRealtimeAssistant() {
           }),
         },
       })
-      sendEvent({ type: 'response.create' })
+      sendEvent({ type: 'response.create', response: {
+        instructions: 'Explain the returned tool error once in a short sentence. Ask only the returned clarification if necessary; never ask for an internal ID or claim success.',
+      } })
     } finally {
       if (isSessionCurrent(generation)) {
         toolCallInFlightRef.current = false
+        turnControllerRef.current?.finishTool(event.call_id)
         recordTelemetry('toolCallCompleted')
         if (toolAbortRef.current === toolController) {
           toolAbortRef.current = null
@@ -1023,6 +964,7 @@ export function useRealtimeAssistant() {
 
     startingRef.current = true
     const generation = sessionGenerationRef.current + 1
+    const connectionStartedAt = performance.now()
     sessionGenerationRef.current = generation
     recordTelemetry('startPressed')
     setError(null)
@@ -1034,8 +976,17 @@ export function useRealtimeAssistant() {
       feedbackAudio.preload = 'auto'
       feedbackAudioRef.current = feedbackAudio
       const playbackEnded = new Promise<void>((resolve) => {
-        feedbackAudio.addEventListener('ended', () => resolve(), { once: true })
-        feedbackAudio.addEventListener('pause', () => resolve(), { once: true })
+        const timeout = window.setTimeout(finish, 2500)
+        function finish() {
+          window.clearTimeout(timeout)
+          feedbackAudio.removeEventListener('ended', finish)
+          feedbackAudio.removeEventListener('pause', finish)
+          feedbackAudio.removeEventListener('error', finish)
+          resolve()
+        }
+        feedbackAudio.addEventListener('ended', finish, { once: true })
+        feedbackAudio.addEventListener('pause', finish, { once: true })
+        feedbackAudio.addEventListener('error', finish, { once: true })
       })
       listeningJinglePlaybackRef.current = feedbackAudio
         .play()
@@ -1044,47 +995,23 @@ export function useRealtimeAssistant() {
     }
 
     try {
-      recordTelemetry('sessionRequestStarted')
       recordTelemetry('microphoneRequested')
-      const sessionPromise = createRealtimeSession().then((session) => {
-        if (isSessionCurrent(generation)) {
-          recordTelemetry('sessionRequestCompleted')
-        }
-        return session
-      })
-      const microphonePromise = navigator.mediaDevices
-        .getUserMedia({ audio: true })
+      const stream = await navigator.mediaDevices
+        .getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
         .then((stream) => {
-          if (listeningJinglePlaybackRef.current) {
-            stream.getAudioTracks().forEach((track) => {
-              track.enabled = false
-            })
-          }
+          stream.getAudioTracks().forEach((track) => { track.enabled = false })
           if (isSessionCurrent(generation)) {
             recordTelemetry('microphoneGranted')
           }
           return stream
         })
-      const [sessionResult, microphoneResult] = await Promise.allSettled([
-        sessionPromise,
-        microphonePromise,
-      ])
-      if (microphoneResult.status === 'fulfilled' && sessionResult.status === 'rejected') {
-        microphoneResult.value.getTracks().forEach((track) => track.stop())
-      }
-      if (sessionResult.status === 'rejected') {
-        throw sessionResult.reason
-      }
-      if (microphoneResult.status === 'rejected') {
-        throw microphoneResult.reason
-      }
       if (!isSessionCurrent(generation)) {
-        microphoneResult.value.getTracks().forEach((track) => track.stop())
+        stream.getTracks().forEach((track) => track.stop())
         return
       }
 
-      const session = sessionResult.value
-      const stream = microphoneResult.value
+      streamRef.current = stream
+      const microphoneReadyAt = performance.now()
       const peerConnection = new RTCPeerConnection()
       recordTelemetry('peerConnectionCreated')
       const audio = new Audio()
@@ -1106,28 +1033,34 @@ export function useRealtimeAssistant() {
       streamRef.current = stream
 
       const channel = peerConnection.createDataChannel('oai-events')
+      channelRef.current = channel
+      turnControllerRef.current = new RealtimeTurnController(
+        (event) => {
+          if (isSessionCurrent(generation) && channel.readyState === 'open') {
+            channel.send(JSON.stringify(event))
+          }
+        },
+        (responseId, status) => {
+          if (!isSessionCurrent(generation)) return
+          if (responseId === chargingSpeechResponseIdRef.current) {
+            if (status !== 'completed') {
+              clearChargingMapFocus()
+            } else if (chargingSpeechPhaseRef.current === 'plan') {
+              chargingSpeechPhaseRef.current = 'amenities'
+              chargingSpeechResponseIdRef.current = null
+              sendEvent({ type: 'response.create', response: {
+                instructions: AMENITIES_RESULT_INSTRUCTIONS,
+              } })
+            } else {
+              clearChargingMapFocus()
+            }
+          }
+          setState(toolCallInFlightRef.current ? 'PROCESSING' : 'LISTENING')
+        },
+      )
       channel.onopen = () => {
         if (isSessionCurrent(generation)) {
-          channel.send(
-            JSON.stringify({
-              type: 'session.update',
-              session: {
-                type: 'realtime',
-                audio: {
-                  input: {
-                    turn_detection: {
-                      type: 'server_vad',
-                      threshold: 0.55,
-                      prefix_padding_ms: 300,
-                      silence_duration_ms: 700,
-                      create_response: true,
-                      interrupt_response: true,
-                    },
-                  },
-                },
-              },
-            }),
-          )
+          // VAD and tools are configured atomically by the backend at call creation.
           recordTelemetry('dataChannelOpened')
         }
       }
@@ -1136,23 +1069,26 @@ export function useRealtimeAssistant() {
           return
         }
         const event = JSON.parse(message.data) as Record<string, unknown>
+        turnControllerRef.current?.handle(event)
 
         if (event.type === 'input_audio_buffer.speech_started') {
           const now = performance.now()
           if (now - speechStartedAtRef.current >= 350) {
             speechStartedAtRef.current = now
             setState('LISTENING')
+            if (chargingSpeechPhaseRef.current !== null) clearChargingMapFocus()
           }
         } else if (event.type === 'response.created') {
           const createdResponse = event.response as { id?: string } | undefined
           if (
             chargingSpeechPhaseRef.current !== null &&
             chargingSpeechResponseIdRef.current === null &&
-            typeof createdResponse?.id === 'string'
+            typeof createdResponse?.id === 'string' &&
+            turnControllerRef.current?.isResult(createdResponse.id)
           ) {
             chargingSpeechResponseIdRef.current = createdResponse.id
           }
-          setState('SPEAKING')
+          setState('PROCESSING')
         } else if (event.type === 'response.output_audio_transcript.done') {
           const transcriptText = event.transcript
           if (typeof transcriptText === 'string') {
@@ -1172,69 +1108,13 @@ export function useRealtimeAssistant() {
             name: String(event.name),
             arguments: String(event.arguments),
           }, generation)
-        } else if (event.type === 'response.done') {
-          const completedResponse = event.response as
-            | { id?: string; status?: string }
-            | undefined
-          if (
-            chargingSpeechPhaseRef.current !== null &&
-            completedResponse?.id === chargingSpeechResponseIdRef.current
-          ) {
-            if (completedResponse.status !== 'completed') {
-              clearChargingMapFocus()
-            } else {
-              // Generation is complete, but WebRTC may still be playing the audio.
-              chargingSpeechCompleteRef.current = true
-            }
-          }
-          if (pendingRouteRef.current) {
-            const pendingRoute = pendingRouteRef.current
-            pendingRouteRef.current = null
-            setResponse(
-              createRouteResponse(
-                pendingRoute.route,
-                pendingRoute.priority,
-                assistantTranscriptRef.current,
-              ),
-            )
-          }
-          setState(
-            toolCallInFlightRef.current
-              ? 'PROCESSING'
-              : chargingSpeechCompleteRef.current
-                ? 'SPEAKING'
-                : 'LISTENING',
-          )
         } else if (event.type === 'output_audio_buffer.started') {
+          setState('SPEAKING')
           if (
             chargingSpeechPhaseRef.current === 'amenities' &&
             event.response_id === chargingSpeechResponseIdRef.current
           ) {
             setChargingStopFocus(chargingAmenitiesFocusStopRef.current)
-          }
-        } else if (event.type === 'output_audio_buffer.stopped') {
-          if (
-            typeof event.response_id === 'string' &&
-            event.response_id === chargingSpeechResponseIdRef.current &&
-            chargingSpeechCompleteRef.current
-          ) {
-            if (chargingSpeechPhaseRef.current === 'plan') {
-              // Chargers have been added in overview throughout the plan speech.
-              // The close-up begins when the next audio buffer starts playing.
-              chargingSpeechPhaseRef.current = 'amenities'
-              chargingSpeechResponseIdRef.current = null
-              chargingSpeechCompleteRef.current = false
-              sendEvent({
-                type: 'response.create',
-                response: {
-                  instructions:
-                    'Say exactly one short sentence about the nearbyAmenities in the preceding charging result. If places exist, start "Nearby you have" and name up to three distinct places; include a verified partner benefit only if returned. Stop after the names or benefit. Do not add a second clause restating that amenities are nearby, repeat a place or charging detail, or use a preamble. If the list is empty, say "I could not find nearby amenities." If amenitiesStatus is unavailable, say "I could not check nearby amenities right now." Do not claim amenities were added to the route.',
-                },
-              })
-            } else if (chargingSpeechPhaseRef.current === 'amenities') {
-              clearChargingMapFocus()
-              setState('LISTENING')
-            }
           }
         } else if (event.type === 'output_audio_buffer.cleared') {
           if (
@@ -1246,7 +1126,8 @@ export function useRealtimeAssistant() {
             setState('LISTENING')
           }
         } else if (event.type === 'error') {
-          const eventError = event.error as { message?: string } | undefined
+          const eventError = event.error as { code?: string; message?: string } | undefined
+          if (eventError?.code === 'response_cancel_not_active') return
           setError(
             eventError?.message ??
               'Realtime assistant failed to process the request.',
@@ -1257,7 +1138,6 @@ export function useRealtimeAssistant() {
 
       const offer = await peerConnection.createOffer()
       await peerConnection.setLocalDescription(offer)
-      await waitForIceGathering(peerConnection)
 
       if (!isSessionCurrent(generation)) {
         throw new Error('Voice connection was stopped.')
@@ -1265,31 +1145,22 @@ export function useRealtimeAssistant() {
 
       const controller = new AbortController()
       connectionAbortRef.current = controller
-      const timeout = window.setTimeout(() => controller.abort(), 15_000)
+      const timeout = window.setTimeout(() => controller.abort(), 20_000)
+      const callStartedAt = performance.now()
+      let callCompletedAt = callStartedAt
       try {
-        const answerResponse = await fetch(
-            `https://api.openai.com/v1/realtime/calls?model=${encodeURIComponent(session.model)}`,
-          {
-            method: 'POST',
-            body: peerConnection.localDescription?.sdp,
-            headers: {
-              Authorization: `Bearer ${session.clientSecret}`,
-              'Content-Type': 'application/sdp',
-            },
-            signal: controller.signal,
-          },
-        )
-
-        if (!answerResponse.ok) {
-          throw new Error(`Realtime connection failed with HTTP ${answerResponse.status}`)
-        }
+        recordTelemetry('sessionRequestStarted')
+        const answer = await createRealtimeCall(offer.sdp ?? '', controller.signal)
+        callCompletedAt = performance.now()
+        recordTelemetry('sessionRequestCompleted')
+        if (!isSessionCurrent(generation)) return
 
         await peerConnection.setRemoteDescription({
           type: 'answer',
-          sdp: await answerResponse.text(),
+          sdp: answer,
         })
         recordTelemetry('remoteDescriptionApplied')
-        await waitForDataChannelOpen(channel)
+        await waitForDataChannelOpen(channel, controller.signal)
       } finally {
         window.clearTimeout(timeout)
         if (connectionAbortRef.current === controller) {
@@ -1301,12 +1172,21 @@ export function useRealtimeAssistant() {
         throw new Error('Voice connection was stopped.')
       }
       await listeningJinglePlaybackRef.current
+      if (!isSessionCurrent(generation)) return
+      listeningJinglePlaybackRef.current = null
+      feedbackAudioRef.current?.pause()
       stream.getAudioTracks().forEach((track) => {
         track.enabled = true
       })
       channelRef.current = channel
       setEnabled(true)
       recordTelemetry('assistantReady')
+      console.info('realtime_connection_ms', {
+        total: Math.round(performance.now() - connectionStartedAt),
+        microphone: Math.round(microphoneReadyAt - connectionStartedAt),
+        call: Math.round(callCompletedAt - callStartedAt),
+        transport: Math.round(performance.now() - callCompletedAt),
+      })
       window.dispatchEvent(
         new CustomEvent(REALTIME_CONNECTION_CONFIRMED_EVENT, {
           detail: { generation },
@@ -1317,13 +1197,19 @@ export function useRealtimeAssistant() {
       const stoppedByUser = !isSessionCurrent(generation)
       if (isSessionCurrent(generation)) {
         startingRef.current = false
+        turnControllerRef.current?.reset()
+        turnControllerRef.current = null
         channelRef.current?.close()
+        channelRef.current = null
         connectionRef.current?.close()
+        connectionRef.current = null
         streamRef.current?.getTracks().forEach((track) => track.stop())
         streamRef.current = null
         audioRef.current?.pause()
         audioRef.current?.remove()
         audioRef.current = null
+        feedbackAudioRef.current?.pause()
+        listeningJinglePlaybackRef.current = null
       }
       if (stoppedByUser) {
         return
@@ -1342,7 +1228,7 @@ export function useRealtimeAssistant() {
     }
   }
 
-  useEffect(() => closeSession, [])
+  useEffect(() => closeSession, [closeSession])
 
   function selectPoi(poiId: string) {
     const poi = poiResults.find((result) => result.id === poiId)

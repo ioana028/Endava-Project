@@ -1,6 +1,10 @@
+import json
 import logging
+import re
 from time import monotonic
 from typing import Protocol
+
+import httpx
 
 from ...core.errors import APIError
 
@@ -20,6 +24,24 @@ is missing, say so plainly or ask one focused question; never guess, infer, or
 fill gaps with plausible details. Never speak internal IDs. If a tool fails,
 give one brief, actionable explanation based only on its returned error. Never
 leave the driver without a response.
+For a request needing a tool, say one short acknowledgement before calling it,
+such as "I'll check that for you." Then call the tool and stop speaking.
+Do not say "I'm still waiting", invent interim results, or continue speaking
+until the app explicitly requests narration of the completed tool result.
+For purchase_vignette, the acknowledgement is exactly "Got it." with no
+additional explanation before calling the tool.
+
+UNDERSTANDING AND CORRECTIONS
+Only act on speech you understand clearly. If the requested place type or
+destination is unclear, ask one short clarification instead of guessing or
+making a search. Do not fill missing words from an earlier mistaken request.
+The latest explicit correction replaces the mistaken detail; it does not
+modify or inherit a rejected category. Preserve only details the driver has
+not corrected, such as the destination. Never argue with a clear correction.
+When the driver corrects a place type, discard the rejected category and its
+suggestions, briefly acknowledge the correction, and search the corrected type.
+Keep cuisine or facility preferences separate from the explicitly requested
+place type. Do not let an earlier search override the latest clear request.
 
 ROUTES
 For a route request, call plan_route with the requested destination and
@@ -48,6 +70,10 @@ A reroute result alone confirms that the route changed and supplies its new
 distance and duration. Mention a returned opportunity only when the driver
 asks about it or it is clearly relevant; never call a suggestion confirmed.
 A scenic preference is not a promise of scenery.
+After adding an attraction or other POI, briefly confirm the addition and its
+returned change in driving time. Mention only newly changed requirements or
+charging feasibility, when supplied. Never repeat the full route overview,
+weather, total travel time, unchanged requirements, or charging benefits.
 
 LOCATION AND VEHICLE
 For "Where am I?" or a question about the car/current range, call
@@ -57,7 +83,7 @@ driver's location from the destination or make a Google request for this.
 Never volunteer battery, range, consumption, or other telemetry unless asked.
 
 PLACE SEARCH AND REROUTING
-Use search_route_poi for requested hotels, restaurants, attractions, chargers,
+Use search_route_poi for requested hotels, restaurants, attractions,
 coffee, rest, toilets, fuel, or service near the active route, a stop, or the
 destination. Map sightseeing/landmarks to attraction, cafes to coffee, fuel/gas
 stations to fuel, and restrooms to toilets. Use route, stop, or destination as
@@ -68,6 +94,8 @@ destination. Never override an explicitly requested route or stop location.
 For a general charging question after planning, use the returned
 chargingOptions. Search for more chargers only when the driver asks for a fresh
 search or another location.
+For chargers, search_route_poi is only for an explicit request to search, find,
+or compare charging locations. An add request is not a search request.
 
 Search results are suggestions, not route changes. Use only returned names,
 categories, tags/details, amenities, ratings/review counts, distances/detours,
@@ -75,7 +103,11 @@ and verified partner facts. Never invent review sentiment or facilities, and
 do not repeat the same detail in different words. Offer no more than two hotels
 or restaurants, and describe each in one short phrase using only returned
 facts. Do not claim an option satisfies a preference unless the returned facts
-support that. Offer no more than three attractions. For non-English place or
+support that. Hotels must have a returned Google review rating strictly above
+4.0 out of 5; this is not an official hotel star classification. If no hotels
+qualify, say none were found and never silently relax this threshold. Do not
+make additional searches unless the driver asks. Offer no more than three
+attractions. For non-English place or
 station names, use a concise English spoken rendering when its meaning is clear;
 preserve proper names when they should not be translated. This rendering is
 speech-only: keep the official returned name on the map and use original IDs
@@ -96,8 +128,14 @@ spoken rendering only when reliable; otherwise preserve the official name.
 CHARGING AND ROUTE REQUIREMENTS
 A direct request to add a charger or charging stop is sufficient consent; call
 confirm_charging_stop immediately with the exact routeId and confirmation
-"confirmed", without asking for another confirmation. This adds the complete
-ordered charging plan as one action; never select or omit an individual
+"confirmed", without asking for another confirmation. "Add charging", "add a charging stop", and "add charging stops"
+all mean confirm_charging_stop, never search_route_poi or plan_route. When
+chargingPlanReady is true, the stops are already prepared by the backend;
+do not search for alternatives or ask which charger the driver wants. If the
+plan is already confirmed, report that rather than adding duplicate stops.
+For a route with no charging need and no prepared plan, explain that no stop
+is required; never invent a prepared stop or automatically search for one.
+This adds the complete ordered charging plan as one action; never select or omit an individual
 required stop or plan a second route. After success, first state every returned
 station and its charging duration once, without discussing amenities or
 announcing that you will check nearby. The app then focuses the map on the
@@ -109,14 +147,27 @@ idea in different words. If empty, say none were found; if unavailable, say
 they could not be checked. In both cases the map stays on the route overview.
 Amenities are searched only around that first stop; later stops can be searched
 if the driver asks. Never imply amenities were added to the route.
+The amenities continuation mentions only nearby places and those places' own
+verified benefits. Never repeat the charging station's benefit, its duration,
+the destination, weather, requirements, or an entire route summary.
 Mention partner benefits only when returned and verified. Do not claim that an
 external merchant action has occurred unless a tool result confirms it.
 
 For a returned vignette requirement, "buy the vignette" is sufficient consent.
 Use its exact routeId/requirementId and confirmation "confirmed" without
 asking twice or repeating the route requirement. Report only the returned
-wallet status; never claim a third-party payment or say a confirmation was
-sent to a phone app.
+purchase outcome once. When phoneConfirmationStatus is "simulated_sent", say
+"Your vignette is purchased, and confirmation has been sent to your phone."
+This phone confirmation is a presentation-only receipt, not a real push
+notification. Do not describe it as simulated in speech. If the flag is
+absent, omit phone delivery and say "Your vignette is purchased."
+For duplicate status say "Your vignette was already purchased." Never separately
+confirm wallet status or payment completion; never claim a third-party payment
+or that a duplicate purchase sends another phone notification.
+The routeRequirements context contains the internal requirement IDs. Never ask
+the driver for an ID. If only one vignette is relevant, requirementId may be
+omitted and the app resolves it. If multiple remain, ask which country's
+vignette they want and use that country's returned requirement ID.
 
 BOOKING AND DRIVING
 Hotel/restaurant results are suggestions; naming or selecting one does not
@@ -192,7 +243,9 @@ REALTIME_TOOLS = [
         "name": "search_route_poi",
         "description": (
             "Find factual POI suggestions near the active route, a selected "
-            "stop, or the destination. Searching does not change the route."
+            "stop, or the destination. Searching does not change the route. "
+            "For charging, use only for explicit search/find/compare requests, "
+            "never for add charging: that uses confirm_charging_stop."
         ),
         "parameters": {
             "type": "object",
@@ -204,8 +257,9 @@ REALTIME_TOOLS = [
                         "coffee", "rest", "toilets", "fuel", "service",
                     ],
                     "description": (
-                        "The kind of place requested. Use attraction for cool stuff, "
-                        "sightseeing, landmarks, or interesting places; use coffee "
+                        "The kind of place requested. The latest explicit place type "
+                        "overrides a previously mistaken category. Use attraction for "
+                        "cool stuff, sightseeing, landmarks, or interesting places; use coffee "
                         "for coffee stops or cafes; use fuel for fuel or gas stations; "
                         "use toilets for restrooms."
                     ),
@@ -217,7 +271,7 @@ REALTIME_TOOLS = [
                 },
                 "preference": {
                     "type": "string",
-                    "description": "An optional preference such as Italian food or toilets.",
+                    "description": "An optional cuisine or facility preference. Keep this separate from the explicitly requested place category; a preference does not override that category.",
                 },
             },
             "required": ["category", "location"],
@@ -301,7 +355,7 @@ REALTIME_TOOLS = [
     {
         "type": "function",
         "name": "confirm_charging_stop",
-        "description": "Add every stop in the complete ordered charging plan as one action when the driver asks to add charging; do not ask for another confirmation. Amenities are returned for the first stop only.",
+        "description": "For add charging, add a charging stop, or add charging stops, add every stop in the already prepared ordered charging plan immediately. Do not search for alternatives; do not ask for another confirmation. Amenities are returned for the first stop only.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -323,7 +377,7 @@ REALTIME_TOOLS = [
                 "requirementId": {"type": "string"},
                 "confirmation": {"type": "string", "enum": ["confirmed"]},
             },
-            "required": ["routeId", "requirementId", "confirmation"],
+            "required": ["routeId", "confirmation"],
             "additionalProperties": False,
         },
     },
@@ -397,6 +451,33 @@ REALTIME_TOOLS = [
 class RealtimeSessionProvider(Protocol):
     async def create_client_secret(self) -> str: ...
 
+    async def create_call(self, sdp: str) -> str: ...
+
+
+def realtime_session_configuration(model: str) -> dict:
+    return {
+        "type": "realtime",
+        "model": model,
+        "instructions": REALTIME_INSTRUCTIONS,
+        "output_modalities": ["audio"],
+        "audio": {
+            "output": {"voice": "marin"},
+            "input": {
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.55,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 700,
+                    "create_response": False,
+                    "interrupt_response": True,
+                },
+            },
+        },
+        "tools": REALTIME_TOOLS,
+        "tool_choice": "auto",
+        "max_output_tokens": 768,
+    }
+
 
 class OpenAIRealtimeProvider:
     def __init__(
@@ -408,6 +489,62 @@ class OpenAIRealtimeProvider:
         self._api_key = api_key
         self._model = model
         self._secret_seconds = secret_seconds
+        self._http_client: httpx.AsyncClient | None = None
+        self._sdk_client = None
+
+    async def aclose(self) -> None:
+        if self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
+        if self._sdk_client is not None:
+            await self._sdk_client.close()
+            self._sdk_client = None
+
+    async def create_call(self, sdp: str) -> str:
+        if not self._api_key:
+            raise APIError(503, "REALTIME_UNAVAILABLE", "Realtime voice is not configured.")
+        started_at = monotonic()
+        try:
+            if self._http_client is None:
+                self._http_client = httpx.AsyncClient(timeout=15.0)
+            response = await self._http_client.post(
+                "https://api.openai.com/v1/realtime/calls",
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                files={
+                    "sdp": (None, sdp, "application/sdp"),
+                    "session": (
+                        None,
+                        json.dumps(realtime_session_configuration(self._model)),
+                        "application/json",
+                    ),
+                },
+            )
+            response.raise_for_status()
+            answer = response.text
+            if not answer.startswith("v=0") or "m=audio " not in answer:
+                raise ValueError("Invalid SDP answer")
+        except Exception as error:
+            status = error.response.status_code if isinstance(error, httpx.HTTPStatusError) else None
+            details = {}
+            if isinstance(error, httpx.HTTPStatusError):
+                try:
+                    upstream_error = error.response.json().get("error", {})
+                    for field in ("code", "param", "type"):
+                        value = upstream_error.get(field)
+                        if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.\[\]-]{1,100}", value):
+                            details[field] = value
+                except (ValueError, AttributeError):
+                    pass
+            LOGGER.warning(
+                "realtime_call_ms=%d error=%s upstream_status=%s upstream_fields=%s",
+                round((monotonic() - started_at) * 1000),
+                type(error).__name__,
+                status,
+                details,
+            )
+            raise APIError(503, "REALTIME_UNAVAILABLE", "The Realtime voice service is unavailable.") from error
+        LOGGER.info("realtime_call_ms=%d", round((monotonic() - started_at) * 1000))
+        return answer
 
     async def create_client_secret(self) -> str:
         if not self._api_key:
@@ -421,22 +558,14 @@ class OpenAIRealtimeProvider:
         try:
             from openai import AsyncOpenAI
 
-            client = AsyncOpenAI(api_key=self._api_key)
-            response = await client.realtime.client_secrets.create(
+            if self._sdk_client is None:
+                self._sdk_client = AsyncOpenAI(api_key=self._api_key)
+            response = await self._sdk_client.realtime.client_secrets.create(
                 expires_after={
                     "anchor": "created_at",
                     "seconds": self._secret_seconds,
                 },
-                session={
-                    "type": "realtime",
-                    "model": self._model,
-                    "instructions": REALTIME_INSTRUCTIONS,
-                    "output_modalities": ["audio"],
-                    "audio": {"output": {"voice": "marin"}},
-                    "tools": REALTIME_TOOLS,
-                    "tool_choice": "auto",
-                    "max_output_tokens": 768,
-                },
+                session=realtime_session_configuration(self._model),
             )
         except APIError:
             raise

@@ -51,6 +51,47 @@ def test_route_requirement_catalog_supports_live_requirement_id() -> None:
     assert result.amount_eur == 16.5
 
 
+def test_purchase_without_internal_id_resolves_the_active_vignette():
+    result = asyncio.run(service().purchase_vignette("route-1", None, "confirmed"))
+    assert result.requirement_id == "hu-vignette-10d"
+
+
+def test_purchase_without_id_does_not_guess_between_countries():
+    context = RouteContext()
+    context.active_route_requirements = (*context.active_route_requirements,
+        RouteRequirement(id="at-vignette", name="Austrian vignette", country="AT", kind="vignette"))
+    wallet = WalletService()
+    with pytest.raises(APIError) as error:
+        asyncio.run(CommerceService(context, wallet).purchase_vignette("route-1", None, "confirmed"))
+    assert error.value.code == "AMBIGUOUS_REQUIREMENT"
+    assert "AT" in error.value.message and "HU" in error.value.message
+    assert "hu-vignette-10d" not in error.value.message
+    assert wallet._transactions == {}
+
+
+def test_purchase_resolves_only_remaining_country_not_an_already_purchased_one():
+    context = RouteContext()
+    context.active_route_requirements = (*context.active_route_requirements,
+        RouteRequirement(id="at-vignette", name="Austrian vignette", country="AT", kind="vignette"))
+    context.route_session_facts = {"purchased_vignette_requirement_ids": ["at-vignette"]}
+    result = asyncio.run(CommerceService(context, WalletService()).purchase_vignette("route-1", None, "confirmed"))
+    assert result.requirement_id == "hu-vignette-10d"
+
+
+def test_purchase_without_id_rejects_routes_without_vignettes():
+    context = RouteContext()
+    context.active_route_requirements = ()
+    with pytest.raises(APIError) as error:
+        asyncio.run(CommerceService(context, WalletService()).purchase_vignette("route-1", None, "confirmed"))
+    assert error.value.code == "MISSING_REQUIREMENT"
+
+
+def test_automatic_requirement_resolution_still_rejects_stale_route():
+    with pytest.raises(APIError) as error:
+        asyncio.run(service().purchase_vignette("old-route", None, "confirmed"))
+    assert error.value.code == "STALE_ROUTE"
+
+
 def service() -> CommerceService:
     return CommerceService(RouteContext(), WalletService())
 

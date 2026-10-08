@@ -11,6 +11,10 @@ class FakeRealtimeProvider:
     async def create_client_secret(self) -> str:
         return "ek_test_secret"
 
+    async def create_call(self, sdp: str) -> str:
+        self.offer = sdp
+        return "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
+
 
 class FakeDay6Service:
     async def purchase_vignette(self, **payload: Any) -> dict[str, Any]:
@@ -146,6 +150,9 @@ def test_realtime_plan_route_returns_structured_route() -> None:
     assert response.status_code == 200
     assert response.json()["route"]["destination"] == "Budapest"
     assert response.json()["route"]["stats"]["totalDurationMinutes"] == 165
+    telemetry = response.json()["route"]["telemetry"]
+    assert "estimatedRangeKm" in telemetry and "batteryPercent" in telemetry
+    assert "estimated_range_km" not in telemetry
 
 
 def test_realtime_plan_route_defaults_to_balanced_priority() -> None:
@@ -402,7 +409,7 @@ def test_realtime_day6_tools_return_camel_case_contracts() -> None:
 
     assert purchase.status_code == hotel.status_code == restaurant.status_code == 200
     assert purchase.json()["transactionId"] == "txn-vignette-001"
-    assert "phoneConfirmationStatus" not in purchase.json()
+    assert purchase.json()["phoneConfirmationStatus"] == "simulated_sent"
     assert hotel.json()["bookingType"] == "hotel_room"
     assert "phoneConfirmationStatus" not in hotel.json()
     assert restaurant.json()["bookingType"] == "restaurant_table"

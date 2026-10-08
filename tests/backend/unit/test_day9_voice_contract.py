@@ -89,7 +89,21 @@ def test_day9_realtime_instructions_are_statement_first_and_complete() -> None:
     assert "approximate travel time once" in normalized_instructions
     assert "route-average weather in plain language" in normalized_instructions
     assert "A direct request to add a charger or charging stop is sufficient consent" in normalized_instructions
-    assert "separate brief amenities response" in normalized_instructions
+    assert "brief continuation about those places" in normalized_instructions
+    assert "Never ask the driver for an ID" in normalized_instructions
+    assert 'acknowledgement is exactly "Got it."' in normalized_instructions
+    assert "Never separately confirm wallet status" in normalized_instructions
+    assert "Never repeat the charging station's benefit" in normalized_instructions
+    assert "Never repeat the full route overview" in normalized_instructions
+    assert "Google review rating strictly above 4.0" in normalized_instructions
+    assert "latest explicit correction replaces the mistaken detail" in normalized_instructions
+    assert "discard the rejected category and its suggestions" in normalized_instructions
+    assert "Keep cuisine or facility preferences separate" in normalized_instructions
+    assert "Chinese" not in REALTIME_INSTRUCTIONS
+    assert '"Add charging", "add a charging stop", and "add charging stops"' in normalized_instructions
+    assert "all mean confirm_charging_stop, never search_route_poi or plan_route" in normalized_instructions
+    assert 'phoneConfirmationStatus is "simulated_sent"' in normalized_instructions
+    assert "ask one short clarification instead of guessing" in normalized_instructions
 
 
 def test_route_poi_api_preserves_service_opportunities() -> None:

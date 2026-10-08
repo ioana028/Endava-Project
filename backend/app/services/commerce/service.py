@@ -55,7 +55,7 @@ class CommerceService:
     async def purchase_vignette(
         self,
         route_id: str,
-        requirement_id: str,
+        requirement_id: str | None,
         confirmation: str,
         request_key: str | None = None,
     ):
@@ -63,6 +63,27 @@ class CommerceService:
             raise APIError(422, "CONFIRMATION_REQUIRED", "Purchase confirmation is required.")
         self._require_active_route(route_id)
         requirements = getattr(self._route_service, "active_route_requirements", ())
+        if requirement_id is None:
+            vignettes = [item for item in requirements if item.kind == "vignette"]
+            facts = getattr(self._route_service, "route_session_facts", None)
+            purchased = (
+                facts.get("purchased_vignette_requirement_ids", ())
+                if isinstance(facts, dict)
+                else getattr(facts, "purchased_vignette_requirement_ids", ())
+            )
+            remaining = [item for item in vignettes if item.id not in purchased]
+            # Preserve idempotency when the only requirement is already purchased.
+            candidates = remaining or vignettes
+            if not candidates:
+                raise APIError(422, "MISSING_REQUIREMENT", "There is no current vignette requirement to purchase.")
+            if len(candidates) != 1:
+                countries = ", ".join(sorted({item.country for item in candidates}))
+                raise APIError(
+                    422,
+                    "AMBIGUOUS_REQUIREMENT",
+                    f"Which country's vignette would you like to buy: {countries}?",
+                )
+            requirement_id = candidates[0].id
         requirement = next((item for item in requirements if item.id == requirement_id), None)
         if requirement is None:
             raise APIError(422, "STALE_REQUIREMENT", "The vignette requirement is no longer current.")
