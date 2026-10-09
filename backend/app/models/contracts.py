@@ -152,6 +152,13 @@ class TelemetryNarrationFacts(ContractModel):
     charging_feasible: bool | None = None
 
 
+class VehicleServiceStatus(ContractModel):
+    status: Literal["UP_TO_DATE", "DUE_DURING_JOURNEY", "OVERDUE"]
+    odometer_km: float = Field(ge=0)
+    next_service_odometer_km: float = Field(ge=0)
+    due_in_km: float
+
+
 class RouteAlert(ContractModel):
     type: Literal["WEATHER", "TRAFFIC", "TOLL", "VEHICLE"]
     location_name: str | None = None
@@ -179,6 +186,7 @@ class RouteResponse(ContractModel):
     charging_plan: ChargingPlan | None = None
     session_facts: RouteSessionFacts | None = None
     telemetry: TelemetryNarrationFacts | None = None
+    service_reminder: VehicleServiceStatus | None = None
 
 
 class RealtimeToolRouteRequest(ContractModel):
@@ -371,6 +379,8 @@ class VehicleTelemetryResponse(ContractModel):
     battery_capacity_kwh: float = Field(default=35.5, gt=0)
     tyres: Literal["SUMMER", "WINTER", "ALL_SEASON"]
     odometer_km: float = Field(ge=0)
+    service_interval_km: float = Field(gt=0)
+    last_service_odometer_km: float = Field(ge=0)
 
 
 class VehicleContextResponse(ContractModel):
@@ -386,3 +396,4 @@ class VehicleContextResponse(ContractModel):
     consumption_rate_kwh: float = Field(gt=0)
     connector_types: tuple[str, ...] = ()
     max_charging_power_kw: float = Field(ge=0)
+    service_status: VehicleServiceStatus

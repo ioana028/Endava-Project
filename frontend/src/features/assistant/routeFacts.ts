@@ -75,6 +75,7 @@ export function compactRouteFacts(
       chargingAction: 'confirm_charging_stop',
     } : {}),
     routeWeatherSummary,
+    ...(route.serviceReminder ? { serviceReminder: route.serviceReminder } : {}),
     ...(vignetteCount > 0 ? { vignetteCount } : {}),
     // Operational context is kept even though the spoken overview stays brief.
     routeRequirements: remainingRequirements.map(({ id, name, country, kind }) => ({ id, name, country, kind })),

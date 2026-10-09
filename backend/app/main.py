@@ -66,6 +66,8 @@ def create_app(
                     consumption_rate_kwh=0.16,
                     tyres="SUMMER",
                     odometer_km=0.0,
+                    service_interval_km=10000.0,
+                    last_service_odometer_km=0.0,
                 ),
                 partners=(),
             )

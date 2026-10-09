@@ -17,6 +17,8 @@ class VehicleState(ContractModel):
     battery_capacity_kwh: float = Field(default=35.5, gt=0)
     tyres: Literal["SUMMER", "WINTER", "ALL_SEASON"]
     odometer_km: float = Field(ge=0)
+    service_interval_km: float = Field(gt=0)
+    last_service_odometer_km: float = Field(ge=0)
 
 
 class Partner(ContractModel):

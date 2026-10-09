@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { AssistantStatus } from './features/assistant/components/AssistantStatus'
+import { VoiceWaveform } from './features/assistant/components/VoiceWaveform'
 import { useRealtimeAssistant } from './features/assistant/hooks/useRealtimeAssistant'
 import { RouteMap } from './features/map/components/RouteMap'
 import { RouteSummary } from './features/trip/components/RouteSummary'
 import type { VehicleTelemetry } from './types/contracts'
+import rickAstleyArtwork from './assets/rick-astley.jpeg'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000'
 
@@ -171,13 +173,12 @@ function App() {
               </div>
             ) : (
               <>
-                <div className={`suzanne-orb state-${assistant.state.toLowerCase()}`} aria-hidden="true" />
+                <VoiceWaveform state={assistant.state} bands={assistant.audioBands} />
                 <p className="eyebrow">Suzanne</p>
                 <h1>{assistant.transcript || 'Your route, thoughtfully handled.'}</h1>
                 <AssistantStatus
                   enabled={assistant.enabled}
                   state={assistant.state}
-                  transcript={assistant.transcript}
                   error={assistant.error}
                   onEnable={() => void assistant.enable()}
                   onDisable={assistant.disable}
@@ -237,11 +238,11 @@ function App() {
 
           <div className={`utility-panel-stage${route && !assistant.driving?.active ? ' has-route' : ''}`} aria-live="polite">
             <section className="cockpit-card media-card utility-panel">
-              <div className="media-art" aria-hidden="true" />
-              <div><strong>Crystal Sky</strong><span>Luminous · Suzanne mix</span></div>
+              <img className="media-art" src={rickAstleyArtwork} alt="Rick Astley" />
+              <div><strong>Never Gonna Give You Up</strong><span>Rick Astley</span></div>
               <div className="song-progress" aria-label="Song progress"><span /></div>
-              <div className="song-time"><span>1:24</span><span>3:47</span></div>
-              <div className="media-controls" aria-label="Media controls"><button type="button" aria-label="Previous track">|◀</button><button type="button" aria-label="Pause">Ⅱ</button><button type="button" aria-label="Next track">▶|</button></div>
+              <div className="song-time"><span>0:00</span><span>3:33</span></div>
+              <div className="media-controls" aria-label="Media controls"><button type="button" aria-label="Previous track">|◀</button><button type="button" aria-label="Play">▶</button><button type="button" aria-label="Next track">▶|</button></div>
             </section>
             {route && (
               <section className="cockpit-card cost-panel utility-panel">

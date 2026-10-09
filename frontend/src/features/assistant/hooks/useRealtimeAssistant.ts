@@ -51,6 +51,7 @@ export type AmenitySearchState =
   | 'FAILURE'
 
 export const REALTIME_CONNECTION_CONFIRMED_EVENT = 'suzanne:connection-confirmed'
+const AUDIO_BAND_COUNT = 21
 
 export interface RealtimeTelemetry {
   startPressed?: number
@@ -285,10 +286,17 @@ export function useRealtimeAssistant() {
   const [selectedBookingPoi, setSelectedBookingPoi] = useState<StopPinpoint | null>(null)
   const [telemetry, setTelemetry] = useState<RealtimeTelemetry>({})
   const [error, setError] = useState<string | null>(null)
+  const [audioBands, setAudioBands] = useState<number[]>(
+    () => Array(AUDIO_BAND_COUNT).fill(0),
+  )
   const connectionRef = useRef<RTCPeerConnection | null>(null)
   const channelRef = useRef<RTCDataChannel | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioContextRef = useRef<AudioContext | null>(null)
+  const microphoneAnalyserRef = useRef<AnalyserNode | null>(null)
+  const outputAnalyserRef = useRef<AnalyserNode | null>(null)
+  const audioMeterFrameRef = useRef<number | null>(null)
   const feedbackAudioRef = useRef<HTMLAudioElement | null>(null)
   const listeningJinglePlayedRef = useRef(false)
   const listeningJinglePlaybackRef = useRef<Promise<void> | null>(null)
@@ -308,11 +316,16 @@ export function useRealtimeAssistant() {
   const turnControllerRef = useRef<RealtimeTurnController | null>(null)
   const speechStartedAtRef = useRef(0)
   const currentRouteRef = useRef<RouteResponse | undefined>(undefined)
+  const stateRef = useRef<RealtimeAssistantState>('IDLE')
 
   useEffect(() => {
     // The WebRTC callback outlives the render that opened the connection.
     currentRouteRef.current = response?.route
   }, [response])
+
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
 
   function recordTelemetry(name: keyof RealtimeTelemetry) {
     setTelemetry((current) => ({ ...current, [name]: performance.now() }))
@@ -387,6 +400,15 @@ export function useRealtimeAssistant() {
       audioRef.current.remove()
       audioRef.current = null
     }
+    if (audioMeterFrameRef.current !== null) {
+      window.cancelAnimationFrame(audioMeterFrameRef.current)
+      audioMeterFrameRef.current = null
+    }
+    microphoneAnalyserRef.current = null
+    outputAnalyserRef.current = null
+    void audioContextRef.current?.close()
+    audioContextRef.current = null
+    setAudioBands(Array(AUDIO_BAND_COUNT).fill(0))
     feedbackAudioRef.current?.pause()
     feedbackAudioRef.current = null
     setEnabled(false)
@@ -476,6 +498,7 @@ export function useRealtimeAssistant() {
               consumptionRateKwh: result.consumptionRateKwh,
               connectorTypes: result.connectorTypes,
               maxChargingPowerKw: result.maxChargingPowerKw,
+              serviceStatus: result.serviceStatus,
             }),
           },
         })
@@ -876,7 +899,7 @@ export function useRealtimeAssistant() {
         type: 'response.create',
         response: {
           instructions:
-            'Give the route overview in no more than two concise sentences. Say the destination and approximate travelTime once; if routeWeatherSummary is present, include its condition and temperature naturally. Then phrase only positive requirements as actions: "You will need to stop for charging" if chargingRequired is true, "buy a motorway vignette" if vignetteCount is positive, and mention a toll only if tollRequired is true. When any requirement is present, finish with one offer: "Shall I help with that?" Never say "no other tolls" or mention any absent requirement. Omit missing weather and requirements. Do not mention alerts, IDs, telemetry, opportunities, unconfirmed chargers, or repeat an acknowledgement.',
+            'Give the route overview in no more than two concise sentences. Say the destination and approximate travelTime once; if routeWeatherSummary is present, include its condition and temperature naturally. Then phrase only positive requirements as actions: "You will need to stop for charging" if chargingRequired is true, "buy a motorway vignette" if vignetteCount is positive, and mention a toll only if tollRequired is true. If serviceReminder is present, mention that servicing is overdue or will become due during this journey, using its dueInKm. When any requirement is present, finish with one offer: "Shall I help with that?" Never say "no other tolls" or mention any absent requirement. Omit missing weather and requirements. Do not mention alerts, IDs, telemetry, opportunities, unconfirmed chargers, or repeat an acknowledgement.',
         },
       })
     } catch (toolError) {
@@ -1012,6 +1035,78 @@ export function useRealtimeAssistant() {
 
       streamRef.current = stream
       const microphoneReadyAt = performance.now()
+      if (typeof AudioContext !== 'undefined') {
+        const audioContext = new AudioContext()
+        await audioContext.resume().catch(() => undefined)
+        const microphoneAnalyser = audioContext.createAnalyser()
+        microphoneAnalyser.fftSize = 2048
+        microphoneAnalyser.smoothingTimeConstant = 0.72
+        audioContext.createMediaStreamSource(stream).connect(microphoneAnalyser)
+        audioContextRef.current = audioContext
+        microphoneAnalyserRef.current = microphoneAnalyser
+        const frequencyData = new Uint8Array(microphoneAnalyser.frequencyBinCount)
+        const previousBands = Array(AUDIO_BAND_COUNT).fill(0)
+        let lastUpdate = 0
+        const updateAudioBands = (timestamp: number) => {
+          if (!isSessionCurrent(generation)) return
+          if (timestamp - lastUpdate >= 40) {
+            const analyser = stateRef.current === 'SPEAKING'
+              ? outputAnalyserRef.current
+              : stateRef.current === 'LISTENING'
+                ? microphoneAnalyserRef.current
+                : null
+            const nextBands = Array(AUDIO_BAND_COUNT).fill(0)
+            if (analyser) {
+              analyser.getByteFrequencyData(frequencyData)
+              const nyquistHz = audioContext.sampleRate / 2
+              const minHz = 80
+              const maxHz = Math.min(8000, nyquistHz)
+              const frequencyRatio = maxHz / minHz
+              for (let index = 0; index < AUDIO_BAND_COUNT; index += 1) {
+                const startHz = minHz * Math.pow(
+                  frequencyRatio,
+                  index / AUDIO_BAND_COUNT,
+                )
+                const endHz = minHz * Math.pow(
+                  frequencyRatio,
+                  (index + 1) / AUDIO_BAND_COUNT,
+                )
+                const startBin = Math.max(1, Math.floor(
+                  startHz / nyquistHz * frequencyData.length,
+                ))
+                const endBin = Math.max(startBin + 1, Math.ceil(
+                  endHz / nyquistHz * frequencyData.length,
+                ))
+                let total = 0
+                let peak = 0
+                let samples = 0
+                for (
+                  let bin = startBin;
+                  bin < Math.min(endBin, frequencyData.length);
+                  bin += 1
+                ) {
+                  const value = frequencyData[bin] / 255
+                  total += value
+                  peak = Math.max(peak, value)
+                  samples += 1
+                }
+                const energy = samples ? (total / samples) * 0.7 + peak * 0.3 : 0
+                nextBands[index] = Math.min(1, Math.max(0, (energy - 0.035) * 3.8))
+              }
+            }
+            for (let index = 0; index < AUDIO_BAND_COUNT; index += 1) {
+              const smoothing = nextBands[index] > previousBands[index] ? 0.58 : 0.24
+              previousBands[index] += (
+                nextBands[index] - previousBands[index]
+              ) * smoothing
+            }
+            setAudioBands([...previousBands])
+            lastUpdate = timestamp
+          }
+          audioMeterFrameRef.current = window.requestAnimationFrame(updateAudioBands)
+        }
+        audioMeterFrameRef.current = window.requestAnimationFrame(updateAudioBands)
+      }
       const peerConnection = new RTCPeerConnection()
       recordTelemetry('peerConnectionCreated')
       const audio = new Audio()
@@ -1023,6 +1118,15 @@ export function useRealtimeAssistant() {
           return
         }
         audio.srcObject = event.streams[0]
+        if (audioContextRef.current && !outputAnalyserRef.current) {
+          const outputAnalyser = audioContextRef.current.createAnalyser()
+          outputAnalyser.fftSize = 2048
+          outputAnalyser.smoothingTimeConstant = 0.72
+          audioContextRef.current
+            .createMediaStreamSource(event.streams[0])
+            .connect(outputAnalyser)
+          outputAnalyserRef.current = outputAnalyser
+        }
         void audio.play().catch(() => undefined)
       }
 
@@ -1288,6 +1392,7 @@ export function useRealtimeAssistant() {
     destinationFocus,
     selectedBookingPoi,
     telemetry,
+    audioBands,
     successFeedback,
     selectPoi,
     error,

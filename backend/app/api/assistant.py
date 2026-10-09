@@ -35,6 +35,7 @@ from ..models.contracts import (
     RealtimeToolStartDrivingRequest,
     RealtimeToolStartDrivingResponse,
 )
+from ..services.vehicle.service import VehicleTelemetryService
 
 
 router = APIRouter(prefix="/api/assistant", tags=["assistant"])
@@ -95,6 +96,9 @@ async def _attach_route_facts(request: Request, route: Any) -> Any:
     if fixtures is None or not hasattr(route, "model_copy"):
         return route
     vehicle = fixtures.telemetry
+    next_service_reminder = getattr(
+        request.app.state.route_service, "next_service_reminder", None
+    )
     updated_route = route.model_copy(
         update={
             "telemetry": TelemetryNarrationFacts.model_validate({
@@ -102,7 +106,12 @@ async def _attach_route_facts(request: Request, route: Any) -> Any:
                 "estimated_range_km": vehicle.estimated_range_km,
                 "max_charged_range_km": vehicle.max_charged_range_km,
                 "consumption_rate_kwh": vehicle.consumption_rate_kwh,
-            })
+            }),
+            "service_reminder": (
+                next_service_reminder(route.stats.total_distance_km)
+                if next_service_reminder is not None
+                else None
+            ),
         }
     )
     weather_provider = getattr(request.app.state, "weather_provider", None)
@@ -176,6 +185,9 @@ async def realtime_vehicle_context(request: Request) -> VehicleContextResponse:
         if telemetry.vehicle_id.casefold().startswith("honda-e")
         else telemetry.vehicle_id
     )
+    service_status = VehicleTelemetryService(
+        request.app.state.fixture_repository
+    ).service_status()
     return VehicleContextResponse(
         current_location=getattr(route_service, "current_location_name", "Vienna, Austria"),
         current_location_coordinates=getattr(
@@ -189,6 +201,7 @@ async def realtime_vehicle_context(request: Request) -> VehicleContextResponse:
         consumption_rate_kwh=telemetry.consumption_rate_kwh,
         connector_types=telemetry.connector_types,
         max_charging_power_kw=telemetry.max_charging_power_kw,
+        service_status=service_status,
     )
 
 

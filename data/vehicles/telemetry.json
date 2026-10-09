@@ -6,5 +6,7 @@
   "maxChargedRangeKm": 250,
   "consumptionRateKwh": 17.2,
   "tyres": "SUMMER",
-  "odometerKm": 14250
+  "odometerKm": 14780,
+  "serviceIntervalKm": 10000,
+  "lastServiceOdometerKm": 5000
 }
