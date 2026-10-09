@@ -103,6 +103,7 @@ class RouteService:
         self._session_generation = 0
         self._route_session: dict[str, object] = {}
         self._confirmed_charging_response: dict[str, object] | None = None
+        self._service_reminder_announced = False
 
     @property
     def active_route_id(self) -> str | None:
@@ -250,6 +251,15 @@ class RouteService:
             raise APIError(409, "STALE_ROUTE", "The selected route is no longer current.")
         return self.route_state_facts()
 
+    def next_service_reminder(self, journey_distance_km: float):
+        if self._service_reminder_announced:
+            return None
+        status = self._telemetry.service_status(journey_distance_km)
+        if status.status == "UP_TO_DATE":
+            return None
+        self._service_reminder_announced = True
+        return status
+
     def next_mandatory_stop(self, progress_km: float = 0.0) -> StopPinpoint | None:
         if self._active_provider_route is None:
             return None
@@ -271,6 +281,7 @@ class RouteService:
     async def plan(self, intent: AssistantIntent) -> RouteResponse:
         started_at = monotonic()
         self._request_budget.reset()
+        self._service_reminder_announced = False
         try:
             self._request_budget.consume(
                 provider="routing", method="geocode", reason="route_origin"

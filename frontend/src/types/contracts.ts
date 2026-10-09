@@ -93,6 +93,13 @@ export interface TelemetryNarrationFacts {
   chargingFeasible?: boolean | null;
 }
 
+export interface VehicleServiceStatus {
+  status: 'UP_TO_DATE' | 'DUE_DURING_JOURNEY' | 'OVERDUE';
+  odometerKm: number;
+  nextServiceOdometerKm: number;
+  dueInKm: number;
+}
+
 export interface RouteOpportunity {
   id: string;
   type: 'charging' | 'hotel' | 'restaurant' | 'amenity' | 'partner';
@@ -172,6 +179,7 @@ export interface RouteResponse {
   chargingPlan?: ChargingPlan | null;
   sessionFacts?: RouteSessionFacts | null;
   telemetry?: TelemetryNarrationFacts | null;
+  serviceReminder?: VehicleServiceStatus | null;
 }
 
 export interface RoutePoiResponse {
@@ -299,4 +307,5 @@ export interface VehicleContext {
   consumptionRateKwh: number;
   connectorTypes: string[];
   maxChargingPowerKw: number;
+  serviceStatus: VehicleServiceStatus;
 }

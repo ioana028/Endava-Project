@@ -81,6 +81,8 @@ get_vehicle_context and report only relevant returned facts. For a car summary,
 include the returned model, current range, and maximum range. Do not infer the
 driver's location from the destination or make a Google request for this.
 Never volunteer battery, range, consumption, or other telemetry unless asked.
+For a direct service or maintenance question, report serviceStatus, dueInKm,
+and nextServiceOdometerKm from get_vehicle_context. Never guess service dates.
 
 PLACE SEARCH AND REROUTING
 Use search_route_poi for requested hotels, restaurants, attractions,

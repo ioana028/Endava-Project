@@ -3,7 +3,6 @@ import type { RealtimeAssistantState } from '../hooks/useRealtimeAssistant'
 interface AssistantStatusProps {
   enabled: boolean
   state: RealtimeAssistantState
-  transcript: string
   error: string | null
   onEnable: () => void
   onDisable: () => void
@@ -12,11 +11,19 @@ interface AssistantStatusProps {
 export function AssistantStatus({
   enabled,
   state,
-  transcript,
   error,
   onEnable,
   onDisable,
 }: AssistantStatusProps) {
+  const stateLabel = {
+    IDLE: 'Ready',
+    CONNECTING: 'Connecting',
+    LISTENING: 'Listening',
+    PROCESSING: 'Working on your request',
+    SPEAKING: 'Speaking',
+    ERROR: 'Needs attention',
+  }[state]
+
   return (
     <section className="assistant-panel" aria-live="polite">
       {!enabled && state !== 'CONNECTING' && (
@@ -31,29 +38,7 @@ export function AssistantStatus({
         </button>
       )}
 
-      <p className="assistant-state"><span className={`state-dot state-${state.toLowerCase()}`} /> {state}</p>
-
-      {state === 'CONNECTING' && <p>Connecting Suzanne...</p>}
-
-      {enabled && state === 'LISTENING' && (
-        <p>Waiting for you</p>
-      )}
-
-      {state === 'SPEAKING' && (
-        <>
-          <h2>Suzanne</h2>
-          <p>{transcript || 'Speaking...'}</p>
-        </>
-      )}
-
-      {state === 'PROCESSING' && (
-        <>
-          <h2>Working</h2>
-          <p>Suzanne is checking the returned details...</p>
-        </>
-      )}
-
-      {state === 'ERROR' && <p>Realtime connection needs attention.</p>}
+      <p className="assistant-state"><span className={`state-dot state-${state.toLowerCase()}`} /> {stateLabel}</p>
 
       {error && <p className="error-message" role="alert">{error}</p>}
     </section>
