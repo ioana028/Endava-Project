@@ -282,7 +282,7 @@ def test_google_places_provider_maps_and_filters_route_results() -> None:
             "displayName": {"text": "Cool Place"},
             "location": {"longitude": 17.5, "latitude": 47.005},
             "rating": 4.7,
-            "userRatingCount": 42,
+            "userRatingCount": 142,
             "editorialSummary": {"text": "A memorable stop"},
         },
         "attraction",
@@ -293,7 +293,7 @@ def test_google_places_provider_maps_and_filters_route_results() -> None:
     assert result.name == "Cool Place"
     assert result.category == "attraction"
     assert result.rating == 4.7
-    assert result.user_review_count == 42
+    assert result.user_review_count == 142
     assert result.tag == "A memorable stop"
     assert provider._to_stop(
         {
@@ -311,7 +311,19 @@ def test_google_places_provider_maps_and_filters_route_results() -> None:
             "displayName": {"text": "Advertising Board"},
             "location": {"longitude": 17.5, "latitude": 47.005},
             "rating": 4.8,
-            "userRatingCount": 9,
+            "userRatingCount": 49,
+        },
+        "attraction",
+        route,
+    ) is None
+
+    assert provider._to_stop(
+        {
+            "id": "places/low-rated-attraction",
+            "displayName": {"text": "Low Rated Attraction"},
+            "location": {"longitude": 17.5, "latitude": 47.005},
+            "rating": 4.1,
+            "userRatingCount": 500,
         },
         "attraction",
         route,
