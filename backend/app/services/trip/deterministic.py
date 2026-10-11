@@ -18,6 +18,8 @@ POI_DESTINATION_EXCLUSION_KM = 10.0
 STOP_AMENITY_RADIUS_KM = 0.5
 STOP_AMENITY_MAX_RESULTS = 4
 HOTEL_DESTINATION_RADIUS_KM = 2.5
+ATTRACTION_MIN_RATING = 4.2
+ATTRACTION_MIN_REVIEW_COUNT = 50
 _AMENITY_CHAIN_NAMES = (
     "burger king",
     "mcdonalds",
@@ -163,7 +165,24 @@ def _select_route_attractions(
     preference: str | None = None,
     scenic: bool = False,
 ) -> list[POICandidate]:
-    ranked = rank_scenic_pois(candidates) if scenic else rank_pois(candidates, preference)
+    if scenic:
+        ranked = rank_scenic_pois(candidates)
+    else:
+        normalized_preference = (preference or "").casefold()
+        ranked = sorted(
+            candidates,
+            key=lambda candidate: (
+                0
+                if normalized_preference
+                and normalized_preference in candidate.stop.name.casefold()
+                else 1,
+                -(candidate.stop.rating or 0),
+                -(candidate.stop.user_review_count or 0),
+                -candidate.route_relevance,
+                candidate.stop.detour_minutes,
+                candidate.stop.id,
+            ),
+        )
     selected: list[POICandidate] = []
     for candidate in ranked:
         if any(

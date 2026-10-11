@@ -10,6 +10,8 @@ import httpx
 from ...models.contracts import StopPinpoint
 from ...core.async_cache import AsyncTTLCache
 from ...services.trip.deterministic import (
+    ATTRACTION_MIN_RATING,
+    ATTRACTION_MIN_REVIEW_COUNT,
     HOTEL_DESTINATION_RADIUS_KM,
     distance_to_route_km,
     route_progress_km,
@@ -116,10 +118,10 @@ class GooglePlacesProvider:
         search_along_route = normalized == "attraction" and location == "route"
         queries = (
             (
-                query,
-                "landmarks and monuments",
-                "tourist attractions",
-                "things to see and points of interest",
+                "popular, highly rated tourist attractions and notable sights",
+                "historic city centers, old towns, and main squares",
+                "popular castles, museums, and historic landmarks",
+                "popular viewpoints and natural attractions",
             )
             if normalized == "attraction" and search_along_route
             else (query,)
@@ -216,7 +218,12 @@ class GooglePlacesProvider:
         result_limit = 50 if normalized == "charging" else 10
         return tuple(sorted(
             results.values(),
-            key=lambda stop: (stop.detour_minutes, -(stop.rating or 0), stop.name),
+            key=lambda stop: (
+                -(stop.rating or 0),
+                -(stop.user_review_count or 0),
+                stop.detour_minutes,
+                stop.name,
+            ),
         )[:result_limit])
 
     @staticmethod
@@ -358,7 +365,12 @@ class GooglePlacesProvider:
         rating = place.get("rating")
         user_review_count = place.get("userRatingCount")
         if category == "attraction":
-            if not isinstance(user_review_count, int) or user_review_count < 10:
+            if (
+                not isinstance(rating, (int, float))
+                or rating < ATTRACTION_MIN_RATING
+                or not isinstance(user_review_count, int)
+                or user_review_count < ATTRACTION_MIN_REVIEW_COUNT
+            ):
                 return None
         summary = place.get("editorialSummary") or {}
         address = place.get("formattedAddress")

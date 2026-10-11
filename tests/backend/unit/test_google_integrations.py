@@ -359,6 +359,14 @@ def test_google_places_uses_configured_route_and_nearby_radii(
         FakeResponse({"places": [place()]}),
     ]
     asyncio.run(provider.search("attraction", location="route", route=route()))
+    assert [
+        call["json"]["textQuery"] for call in FakePlacesClient.calls
+    ] == [
+        "popular, highly rated tourist attractions and notable sights",
+        "historic city centers, old towns, and main squares",
+        "popular castles, museums, and historic landmarks",
+        "popular viewpoints and natural attractions",
+    ]
     request = FakePlacesClient.calls[0]["json"]
     assert "searchAlongRouteParameters" in request
     assert request["searchAlongRouteParameters"]["polyline"]["encodedPolyline"]

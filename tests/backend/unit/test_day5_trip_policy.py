@@ -60,6 +60,33 @@ def test_destination_search_does_not_apply_route_endpoint_exclusions() -> None:
     assert [item.id for item in results] == ["destination-attraction"]
 
 
+def test_route_attractions_prioritize_rated_popular_sights_over_proximity() -> None:
+    geometry = ((16.37, 48.20), (17.50, 48.00), (19.04, 47.50))
+    results = select_route_stops(
+        [
+            StopPinpoint(
+                id="near-fountain",
+                name="War Memorial Fountain",
+                category="attraction",
+                coords=(17.50, 48.00),
+                rating=4.2,
+                user_review_count=50,
+            ),
+            StopPinpoint(
+                id="popular-old-town",
+                name="Historic Old Town",
+                category="attraction",
+                coords=(17.55, 47.98),
+                rating=4.8,
+                user_review_count=1200,
+            ),
+        ],
+        geometry,
+    )
+
+    assert [item.id for item in results] == ["popular-old-town"]
+
+
 def test_brand_network_enriches_a_provider_result_without_creating_a_location() -> None:
     provider_result = stop("place-chargepoint", (17.2, 47.6), "charging")
     network = Partner(
