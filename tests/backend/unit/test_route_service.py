@@ -422,6 +422,73 @@ def test_hotel_search_never_pads_with_ineligible_results(ratings: list[float | N
     assert set(service.active_search_results) == {item.id for item in results}
 
 
+def test_hotel_search_uses_destination_and_excludes_hotels_beyond_2_5_km() -> None:
+    class HotelPlaces:
+        async def search(self, category, location, preference, route):
+            del preference, route
+            assert location == "destination"
+            return [
+                StopPinpoint(
+                    id="near-hotel",
+                    name="Near Hotel",
+                    category=category,
+                    coords=(19.072, 47.5),
+                    rating=4.5,
+                ),
+                StopPinpoint(
+                    id="far-hotel",
+                    name="Far Hotel",
+                    category=category,
+                    coords=(19.076, 47.5),
+                    rating=4.8,
+                ),
+            ]
+
+    service = RouteService(
+        FakeRoutingProvider(distance_meters=95_000),
+        repository(),
+        places_provider=HotelPlaces(),
+    )
+    asyncio.run(service.plan(intent("Budapest")))
+
+    results = asyncio.run(service.search_route_poi("hotel", "route"))
+
+    assert [result.id for result in results] == ["near-hotel"]
+
+
+def test_stop_amenity_search_always_includes_food_coffee_and_restaurants() -> None:
+    class CapturingPlaces(FakePlacesProvider):
+        categories: tuple[str, ...] = ()
+
+        async def search_amenities(self, categories, location, route, near_coords):
+            del location, route, near_coords
+            self.categories = categories
+            return []
+
+    places = CapturingPlaces()
+    service = RouteService(
+        FakeRoutingProvider(distance_meters=95_000),
+        repository(),
+        places_provider=places,
+    )
+    asyncio.run(service.plan(intent("Budapest")))
+    route_id = service.active_route_id
+    service._active_search_results["charger"] = StopPinpoint(
+        id="charger",
+        name="Charging stop",
+        category="charging",
+        coords=(19.04, 47.5),
+    )
+
+    asyncio.run(
+        service.search_stop_amenities(
+            "charger", route_id or "", categories=("toilets",)
+        )
+    )
+
+    assert places.categories == ("toilets", "food", "coffee", "restaurant")
+
+
 def test_route_poi_search_uses_active_route_context_for_charging() -> None:
     route_service = RouteService(FakeRoutingProvider(distance_meters=95_000), repository())
     asyncio.run(route_service.plan(intent("Budapest")))
@@ -599,4 +666,3 @@ def test_route_exposes_driving_facts_and_next_mandatory_stop() -> None:
     assert facts["remaining_duration_minutes"] == 165
     assert facts["next_stop"] is None
     assert facts["charging_required"] is True
-
