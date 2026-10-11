@@ -9,7 +9,11 @@ import httpx
 
 from ...models.contracts import StopPinpoint
 from ...core.async_cache import AsyncTTLCache
-from ...services.trip.deterministic import distance_to_route_km, route_progress_km
+from ...services.trip.deterministic import (
+    HOTEL_DESTINATION_RADIUS_KM,
+    distance_to_route_km,
+    route_progress_km,
+)
 from ...services.trip.ports import ChargingCandidate, JourneyProviderError, ProviderRoute
 
 
@@ -57,6 +61,8 @@ class GooglePlacesProvider:
         route: ProviderRoute | tuple[tuple[float, float], ...] | None = None,
         near_coords: tuple[float, float] | None = None,
     ) -> list[StopPinpoint]:
+        if self._normalize_category(category) == "hotel":
+            location = "destination"
         key = (
             self._normalize_category(category),
             (location or "").strip().casefold(),
@@ -77,14 +83,16 @@ class GooglePlacesProvider:
         route: ProviderRoute | None = None,
         near_coords: tuple[float, float] | None = None,
     ) -> list[StopPinpoint]:
-        preference = ", ".join(dict.fromkeys(categories))
-        return await self.search(
-            "food",
-            location=location,
-            preference=f"{preference} amenities",
-            route=route,
-            near_coords=near_coords,
-        )
+        results: dict[str, StopPinpoint] = {}
+        for category in dict.fromkeys(categories):
+            for result in await self.search(
+                category,
+                location=location,
+                route=route,
+                near_coords=near_coords,
+            ):
+                results[result.id] = result
+        return list(results.values())
 
     async def _search_uncached(
         self,
@@ -121,6 +129,8 @@ class GooglePlacesProvider:
             if location == "route"
             else self._nearby_search_radius_meters
             if location == "stop"
+            else HOTEL_DESTINATION_RADIUS_KM * 1000
+            if normalized == "hotel" and location == "destination"
             else max(self._search_radius_meters, 2_500)
         )
         results: dict[str, StopPinpoint] = {}
@@ -324,7 +334,13 @@ class GooglePlacesProvider:
         if route_geometry is None:
             return None
         route_distance_km = self._route_distance_km(coords, route_geometry)
-        if location in {"stop", "route-target"} and near_coords is not None:
+        if category == "hotel" and location == "destination":
+            if (
+                self._distance_to_point_km(coords, route_geometry[-1])
+                > HOTEL_DESTINATION_RADIUS_KM
+            ):
+                return None
+        elif location in {"stop", "route-target"} and near_coords is not None:
             radius_km = (
                 self._nearby_search_radius_meters / 1000
                 if location == "stop"

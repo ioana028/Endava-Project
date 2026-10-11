@@ -801,7 +801,11 @@ export function RouteMap({
         icon: {
           path: google.maps.SymbolPath.CIRCLE,
           scale: poi.id === selectedPoiId ? 9 : 7,
-          fillColor: poi.id === selectedPoiId ? '#f97316' : '#facc15',
+          fillColor: poi.id === selectedPoiId
+            ? '#f97316'
+            : poi.category === 'hotel'
+              ? '#22c55e'
+              : '#facc15',
           fillOpacity: 1,
           strokeColor: '#ffffff',
           strokeWeight: poi.id === selectedPoiId ? 3 : 2,

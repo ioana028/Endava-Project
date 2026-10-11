@@ -37,7 +37,9 @@ from .country_rules import derive_requirements, detect_border_crossings
 from .deterministic import (
     BOOKING_POI_MAX_RESULTS,
     DEFAULT_CHARGING_POWER_KW,
+    HOTEL_DESTINATION_RADIUS_KM,
     POI_COORDINATE_TOLERANCE,
+    distance_km,
     distance_to_route_km,
     enrich_partner,
     estimate_charging_duration_minutes,
@@ -65,7 +67,7 @@ DEFAULT_ORIGIN = "Vienna, Austria"
 CHARGING_PRICE_EUR_PER_KWH = 0.45
 HUNGARIAN_VIGNETTE_PRICE_EUR = 16.50
 PARTNER_ALTERNATIVE_WINDOW_KM = 20.0
-DEFAULT_AMENITY_CATEGORIES = ("food", "coffee", "rest")
+DEFAULT_AMENITY_CATEGORIES = ("food", "coffee", "restaurant", "rest")
 LOGGER = logging.getLogger(__name__)
 
 
@@ -577,6 +579,8 @@ class RouteService:
             location_context = (location or "destination").strip().lower()
             if location_context not in {"route", "stop", "destination"}:
                 location_context = "destination"
+            if category.casefold() == "hotel":
+                location_context = "destination"
             if location_context == "stop" and not self._active_stops:
                 raise APIError(
                     409,
@@ -601,7 +605,15 @@ class RouteService:
             # Filter before ranking/capping so low or missing ratings cannot
             # displace eligible hotels. This is a review score, not hotel class.
             if category.casefold() == "hotel":
-                results = [item for item in results if item.rating is not None and item.rating > 4.0]
+                destination = self._active_provider_route.geometry[-1]
+                results = [
+                    item
+                    for item in results
+                    if item.rating is not None
+                    and item.rating > 4.0
+                    and distance_km(item.coords, destination)
+                    <= HOTEL_DESTINATION_RADIUS_KM
+                ]
             if location_context == "stop":
                 results = select_stop_amenities(results, self._active_stops[-1].coords)
             else:
@@ -663,9 +675,7 @@ class RouteService:
         results: list[StopPinpoint] = []
         try:
             expanded_categories = tuple(
-                expanded
-                for category in requested_categories
-                for expanded in (category,)
+                dict.fromkeys((*requested_categories, "food", "coffee", "restaurant"))
             )
             self._request_budget.consume(
                 provider="places", method="search_batch", reason="stop_amenities"

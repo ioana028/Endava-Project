@@ -185,6 +185,70 @@ def test_places_stop_search_keeps_nearby_result_off_the_route_line(
     assert [result.id for result in results] == ["places/nearby-restaurant"]
 
 
+def test_hotel_search_is_centered_and_limited_to_destination_radius(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakePlacesClient.calls = []
+    near_hotel = place("places/near-hotel")
+    near_hotel["displayName"] = {"text": "Near Hotel"}
+    near_hotel["location"] = {"longitude": 19.02, "latitude": 47.5}
+    far_hotel = place("places/far-hotel")
+    far_hotel["displayName"] = {"text": "Far Hotel"}
+    far_hotel["location"] = {"longitude": 19.04, "latitude": 47.5}
+    FakePlacesClient.responses = [
+        FakeResponse({"places": [near_hotel, far_hotel]})
+    ]
+    monkeypatch.setattr(
+        "backend.app.integrations.places.google.httpx.AsyncClient", FakePlacesClient
+    )
+
+    results = asyncio.run(
+        GooglePlacesProvider("test-key").search("hotel", location="route", route=route())
+    )
+
+    request = FakePlacesClient.calls[0]["json"]
+    circle = request["locationBias"]["circle"]
+    assert circle["center"] == {"latitude": 47.5, "longitude": 19.0}
+    assert circle["radius"] == 2500.0
+    assert [result.id for result in results] == ["places/near-hotel"]
+
+
+def test_stop_amenities_searches_requested_categories_independently(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    FakePlacesClient.calls = []
+    FakePlacesClient.responses = [
+        FakeResponse({"places": [place(f"places/{category}")]})
+        for category in ("food", "coffee", "restaurant")
+    ]
+    monkeypatch.setattr(
+        "backend.app.integrations.places.google.httpx.AsyncClient", FakePlacesClient
+    )
+
+    results = asyncio.run(
+        GooglePlacesProvider("test-key").search_amenities(
+            ("food", "coffee", "restaurant"),
+            location="stop",
+            route=route(),
+            near_coords=(16.05, 48.001),
+        )
+    )
+
+    assert len(FakePlacesClient.calls) == 3
+    assert [
+        call["json"]["textQuery"] for call in FakePlacesClient.calls
+    ] == [
+        "restaurants, fast food, McDonald's, KFC, and places to eat",
+        "coffee shops and cafes",
+        "restaurants",
+    ]
+    assert {result.id for result in results} == {
+        "places/food",
+        "places/coffee",
+        "places/restaurant",
+    }
+
+
 def test_google_charging_metadata_does_not_assume_availability(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
