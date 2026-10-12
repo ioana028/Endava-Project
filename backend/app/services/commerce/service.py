@@ -126,10 +126,15 @@ class CommerceService:
         expected_category = "hotel" if booking_type == "hotel_room" else "restaurant"
         if result.category != expected_category:
             raise APIError(422, "INVALID_BOOKING_TYPE", "Booking type does not match the selected result.")
+        normalized_date = normalize_booking_date(booking_date, self._today())
+        normalized_time = normalize_booking_time(booking_time)
+        if normalized_time is None and booking_type == "restaurant_table" and booking_date is not None:
+            if booking_date.strip().casefold() == "tonight":
+                normalized_time = "20:00"
         return await self._wallet.process_booking(
             route_id=route_id, search_id=search_id, result_id=result_id,
-            booking_type=booking_type, guests=guests, booking_date=booking_date,
-            booking_time=normalize_booking_time(booking_time), request_key=request_key,
+            booking_type=booking_type, guests=guests, booking_date=normalized_date,
+            booking_time=normalized_time, request_key=request_key,
         )
 
     async def book_hotel_room(
