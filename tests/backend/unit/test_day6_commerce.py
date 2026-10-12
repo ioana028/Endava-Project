@@ -226,3 +226,36 @@ def test_restaurant_tonight_uses_injected_local_date_and_default_time() -> None:
 
     assert booking.date == "2026-09-25"
     assert booking.time == "20:00"
+
+
+@pytest.mark.parametrize(
+    ("booking_type", "result_id", "expected_time"),
+    [
+        ("hotel_room", "hotel-1", None),
+        ("restaurant_table", "restaurant-1", "20:00"),
+    ],
+)
+def test_shared_booking_path_normalizes_tonight(
+    booking_type: str, result_id: str, expected_time: str | None
+) -> None:
+    today = date(2026, 9, 25)
+    commerce = CommerceService(
+        RouteContext(),
+        WalletService(today=lambda: today),
+        today=lambda: today,
+    )
+
+    booking = asyncio.run(
+        commerce.book(
+            route_id="route-1",
+            search_id="search-1",
+            result_id=result_id,
+            booking_type=booking_type,
+            guests=1,
+            confirmation="confirmed",
+            booking_date="tonight",
+        )
+    )
+
+    assert booking.date == "2026-09-25"
+    assert booking.time == expected_time
